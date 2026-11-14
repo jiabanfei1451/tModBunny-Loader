@@ -79,7 +79,9 @@ Terraria.GameContent.ITownNPCProfile|Chooses a town NPC's texture, head, name an
 Terraria.ModLoader.InvasionEnemy|An enemy of an invasion wave: its NPC type, how often it spawns and the points it gives.
 Terraria.ModLoader.InvasionLoader|Runs invasions: `Start`, `Stop`, `AddPoints`, and reads the wave and progress. Keeps the host and clients in sync.
 Terraria.ModLoader.InvasionWave|One wave of an invasion: the points to clear it and its enemies.
-Terraria.ModLoader.ModInvasion|A wave-based event that uses the game's progress bar. See [guide 23](../23-invasoes.md). Your subclass lists the waves.
+Terraria.ModLoader.ModInvasion|A wave-based event that uses the game's progress bar. See [Invasions](Invasions). Your subclass lists the waves.
+Terraria.ModLoader.ModSubworld|A dimension: a separate world the player travels to, with its own size, generation and save file. See [Dimensions](Dimensions).
+Terraria.ModLoader.SubworldLoader|Travels between the main world and the dimensions: `Enter`, `Exit`, `Current`. In multiplayer the host asks every player first.
 Terraria.NPC|What Bunny Loader adds to the game's NPC.
 Terraria.NPC.Spawner|Spawns a boss or event the way the game does, through the phone's `NPC.Spawner`.
 Terraria.ID.NPCAIStyleID|Values of `NPC.aiStyle`.
@@ -192,8 +194,8 @@ Terraria.Graphics.Shaders.HairShaderDataSet|`GameShaders.Hair`: binds a hair dye
 Terraria.ModLoader.KeybindLoader|Registers a `ModKeybind`. On the phone it gives a `ModTouchButton`.
 Terraria.UI.LegacyGameInterfaceLayer|A layer that draws with a method of yours. The usual way to add one.
 Terraria.ModLoader.MenuLoader|Runs the mod title menus.
-Terraria.ModLoader.ModTouchButton|A button on the screen, placed by the player in the game's controls editor. A `ModKeybind` on the phone. See [guide 19](../19-botoes-de-toque.md).
-Terraria.ModLoader.ModTouchJoystick|A button the player drags to aim. See [guide 19](../19-botoes-de-toque.md).
+Terraria.ModLoader.ModTouchButton|A button on the screen, placed by the player in the game's controls editor. A `ModKeybind` on the phone. See [Touch buttons](Touch-Buttons).
+Terraria.ModLoader.ModTouchJoystick|A button the player drags to aim. See [Touch buttons](Touch-Buttons).
 Terraria.ModLoader.MusicLoader|Registers mod music and music boxes. `GetMusicSlot` gives a track's number.
 Terraria.GameContent.ItemDropRules.ShowItemDropInUI|Whether a drop shows in the bestiary.
 Terraria.Audio.SoundEngine|Plays sounds. `PlaySound` takes a `SoundStyle`.
@@ -201,7 +203,7 @@ Terraria.Audio.SoundLimitBehavior|What happens when too many of a sound play tog
 Terraria.Audio.SoundUpdateCallback|Runs each frame for a playing sound, to change it or stop it.
 Terraria.ModLoader.TouchButtonLoader|Registers touch buttons and joysticks: `RegisterButton`, `RegisterJoystick`.
 Terraria.ModLoader.UI.UICommon|Common colors and text of the mod menus.
-Terraria.UI.UIElement|The base of every UI piece: position and size in `StyleDimension`, children, events, drawing. See [guide 20](../20-interface.md).
+Terraria.UI.UIElement|The base of every UI piece: position and size in `StyleDimension`, children, events, drawing. See [User interface](User-Interface).
 Terraria.UI.UIEvent|An event of an element.
 Terraria.GameContent.UI.Elements.UIImage|Shows a texture.
 Terraria.GameContent.UI.Elements.UIImageButton|A texture that responds to a touch.
@@ -350,6 +352,10 @@ Terraria.ModLoader.ModTile.HasSmartInteract~|The phone's smart cursor reaches mo
 Terraria.ModLoader.ModNPC.PickEmote~|`otherAnchor` can be null: check `otherAnchor.IsNull` before reading it.
 Terraria.ModLoader.GlobalNPC.PickEmote~|`otherAnchor` can be null: check `otherAnchor.IsNull` before reading it.
 Terraria.ModLoader.Mod.AddNPCHeadTexture~|Returns the real slot at once, also from `Load`.
+Terraria.ModLoader.ModItem.AltFunctionUse~|In a touch profile with an aim stick, Interact switches the alternative mode and the aim stick fires it, as with the Portal Gun.
+Terraria.ModLoader.GlobalItem.AltFunctionUse~|In a touch profile with an aim stick, Interact switches the alternative mode and the aim stick fires it, as with the Portal Gun.
+Terraria.ModLoader.InfoDisplay.Texture~|Also the icon of the display's toggle in the inventory's accessory tab, scaled up to the size of the game's toggle icons, with the eye that shows or hides it.
+Terraria.ModLoader.InfoDisplay.HoverTexture~|Touch has no hover, so this outline is not drawn; tapping a toggle shows `DisplayName` instead.
 Terraria.ModLoader.ModProjectile.GlowTexture~|Drawn after the sprite. Spears and other projectiles with their own drawing in the game get it too.
 Terraria.ModLoader.ModHair.RandomizedCharacterCreationGender~|Applied after the game's random character button.
 Terraria.ID.ProjectileID.Sets.IsInteractable~|A tap on the projectile reaches `Main.mouseRight` during its `PreDraw` and `PostDraw`, as tModLoader's code expects.
@@ -464,6 +470,8 @@ Terraria.ModLoader.ItemLoot.Add|Adds a rule.
 Terraria.ModLoader.ItemLoot.RemoveWhere|Removes the rules that match.
 Terraria.ModLoader.ModItem.IsQuestFish|Whether this fish can be an Angler quest.
 Terraria.ModLoader.ModItem.SummonPrefix|Whether this item takes summon prefixes.
+Terraria.ModLoader.ModItem.AltFunctionIcon|Icon of the Interact touch button while this item is held and its alternative use can be switched there, also shown in the touch glyph that `{InputTrigger_InteractWithTile}` becomes in its tooltip. `alternative` says which mode is on. Return null for the item's own icon; return `ModContent.Request<Texture2D>("Terraria/Images/UI/ExtraIcons/ItemSwap1")` for the game's swap arrows.
+Terraria.ModLoader.GlobalItem.AltFunctionIcon|Icon of the Interact touch button while this item is held and its alternative use can be switched there, also shown in the touch glyph of its tooltip. `alternative` says which mode is on. Return null to keep the item's icon or the one of the ModItem or an earlier global.
 Terraria.ModLoader.ModPrefix.Type|The prefix's number.
 Terraria.ModLoader.ModRarity.Type|The rarity's number, for `Item.rare`.
 Terraria.ModLoader.RarityLoader.GetRarity|The `ModRarity` of a number, or null.
@@ -471,6 +479,7 @@ Terraria.Recipe.Mod|The mod that made the recipe.
 Terraria.Recipe.Conditions|What must hold to craft.
 Terraria.Recipe.DecraftConditions|What must hold to undo the recipe in shimmer.
 Terraria.Recipe.AddCustomShimmerResult|What this recipe gives back in shimmer, instead of the ingredients.
+Terraria.Recipe.AddIngredient~|A recipe takes at most 14 ingredients, because the game needs the last of its 15 slots empty. The 15th throws `RecipeException`, and `Register` refuses a recipe filled past that by hand.
 Terraria.Recipe.AddCondition|Adds a condition to craft.
 Terraria.Recipe.AddDecraftCondition|Adds a condition to undo the recipe in shimmer.
 Terraria.Recipe.HasResult|Whether the recipe makes this item.
@@ -573,6 +582,36 @@ Terraria.ModLoader.ModInvasion.OnWaveComplete|Runs at the end of each wave.
 Terraria.ModLoader.ModInvasion.OnComplete|Runs when it is won.
 Terraria.ModLoader.ModInvasion.OnFail|Runs when it is lost.
 Terraria.ModLoader.ModInvasion.Update|Runs every tick while it is active.
+Terraria.ModLoader.ModSubworld.Width|Width in tiles, from 200 to 8400. Not used with `WorldFile`.
+Terraria.ModLoader.ModSubworld.Height|Height in tiles, from 160 to 2400. Not used with `WorldFile`.
+Terraria.ModLoader.ModSubworld.GenerationTasks|The passes that build the world, as in world generation. Not used with `WorldFile`.
+Terraria.ModLoader.ModSubworld.WorldFile|A `.wld` inside the mod to load instead of generating, with the mod's `.bl` files beside it.
+Terraria.ModLoader.ModSubworld.Persistent|`true` keeps the world between trips; `false` builds it again on every trip.
+Terraria.ModLoader.ModSubworld.SavePlayerChanges|`false` gives the player back as they entered.
+Terraria.ModLoader.ModSubworld.RandomTileUpdates|Grass spreading and plants growing. Liquids, wiring and tile entities update either way.
+Terraria.ModLoader.ModSubworld.HideUnderworld|The bottom 200 rows are not the underworld: no background, light, music, enemies or evaporating water.
+Terraria.ModLoader.ModSubworld.HideOcean|The columns next to the edges are not a beach: no ocean zone, music or background.
+Terraria.ModLoader.ModSubworld.LoadingText|The text of the loading screen.
+Terraria.ModLoader.ModSubworld.ShowLoadingScreen|`false` keeps the screen black while the world changes, with `DrawTransition` on top.
+Terraria.ModLoader.ModSubworld.TransitionOutSeconds|How long the transition plays in the world being left.
+Terraria.ModLoader.ModSubworld.TransitionInSeconds|How long the transition plays in the world being entered.
+Terraria.ModLoader.ModSubworld.DrawTransition|Draws the transition over the whole screen, interface included (`Main.screenWidth` × `Main.screenHeight`); `progress` goes 0 to 1 while leaving and back to 0 while arriving. Draws black by default.
+Terraria.ModLoader.ModSubworld.DisplayName|The world's name, from the `Subworlds` translations.
+Terraria.ModLoader.ModSubworld.FileName|`<Mod>_<Name>`, the name of the save file.
+Terraria.ModLoader.ModSubworld.LocalizationCategory|`Subworlds`.
+Terraria.ModLoader.ModSubworld.OnEnter|Before the dimension loads or generates.
+Terraria.ModLoader.ModSubworld.OnExit|Before the player leaves the dimension.
+Terraria.ModLoader.ModSubworld.PostWorldReady|Once the player is in the dimension.
+Terraria.ModLoader.ModSubworld.Update|Once per world update while the dimension is active.
+Terraria.ModLoader.ModSubworld.SaveCarriedData|Writes what travels to the next world, on every dimension, whenever a world is left.
+Terraria.ModLoader.ModSubworld.LoadCarriedData|Reads back the tag `SaveCarriedData` wrote, once the next world is loaded.
+Terraria.ModLoader.SubworldLoader.Subworlds|Every registered dimension.
+Terraria.ModLoader.SubworldLoader.Current|The active dimension, null in the main world.
+Terraria.ModLoader.SubworldLoader.InSubworld|Whether a dimension is active.
+Terraria.ModLoader.SubworldLoader.Traveling|From `Enter` until the player is in the new world and its transition is over.
+Terraria.ModLoader.SubworldLoader.IsActive|Whether that dimension is the active one.
+Terraria.ModLoader.SubworldLoader.Enter|Starts the trip, or the vote in multiplayer. false on a client, while traveling or when already there.
+Terraria.ModLoader.SubworldLoader.Exit|Back to the main world. The host's alone in multiplayer.
 Terraria.ModLoader.ModNPC.BossLoot|Changes the potion a boss drops, and what else happens at its death.
 Terraria.ModLoader.ModNPC.SetChatButtons|The text of the two chat buttons. For more buttons use `RegisterChatButtons`.
 Terraria.ModLoader.NPCHappiness.NpcType|The NPC.

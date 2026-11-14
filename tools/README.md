@@ -1,7 +1,6 @@
 # tools/: PC tools
 
-None of them run by themselves in the build; they are all called by hand
-(except `wiki.py`, which GitHub runs on every push to `main`).
+None of them run by themselves in the build; they are all called by hand.
 
 ## Development
 
@@ -15,7 +14,6 @@ None of them run by themselves in the build; they are all called by hand
 | [`bin2header.py`](bin2header.py) | Binary → C array. Used by the script above. |
 | [`ui-sprites.py`](ui-sprites.py) | Crops the game's UI textures the menu uses (Journey hours, arrows) and the "?" for a missing mod item (`content/items/UnloadedIcon.h`). Receives the game's `Images` folder. |
 | [`mod-art.py`](mod-art.py) | The example mods' covers and icons. |
-| [`wiki.py`](wiki.py) | Generates the [wiki](https://github.com/JonataOliveiraa/Bunny-Loader/wiki) from `README.md` and `docs/`. Runs by itself in the `.github/workflows/wiki.yml` workflow on every push to `main`; by hand, only to check. |
 
 ```bash
 tools/ui.sh                                     # iterate on screen
@@ -26,6 +24,63 @@ tools/dumpgrep.sh Projectile Terraria           # inspect a class
 
 There will be no `.bmod` packer: the package is assembled by hand by the
 author, with the documentation as a reference.
+
+## Wiki
+
+The guides live in the [GitHub wiki](https://github.com/JonataOliveiraa/Bunny-Loader/wiki),
+its own Git repository, cloned at `wiki/` (ignored here):
+
+```bash
+git clone https://github.com/JonataOliveiraa/Bunny-Loader.wiki.git wiki
+```
+
+The plan, the page map and the writing rules are in
+[`docs/historico/plano-wiki.md`](../docs/historico/plano-wiki.md).
+
+| Script | What it does |
+|---|---|
+| [`wiki/build.py`](wiki/build.py) | Run before every push of the wiki. Turns each `<!-- shot -->` code block into a code cutout (`images/code/`) with the code ready to copy below it, adds the section name and the previous/next links in sidebar order, and checks every page, anchor and image link. `--strict` also fails on links to pages not written yet. |
+| [`wiki/codeshot.py`](wiki/codeshot.py) | One code cutout: the launcher's palette, stepped corners, Visual Studio colors for C#, `// (1)` at the end of a line becomes a numbered badge, `--hl` highlights lines. |
+| [`wiki/gameshot.py`](wiki/gameshot.py) | One game or app cutout, from a file or straight from a device (`adb:127.0.0.1:16384`): `--crop`, `--width`, and `--mark X,Y,W,H` for each numbered yellow box. |
+| [`wiki/preview.py`](wiki/preview.py) | Renders pages with GitHub's own Markdown renderer into `build/wiki-preview/`, with the sidebar and footer; links to pages not written yet show dashed. |
+| [`docs/ApiReference`](docs/ApiReference) | Writes the API reference pages (`wiki/reference/API-*.md`) from Bunny Loader's C#, tModLoader's patches and the PC game's source: `dotnet run -c Release -- "<repo>" "<TerrariaSource>/Terraria"` from its folder. Descriptions come from tModLoader's documentation and from `notes.txt`; `missing.txt` lists what still has none. |
+
+```bash
+python tools/wiki/build.py
+python tools/wiki/preview.py Home Making-Mods
+python tools/wiki/gameshot.py adb:127.0.0.1:16384 wiki/images/app/packages.webp --crop 390,0,820,480 --mark 403,80,792,52
+```
+
+## Play Store bundle
+
+`tools/play/` builds and checks the `.aab` for Google Play. Each script takes
+the channel, `beta` (default) or `stable`.
+
+| Script | What it does |
+|---|---|
+| [`init-upload-key.sh`](play/init-upload-key.sh) | Creates the upload key once: `bunny-upload.keystore` and `keystore-play.properties`, both out of Git. Back them up outside the PC. |
+| [`build-aab.sh`](play/build-aab.sh) | Runs `:app:bundleRelease -Pbl.play=true`, writes `out/bunny-loader-beta.aab` (+ `.sha256`) and runs the checks. |
+| [`check-aab.sh`](play/check-aab.sh) | Checks what Play enforces: `bundletool validate`, target SDK, not debuggable, no debug certificate, 16 KB pages, base module download size. Also checks that Unity's files are stored in the base APK. |
+| [`install-aab.sh`](play/install-aab.sh) | Installs the bundle on a connected device as Play would (splits and asset pack), signed with the official key. It installs `com.bunnyloader.potatolabs`, next to the APKs, and keeps its data between installs. |
+
+```bash
+tools/play/build-aab.sh
+tools/play/install-aab.sh
+```
+
+What `-Pbl.play=true` changes, compared with the normal APK:
+
+- **Package:** `com.bunnyloader.potatolabs` in both channels, the package of the app on the Play Console. Beta and stable are tracks of that one app there, so the bundle never gets the `.beta` suffix.
+- **Key:** Play refuses a debug certificate, and the official key is one
+  (`CN=Android Debug`), so the bundle is signed with the upload key.
+- **Target SDK:** 36, which Play requires. The normal APK stays on 34.
+- **Asset pack:** `dotnet/`, `mods/` and `sprites/` go to the install-time pack
+  `play_assets`, because the base module has a 200 MB limit. The app reads them
+  through `AssetManager`, which sees the pack. Unity's `bin/Data` has to stay in
+  the base APK.
+
+A bundle build is not debuggable, so `run-as` and the scripts that rely on it
+do not work on an app installed from it.
 
 ## Downloading and extracting tModLoader mods
 
@@ -285,4 +340,4 @@ day.
 |---|---|
 | [`bisect/`](bisect) | `buildat.sh <commit>` builds an old commit's APK in a worktree outside the repository (third-party sources, assets and the game's `.so` files linked through junctions and undone before deleting) and leaves it at `out/bisect/app-<commit>.apk`: the binary search for a regression. One build at a time. Careful: MuMu only has a 60 Hz screen, and another instance running on the PC distorts the measurement. |
 | [`crash-trials/`](crash-trials) | Creates worlds in a row on MuMu, restarting the app on each attempt, and counts crashes ([history](../docs/historico/AVALIACAO-PONTE-E-CRASH.md)). |
-| [`disasm/`](disasm) | Annotated disassembly of `libil2cpp.so` (`prep.sh` generates the caches from `refs/`). Compiled limits: `scan_limits.py` (`cmp #N`), `scan_loops.py` (end of a loop in bytes), `scan_movs.py` (`new T[N]`) and `scan_halved.py` (the drop's `0 < x < N` done by halves). See [content under the hood](../docs/nucleo/conteudo.md#the-compiled-limits). |
+| [`disasm/`](disasm) | Annotated disassembly of `libil2cpp.so` (`prep.sh` generates the caches from `refs/`). Compiled limits: `scan_limits.py` (`cmp #N`), `scan_loops.py` (end of a loop in bytes), `scan_movs.py` (`new T[N]`) and `scan_halved.py` (the drop's `0 < x < N` done by halves). See [content under the hood](../https://github.com/JonataOliveiraa/Bunny-Loader/wiki/Native-Content#the-compiled-limits). |
