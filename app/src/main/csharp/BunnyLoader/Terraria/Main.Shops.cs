@@ -2,7 +2,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Main
+public sealed partial class Main
 {
     public void OpenShop(string shopName) => NPCShopDatabase.OpenShop(shopName);
 }

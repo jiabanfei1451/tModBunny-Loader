@@ -99,7 +99,7 @@ internal static class BuilderToggleHooks
                         if (toggle.OnLeftClick(ref sound))
                         {
                             toggle.CurrentState = (toggle.CurrentState + 1) % Math.Max(1, toggle.NumberOfStates);
-                            if (sound.HasValue) SoundEngine.PlaySound(sound.Value);
+                            if (sound != null) SoundEngine.PlaySound(sound);
                         }
                     }
                     if (Main.mouseRight && Main.mouseRightRelease) { Main.mouseRightRelease = false; toggle.OnRightClick(); }

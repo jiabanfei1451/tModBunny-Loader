@@ -12,7 +12,7 @@ namespace {
 
 struct Fields {
     bool ok = false;
-    FieldInfo* world = nullptr;
+    FieldInfo* world = nullptr;   // Main.tile (o TileData do mundo)
     int32_t width = -1, height = -1;
     FieldInfo *lookup = nullptr, *type = nullptr, *sHeader = nullptr, *frameX = nullptr,
               *frameY = nullptr, *bHeader = nullptr, *bHeader2 = nullptr, *bHeader3 = nullptr, *wall = nullptr;
@@ -40,7 +40,7 @@ const Fields& fields() {
         f.wall = findField(data, "TileWall");
         f.ok = f.world && f.width >= 0 && f.height >= 0 && f.lookup && f.type && f.sHeader &&
                f.frameX && f.frameY && f.bHeader && f.bHeader2 && f.bHeader3 && f.wall;
-        if (!f.ok) BL_ERROR("tiles: TileData fields not found; mod tiles disabled");
+        if (!f.ok) BL_ERROR("tiles: campos do TileData nao achados; tiles de mod desligados");
     });
     return f;
 }
@@ -52,7 +52,7 @@ T* staticPtr(FieldInfo* f) {
     return static_cast<T*>(p);
 }
 
-}
+} // namespace
 
 bool tileArrays(TileArrays* out) {
     const Fields& f = fields();
@@ -74,12 +74,29 @@ bool tileArrays(TileArrays* out) {
     return out->width > 0 && out->height > 0 && out->lookup && out->type && out->sHeader;
 }
 
+int tileTypeAtOffset(int32_t offset) {
+    TileArrays t;
+    if (offset < 0 || !tileArrays(&t)) return -1;
+    if (static_cast<int64_t>(offset) >= static_cast<int64_t>(t.width) * t.height) return -1;
+    const uint32_t def = t.lookup[offset];
+    if (!(t.sHeader[def] & kTileActiveBit)) return -1;
+    return t.type[def];
+}
+
 int tileTypeAt(int x, int y) {
     TileArrays t;
     if (x < 0 || y < 0 || !tileArrays(&t) || x >= t.width || y >= t.height) return -1;
     const uint32_t def = t.lookup[static_cast<int64_t>(t.width) * y + x];
     if (!(t.sHeader[def] & kTileActiveBit)) return -1;
     return t.type[def];
+}
+
+int wallTypeAtOffset(int32_t offset) {
+    TileArrays t;
+    if (offset < 0 || !tileArrays(&t) || !t.wall) return -1;
+    if (static_cast<int64_t>(offset) >= static_cast<int64_t>(t.width) * t.height) return -1;
+    const uint16_t w = t.wall[offset];
+    return w ? w : -1;
 }
 
 int wallTypeAt(int x, int y) {
@@ -89,4 +106,4 @@ int wallTypeAt(int x, int y) {
     return w ? w : -1;
 }
 
-}
+} // namespace bl::runtime

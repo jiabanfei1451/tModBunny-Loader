@@ -14,16 +14,16 @@ namespace Terraria.Graphics.Shaders
         internal static void Keep(nint pointer) => handles.Add(new GameHandle(pointer));
     }
 
-    public readonly unsafe partial struct ArmorShaderData
+    public unsafe sealed partial class ArmorShaderData
     {
         public ArmorShaderData(ReLogic.Content.Asset<Effect> shader, string passName) : this(New(shader, passName).Pointer)
         {
         }
     }
 
-    public readonly unsafe partial struct ArmorShaderDataSet
+    public unsafe sealed partial class ArmorShaderDataSet
     {
-        public T BindShader<T>(int itemId, T shaderData) where T : struct, IGameObject
+        public T BindShader<T>(int itemId, T shaderData) where T : class, IGameObject
         {
             ShaderHandles.Keep(shaderData.Pointer);
             int id = ++_shaderDataCount;
@@ -33,9 +33,9 @@ namespace Terraria.Graphics.Shaders
         }
     }
 
-    public readonly unsafe partial struct HairShaderDataSet
+    public unsafe sealed partial class HairShaderDataSet
     {
-        public T BindShader<T>(int itemId, T shaderData) where T : struct, IGameObject
+        public T BindShader<T>(int itemId, T shaderData) where T : class, IGameObject
         {
             ShaderHandles.Keep(shaderData.Pointer);
             byte id = ++_shaderDataCount;
@@ -50,7 +50,7 @@ namespace Terraria.GameContent.Dyes
 {
     public delegate Color HairColorMethod(Player player, Color color, ref bool lighting);
 
-    public readonly unsafe partial struct LegacyHairShaderData
+    public unsafe sealed partial class LegacyHairShaderData
     {
         static readonly Dictionary<nint, HairColorMethod> methods = new();
 

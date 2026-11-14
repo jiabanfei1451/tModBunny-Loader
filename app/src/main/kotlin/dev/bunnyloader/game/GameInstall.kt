@@ -25,7 +25,9 @@ data class GameInstall(
     }
 
     companion object {
-        const val PACKAGE = "com.and.games505.TerrariaPaid"
+        // Pacote do binario integrado nesta build (Terraria 1.4.5.8.5,
+        // versionCode 301709). Nao e o pacote da Play (...TerrariaPaid).
+        const val PACKAGE = "com.and.games505.Terraria"
 
         fun locate(context: Context): GameInstall? {
             val pm = context.packageManager

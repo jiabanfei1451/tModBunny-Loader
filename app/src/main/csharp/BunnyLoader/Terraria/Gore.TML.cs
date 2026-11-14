@@ -5,7 +5,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly partial struct Gore
+public sealed partial class Gore
 {
     public ModGore? ModGore => GoreLoader.GetModGore(type);
 

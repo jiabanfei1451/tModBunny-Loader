@@ -120,14 +120,14 @@ internal static class PlayerWorldHooks
         return (uint)talk < 200u ? Main.npc[talk] : default;
     }
 
-    static Item[] Copy(GameArray<Item> items)
+    static Item[] Copy(GameRefArray<Item> items)
     {
         var copy = new Item[items.IsNull ? 0 : items.Length];
         for (int i = 0; i < copy.Length; i++) copy[i] = items[i];
         return copy;
     }
 
-    static void Back(GameArray<Item> items, Item[] copy)
+    static void Back(GameRefArray<Item> items, Item[] copy)
     {
         if (items.IsNull) return;
         int count = Math.Min(items.Length, copy.Length);
@@ -154,7 +154,7 @@ internal static class PlayerWorldHooks
         orig(self, itemToPickUp);
     }
 
-    static void OverrideHover(On_ItemSlot.orig_OverrideHover_ItemArray_int_int orig, GameArray<Item> inv, int context, int slot)
+    static void OverrideHover(On_ItemSlot.orig_OverrideHover_ItemArray_int_int orig, GameRefArray<Item> inv, int context, int slot)
     {
         Item[] copy = Copy(inv);
         bool handled = Any(Local, nameof(ModPlayer.HoverSlot), m => m.HoverSlot(copy, context, slot));
@@ -162,7 +162,7 @@ internal static class PlayerWorldHooks
         if (!handled) orig(inv, context, slot);
     }
 
-    static bool OverrideLeftClick(On_ItemSlot.orig_OverrideLeftClick orig, GameArray<Item> inv, int context, int slot)
+    static bool OverrideLeftClick(On_ItemSlot.orig_OverrideLeftClick orig, GameRefArray<Item> inv, int context, int slot)
     {
         if (ItemSlot.ShiftInUse)
         {
@@ -206,7 +206,7 @@ internal static class PlayerWorldHooks
             orig(self, telePos);
     }
 
-    static void HandleShopSlot(On_ItemSlot.orig_HandleShopSlot orig, GameArray<Item> inv, int slot, bool rightClickIsValid, bool leftClickIsValid)
+    static void HandleShopSlot(On_ItemSlot.orig_HandleShopSlot orig, GameRefArray<Item> inv, int slot, bool rightClickIsValid, bool leftClickIsValid)
     {
         Player player = Local;
         ShopScope? outer = shop;

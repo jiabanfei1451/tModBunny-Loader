@@ -79,7 +79,7 @@ internal static class PlayerCraftingHooks
                 for (int start = 0; start < items.Count; start += ChunkSize)
                 {
                     int count = Math.Min(ChunkSize, items.Count - start);
-                    var array = GameArray<Item>.New(Item.Class, count);
+                    var array = GameRefArray<Item>.New(Item.Class, count);
                     for (int i = 0; i < count; i++) array[i] = items[start + i];
                     InventoryStorage storage = InventoryStorage.New();
                     storage.maxItems = count;
@@ -101,7 +101,7 @@ internal static class PlayerCraftingHooks
     }
 
     static void ConsumeItemsFrom(On_CraftingRequests.orig_ConsumeItemsFrom_ItemArray_int_RequiredItemEntry_refint_List_int orig,
-        GameArray<Item> inventory, int maxItems, Recipe.RequiredItemEntry req, ref int toConsume, GameObject consumedItems, int chestIndex)
+        GameRefArray<Item> inventory, int maxItems, Recipe.RequiredItemEntry req, ref int toConsume, GameObject consumedItems, int chestIndex)
     {
         Source? source;
         lock (Sources) Sources.TryGetValue(inventory.Pointer, out source);

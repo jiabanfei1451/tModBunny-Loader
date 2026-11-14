@@ -6,9 +6,9 @@ using Terraria.ID;
 
 namespace Terraria;
 
-public readonly partial struct Mount
+public sealed partial class Mount
 {
-    public readonly partial struct MountDelegatesData
+    public sealed partial class MountDelegatesData
     {
         public Action<Vector2>? MinecartDust
         {

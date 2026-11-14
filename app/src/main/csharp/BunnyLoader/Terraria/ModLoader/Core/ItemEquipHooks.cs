@@ -194,7 +194,7 @@ internal static unsafe class ItemEquipHooks
         return true;
     }
 
-    static int PickItemMovementAction(On_ItemSlot.orig_PickItemMovementAction orig, GameArray<Item> inv, int context, int slot, Item checkItem,
+    static int PickItemMovementAction(On_ItemSlot.orig_PickItemMovementAction orig, GameRefArray<Item> inv, int context, int slot, Item checkItem,
                                       bool backwardCheck, int initialSlot)
     {
         int action = orig(inv, context, slot, checkItem, backwardCheck, initialSlot);
@@ -233,11 +233,6 @@ internal static unsafe class ItemEquipHooks
 
     internal static bool CanEquipAccessory(Item item, int slot, bool modded)
     {
-        if (AccessorySlotHooks.ScopeSlot is int scopeSlot)
-        {
-            slot = scopeSlot;
-            modded = true;
-        }
         try
         {
             Player player = Main.LocalPlayer;

@@ -18,35 +18,37 @@ namespace bl::runtime {
 
 namespace {
 
+// O cabecalho de um array IL2CPP: o laco compilado anda em bytes a partir dele.
 constexpr uint32_t kArrayHeader = 32;
 
-constexpr int kVanillaHeads = 81;
+constexpr int kVanillaHeads = 81;   // NPCHeadID.Count
 
 struct Head {
     int type;
     int variant;
     std::string texture, assetName;
     int slot = -1;
-    uint32_t asset = 0;
+    uint32_t asset = 0;   // gchandle do Asset<Texture2D>
 };
 
 std::mutex g_mx;
 std::vector<Head> g_heads;
+// type -> slot, lido a cada desenho de cabeca: montado na instalacao, so lido depois.
 std::unordered_map<int, int> g_slotOf;
 int g_vanillaHeads = 0;
-int g_headTotal = 0;
+int g_headTotal = 0;     // NpcHead com as de mod (as que carregaram)
 bool g_installed = false;
 
 struct Refs {
     bool tried = false, ok = false;
-    FieldInfo* npcHead = nullptr;
-    FieldInfo* cannotDraw = nullptr;
-    FieldInfo* headOrder = nullptr;
-    FieldInfo* mainInstance = nullptr;
-    FieldInfo* townManager = nullptr;
-    int32_t whoHoldsHead = -1;
-    int32_t hasRoom = -1;
-    const MethodInfo* headIndex = nullptr;
+    FieldInfo* npcHead = nullptr;          // TextureAssets.NpcHead
+    FieldInfo* cannotDraw = nullptr;       // NPCHeadID.Sets.CannotBeDrawnInHousingUI
+    FieldInfo* headOrder = nullptr;        // NPCHeadID.Sets.HeadListOrder
+    FieldInfo* mainInstance = nullptr;     // Main.instance
+    FieldInfo* townManager = nullptr;      // WorldGen.TownManager
+    int32_t whoHoldsHead = -1;             // Main._npcIndexWhoHoldsHeadIndex
+    int32_t hasRoom = -1;                  // TownRoomManager._hasRoom
+    const MethodInfo* headIndex = nullptr; // NPC.TypeToDefaultHeadIndex(int)
     Il2CppClass* headSets = nullptr;
 };
 
@@ -74,7 +76,7 @@ Refs& refs() {
     r.ok = r.npcHead && r.cannotDraw && r.headOrder && r.mainInstance && r.townManager &&
            r.whoHoldsHead >= 0 && r.hasRoom >= 0 && r.headIndex;
     if (!r.ok) {
-        BL_ERROR("mod town NPCs: references missing (NpcHead=%p HeadListOrder=%p TownManager=%p "
+        BL_ERROR("moradores de mod: refs faltando (NpcHead=%p HeadListOrder=%p TownManager=%p "
                  "_hasRoom=%d TypeToDefaultHeadIndex=%p)", (void*)r.npcHead, (void*)r.headOrder,
                  (void*)r.townManager, r.hasRoom, (void*)r.headIndex);
     }
@@ -93,6 +95,8 @@ Il2CppObject* readStaticObject(FieldInfo* f) {
     return obj;
 }
 
+// ---- NPC.TypeToDefaultHeadIndex ----
+
 using HeadIndexFn = int32_t (*)(int32_t, const MethodInfo*);
 HeadIndexFn g_origHeadIndex = nullptr;
 
@@ -101,9 +105,25 @@ int32_t hkHeadIndex(int32_t type, const MethodInfo* m) {
         auto it = g_slotOf.find(type);
         return it != g_slotOf.end() ? it->second : 0;
     }
+    // v41: o crash nativo (SIGSEGV, fault addr 0x0, libmonosgen) de v37..v40
+    // acontece logo depois de "TownRoomManager._hasRoom aumentada". Se o
+    // shadowhook nao preencheu o trampoline de origem (install encadeado),
+    // chamar g_origHeadIndex salta para 0x0 — exatamente esse fault addr.
+    // Nao deixar o processo morrer por isso: devolve a cabeca 0 e avisa uma vez.
+    if (!g_origHeadIndex) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            BL_ERROR("moradores de mod: TypeToDefaultHeadIndex sem origem (hook encadeado?)");
+        }
+        return 0;
+    }
     return g_origHeadIndex(type, m);
 }
 
+// ---- tabelas do tamanho de NPCHeadID.Count ----
+
+/** TextureAssets.NpcHead com as cabecas de mod no fim. */
 bool applyHeads() {
     const Refs& r = refs();
     Il2CppArray* heads = readStatic(r.npcHead);
@@ -124,12 +144,14 @@ bool applyHeads() {
 void growHeadTables(int total) {
     const Refs& r = refs();
     auto& a = il2cpp::api();
+    // Quem nao pode aparecer no menu de casas: false (pode) para as de mod.
     if (Il2CppArray* cannot = readStatic(r.cannotDraw);
         cannot && cannot->length < static_cast<uintptr_t>(total)) {
         if (Il2CppArray* bigger = TypeTables::resizedCopy(cannot, static_cast<uintptr_t>(total))) {
             a.field_static_set_value(r.cannotDraw, bigger);
         }
     }
+    // A ordem do menu de casas: as de mod no fim, uma vez cada.
     if (Il2CppArray* order = readStatic(r.headOrder)) {
         auto* ids = static_cast<int32_t*>(arrayData(order));
         std::vector<int> missing;
@@ -147,19 +169,26 @@ void growHeadTables(int total) {
             }
         }
     }
+    // Main.instance._npcIndexWhoHoldsHeadIndex: qual NPC mostra cada cabeca.
     if (Il2CppObject* main = readStaticObject(r.mainInstance)) {
         TypeTables::growInstanceTable(main, r.whoHoldsHead, g_vanillaHeads, total,
                                       "Main._npcIndexWhoHoldsHeadIndex");
     }
 }
 
+// ---- lacos e alocacoes do tamanho de NPCID.Count ----
+
 struct LoopPatch {
     const char* ns;
     const char* cls;
     const char* method;
-    bool loopEnd;
+    bool loopEnd;   // true: fim de laco em bytes (697 + 32); false: `mov #697` de um new[]
 };
 
+// Conferidos um a um (tools/disasm/scan_loops.py 729 e `mov #0x2b9`): os
+// lacos zeram ou percorrem Main.townNPCCanSpawn; as alocacoes sao bool[697]
+// indexados pelo tipo do morador (TownRoomManager._hasRoom, o
+// nearbyNPCsByType da felicidade).
 constexpr LoopPatch kLoopPatches[] = {
     {"Terraria", "WorldGen", "IsThereASpawnablePrioritizedTownNPC", true},
     {"Terraria", "WorldGen", "IsThereASpawnablePrioritizedTownNPC_Old", true},
@@ -168,7 +197,7 @@ constexpr LoopPatch kLoopPatches[] = {
     {"Terraria.GameContent", "TownRoomManager", ".ctor", false},
 };
 
-}
+} // namespace
 
 int setModNpcHead(int type, int variant, const std::string& texturePath, const std::string& assetName) {
     std::lock_guard<std::mutex> l(g_mx);
@@ -209,10 +238,10 @@ void prepareTownNpcs(int totalTypes) {
                 : patchMovImmediate(m, kVanillaNpcCount, static_cast<uint32_t>(totalTypes));
         }
         if (patched > 0) {
-            BL_DEBUG("mod town NPCs: %s.%s: %d swap(s) from %d to %d", p.cls, p.method, patched,
+            BL_DEBUG("moradores de mod: %s.%s: %d troca(s) de %d para %d", p.cls, p.method, patched,
                      kVanillaNpcCount, totalTypes);
         } else {
-            BL_ERROR("mod town NPCs: %s.%s: %d not found in the code; the mod town NPC goes without it",
+            BL_ERROR("moradores de mod: %s.%s: %d nao achado no codigo; morador de mod fica sem isso",
                      p.cls, p.method, kVanillaNpcCount);
         }
     }
@@ -224,14 +253,23 @@ void installTownNpcs(int totalTypes) {
     if (!r.ok) return;
     g_installed = true;
 
+    // A sala de cada morador (bool[NPCID.Count] no TownRoomManager do mundo).
+    // O construtor ja foi trocado (prepareTownNpcs); o que ja existe cresce aqui.
     if (Il2CppObject* rooms = readStaticObject(r.townManager)) {
         TypeTables::growInstanceTable(rooms, r.hasRoom, kVanillaNpcCount, totalTypes, "TownRoomManager._hasRoom");
     }
+    // v41: o crash nativo de v37..v40 tem esta como ultima linha do log. Os
+    // marcos abaixo dizem em qual passo seguinte o processo morre.
+    BL_DEBUG("v41: town 1/5 hasRoom ok (totalTypes=%d)", totalTypes);
 
+    // Ler campo estatico NAO roda o construtor estatico: sem isto as tabelas
+    // de NPCHeadID.Sets estavam nulas aqui, e o jogo as criava depois com o
+    // tamanho de fabrica (a cabeca de mod ficava fora do menu de casas).
     if (il2cpp::api().runtime_class_init && r.headSets) il2cpp::api().runtime_class_init(r.headSets);
+    BL_DEBUG("v41: town 2/5 headSets init ok");
     Il2CppArray* heads = readStatic(r.npcHead);
     if (!heads) {
-        BL_ERROR("mod town NPCs: TextureAssets.NpcHead is null; no mod heads");
+        BL_ERROR("moradores de mod: TextureAssets.NpcHead nulo; sem cabeca de mod");
         return;
     }
     std::lock_guard<std::mutex> l(g_mx);
@@ -239,6 +277,7 @@ void installTownNpcs(int totalTypes) {
     if (g_vanillaHeads != kVanillaHeads) {
         BL_ERROR("town NPC heads: the game has %d heads, expected %d", g_vanillaHeads, kVanillaHeads);
     }
+    BL_DEBUG("v41: town 3/5 heads ok (%d)", g_vanillaHeads);
     for (Head& h : g_heads) {
         int w = 0, hgt = 0;
         Il2CppObject* asset = content::loadTextureAsset(h.texture, nullptr, 0, h.assetName, &w, &hgt);
@@ -247,14 +286,16 @@ void installTownNpcs(int totalTypes) {
         if (h.variant == 0) g_slotOf[h.type] = h.slot;
     }
     g_headTotal = kVanillaHeads + static_cast<int>(g_heads.size());
+    BL_DEBUG("v41: town 4/5 texturas ok (%zu)", g_heads.size());
     if (!hook::install(r.headIndex, hkHeadIndex, &g_origHeadIndex)) {
-        BL_ERROR("mod town NPCs: no hook on NPC.TypeToDefaultHeadIndex; mod town NPCs have no head");
+        BL_ERROR("moradores de mod: sem hook em NPC.TypeToDefaultHeadIndex; morador de mod sem cabeca");
         return;
     }
     if (g_heads.empty()) return;
     applyHeads();
     growHeadTables(g_headTotal);
-    BL_DEBUG("mod town NPCs: %zu head(s) in TextureAssets.NpcHead (%d..%d)",
+    BL_DEBUG("v41: town 5/5 applyHeads+growHeadTables ok");
+    BL_DEBUG("moradores de mod: %zu cabeca(s) em TextureAssets.NpcHead (%d..%d)",
              g_heads.size(), g_vanillaHeads, g_headTotal - 1);
 }
 
@@ -267,13 +308,13 @@ void watchTownNpcs() {
         std::lock_guard<std::mutex> l(g_mx);
         if (heads && heads->length < static_cast<uintptr_t>(total)) {
             applyHeads();
-            BL_DEBUG("mod town NPCs: the game rebuilt TextureAssets.NpcHead; mod heads put back");
+            BL_DEBUG("moradores de mod: o jogo refez TextureAssets.NpcHead; cabecas de mod devolvidas");
         }
-        growHeadTables(total);
+        growHeadTables(total);   // so muda o que o jogo refez
     }
     if (Il2CppObject* rooms = readStaticObject(r.townManager)) {
         TypeTables::growInstanceTable(rooms, r.hasRoom, kVanillaNpcCount, npcTypeCount(), "TownRoomManager._hasRoom");
     }
 }
 
-}
+} // namespace bl::runtime

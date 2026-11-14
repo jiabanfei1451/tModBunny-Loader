@@ -7,7 +7,7 @@ using Terraria.ModLoader;
 
 namespace Terraria.ID;
 
-public readonly partial struct NPCID
+public sealed partial class NPCID
 {
     public static partial class Sets
     {
@@ -31,12 +31,17 @@ public readonly partial struct NPCID
 
         public bool ContainsKey(int npcNetId) => Table.ContainsKey(npcNetId);
 
-        public bool TryGetValue(int npcNetId, out Sets.NPCPortraitProvider value) => Table.TryGetValue(npcNetId, out value);
+        public bool TryGetValue(int npcNetId, out Sets.NPCPortraitProvider value)
+        {
+            bool found = Table.TryGetReference(npcNetId, out IntPtr pointer);
+            value = found ? new Sets.NPCPortraitProvider(pointer) : null!;
+            return found;
+        }
 
         public Sets.NPCPortraitProvider this[int npcNetId]
         {
             get => TryGetValue(npcNetId, out var value) ? value : throw new KeyNotFoundException($"NPCPortraits has no entry for NPC {npcNetId}");
-            set => Table.Set(npcNetId, value);
+            set => Table.SetReference(npcNetId, value.Pointer);
         }
 
         public void Add(int npcNetId, Sets.NPCPortraitProvider value)

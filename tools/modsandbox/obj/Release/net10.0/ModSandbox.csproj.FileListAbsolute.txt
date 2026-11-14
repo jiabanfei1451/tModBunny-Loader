@@ -1,0 +1,15 @@
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\bin\Release\net10.0\ModSandbox.deps.json
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\bin\Release\net10.0\ModSandbox.runtimeconfig.json
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\bin\Release\net10.0\ModSandbox.dll
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\bin\Release\net10.0\ModSandbox.pdb
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.GeneratedMSBuildEditorConfig.editorconfig
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.AssemblyInfoInputs.cache
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.AssemblyInfo.cs
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.csproj.CoreCompileInputs.cache
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.dll
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\refint\ModSandbox.dll
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.pdb
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.genruntimeconfig.cache
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ref\ModSandbox.dll
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.csproj.Up2Date
+D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\tools\modsandbox\obj\Release\net10.0\ModSandbox.sourcelink.json

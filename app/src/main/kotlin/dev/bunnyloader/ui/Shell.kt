@@ -56,6 +56,65 @@ class Shell(context: Context) {
     var sourceMessage by mutableStateOf<String?>(null)
         private set
 
+    // --- mods do tModLoader (`.tmod`) ---
+    //
+    // Lista separada de `packages` de propósito: um `.tmod` não tem uid nem
+    // manifesto do launcher, e misturá-lo na mesma lista faria o interruptor,
+    // a ordem de carga e a ficha do mod terem de conhecer dois formatos.
+
+    var tmlMods by mutableStateOf(emptyList<dev.bunnyloader.mods.TmlMod>())
+        private set
+    var tmlEnabled by mutableStateOf(emptySet<String>())
+        private set
+    /** Última mensagem do import de `.tmod`, para a tela mostrar. */
+    var tmlMessage by mutableStateOf<String?>(null)
+        private set
+
+    fun reloadTml() {
+        scope.launch {
+            val pair = withContext(Dispatchers.IO) {
+                val list = dev.bunnyloader.mods.TmlMods.list(sourceContext)
+                // Mantém o marcador do lado nativo igual ao enabled.json: o app
+                // pode ter sido fechado no meio de uma troca de interruptor.
+                dev.bunnyloader.mods.TmlFlow.writeMarker(sourceContext)
+                list to dev.bunnyloader.mods.TmlMods.enabled(sourceContext)
+            }
+            tmlMods = pair.first
+            tmlEnabled = pair.second
+        }
+    }
+
+    /**
+     * Liga/desliga um `.tmod`.
+     *
+     * Com pelo menos um ligado, o jogo tem de subir pelo caminho do tModLoader;
+     * o marcador em disco (`tml/enabled.json`) é o que o núcleo consulta, e é
+     * escrito antes de a tela responder — desligar o último volta ao caminho
+     * normal na partida seguinte.
+     */
+    fun setTmlEnabled(name: String, on: Boolean) {
+        tmlEnabled = if (on) tmlEnabled + name else tmlEnabled - name
+        scope.launch(Dispatchers.IO) {
+            dev.bunnyloader.mods.TmlMods.setEnabled(sourceContext, name, on)
+            dev.bunnyloader.mods.TmlFlow.writeMarker(sourceContext)
+        }
+    }
+
+    /** Importa um `.tmod` escolhido no seletor do sistema. */
+    fun importTml(uri: Uri, onResult: (Result<dev.bunnyloader.mods.TmlMod>) -> Unit) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { dev.bunnyloader.mods.TmlMods.import(sourceContext, uri) }
+            }
+            tmlMessage = result.fold(
+                onSuccess = { tr("InstalledCount", it.label) },
+                onFailure = { tr("Failed", it.message) },
+            )
+            if (result.isSuccess) reloadTml()
+            onResult(result)
+        }
+    }
+
     fun sourceTask(operation: () -> String) {
         if (sourceBusy) return
         sourceBusy = true
@@ -270,6 +329,12 @@ class Shell(context: Context) {
                 packageError = e.message ?: tr("PackagesPrepareFailed")
             }
             rescan()
+            // Os `.tmod` são lidos do disco junto com os pacotes, não quando a
+            // aba TML abre: a lista alimenta o contador da aba, o cartão do mod
+            // e — principalmente — o `TML/mode.txt` que o núcleo consulta para
+            // escolher o caminho do tModLoader. Lido só ao abrir a aba, quem
+            // tocava em Jogar sem passar por lá subia o jogo sem mod nenhum.
+            reloadTml()
         }
     }
 
@@ -502,6 +567,8 @@ class Shell(context: Context) {
     fun importPackage(uri: Uri, onResult: (Result<ModManifest>) -> Unit) {
         if (importProgress != null || pendingUpdate != null) return
         importProgress = 0f
+        val tag = dev.bunnyloader.mods.TmlMods.displayName(sourceContext, uri)
+        dev.bunnyloader.mods.ImportLog.add(sourceContext, "BL", "iniciando: $tag")
         scope.launch {
             var shown = -1
             val staged = installLock.withLock {
@@ -517,6 +584,10 @@ class Shell(context: Context) {
             }
             staged.fold(
                 onSuccess = { pkg ->
+                    dev.bunnyloader.mods.ImportLog.add(
+                        sourceContext, "BL",
+                        "ok: ${pkg.manifest.name} v${pkg.manifest.version} (${pkg.manifest.packType.label})"
+                    )
                     if (pkg.installed != null) {
                         importProgress = null
                         pendingResult = onResult
@@ -526,6 +597,9 @@ class Shell(context: Context) {
                     }
                 },
                 onFailure = {
+                    dev.bunnyloader.mods.ImportLog.add(
+                        sourceContext, "ERRO", "bl $tag: ${it.message ?: it.javaClass.simpleName}"
+                    )
                     importProgress = null
                     onResult(Result.failure(it))
                 },

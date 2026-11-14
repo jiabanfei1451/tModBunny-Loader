@@ -1,4 +1,5 @@
 #include "content/npcs/NpcTownHooks.h"
+#include "content/npcs/CodeMatch.h"
 #include "core/Log.h"
 #include "hook/Arm64Frame.h"
 #include "hook/HookManager.h"
@@ -182,7 +183,7 @@ bool entry(Il2CppClass* cls, const char* signature, void* replacement, void** or
 bool stage(Il2CppClass* cls, const char* signature, size_t offset, std::array<uint32_t, 4> expected, void* bridge, void** original) {
     auto* method = il2cpp::findMethodBySignature(cls, il2cpp::parseSignature(signature));
     auto* code = method ? static_cast<uint8_t*>(il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + offset, expected.data(), 16) != 0 || !hook::install(code + offset, bridge, original)) {
+    if (!code || !bl::npccode::sameBlock(code, offset, expected) || !hook::install(code + offset, bridge, original)) {
         BL_ERROR("Town NPC hooks: cannot hook %s at +0x%zx", signature, offset);
         return false;
     }
@@ -250,23 +251,23 @@ bool installNpcTownHooks(int32_t type, uint32_t flags, NpcTownCallback callback)
         if (!g_aiCode) return false;
         {
             constexpr std::array<uint32_t, 4> expected{0x1e270100, 0xaa1903e0, 0xaa1f03e1, 0x9416062b};
-            if (std::memcmp(static_cast<uint8_t*>(g_aiCode) + 0x6d84, expected.data(), 16) != 0) { BL_ERROR("Town NPC hooks: unexpected throw random caller"); return false; }
+            if (!bl::npccode::sameBlock(static_cast<uint8_t*>(g_aiCode), 0x6d84, expected)) { BL_ERROR("Town NPC hooks: unexpected throw random caller"); return false; }
         }
         {
             constexpr std::array<uint32_t, 4> expected{0xaa1903e0, 0x4ea91d21, 0xaa1f03e1, 0x9415f5c2};
-            if (std::memcmp(static_cast<uint8_t*>(g_aiCode) + 0xaf28, expected.data(), 16) != 0) { BL_ERROR("Town NPC hooks: unexpected shoot random caller"); return false; }
+            if (!bl::npccode::sameBlock(static_cast<uint8_t*>(g_aiCode), 0xaf28, expected)) { BL_ERROR("Town NPC hooks: unexpected shoot random caller"); return false; }
         }
         {
             constexpr std::array<uint32_t, 4> expected{0xaa1703e0, 0x4ea81d01, 0xaa1f03e1, 0x9415f376};
-            if (std::memcmp(static_cast<uint8_t*>(g_aiCode) + 0xb858, expected.data(), 16) != 0) { BL_ERROR("Town NPC hooks: unexpected magic random caller"); return false; }
+            if (!bl::npccode::sameBlock(static_cast<uint8_t*>(g_aiCode), 0xb858, expected)) { BL_ERROR("Town NPC hooks: unexpected magic random caller"); return false; }
         }
         {
             constexpr std::array<uint32_t, 4> expected{0x4ea91d23, 0x4eaa1d44, 0xaa1f03e0, 0x97ff214e};
-            if (std::memcmp(static_cast<uint8_t*>(g_aiCode) + 0xcb44, expected.data(), 16) != 0) { BL_ERROR("Town NPC hooks: unexpected aura light caller"); return false; }
+            if (!bl::npccode::sameBlock(static_cast<uint8_t*>(g_aiCode), 0xcb44, expected)) { BL_ERROR("Town NPC hooks: unexpected aura light caller"); return false; }
         }
         {
             constexpr std::array<uint32_t, 4> expected{0x2a1b03e4, 0x2a1b03e5, 0xaa1f03e6, 0x9404feff};
-            if (std::memcmp(static_cast<uint8_t*>(g_aiCode) + 0xbbdc, expected.data(), 16) != 0) { BL_ERROR("Town NPC hooks: unexpected swing stats caller"); return false; }
+            if (!bl::npccode::sameBlock(static_cast<uint8_t*>(g_aiCode), 0xbbdc, expected)) { BL_ERROR("Town NPC hooks: unexpected swing stats caller"); return false; }
         }
         std::array<uint32_t, 4> damage{0x1e220100, 0x1e200980, 0xaa1303e0, 0xaa1f03e1};
         g_failed = true;

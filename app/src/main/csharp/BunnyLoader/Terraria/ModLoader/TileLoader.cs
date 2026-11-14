@@ -339,17 +339,6 @@ public static unsafe partial class TileLoader
                 ItemHooks.Report(tile.FullName + ".SetStaticDefaults", e);
             }
         }
-        FitPylonSceneMetrics();
-    }
-
-    static void FitPylonSceneMetrics()
-    {
-        TeleportPylonsSystem pylons = Main.PylonSystem;
-        if (pylons.IsNull)
-            return;
-        SceneMetrics metrics = pylons._sceneMetrics;
-        if (!metrics.IsNull && !metrics._tileCounts.IsNull && metrics._tileCounts.Length < TileCount)
-            metrics._tileCounts = metrics._tileCounts.Resized(TileCount);
     }
 
     static void RoomNeed(GameArray<bool> flags, ref GameArray<int> list, int type)
@@ -410,17 +399,6 @@ public static unsafe partial class TileLoader
 
     public static string DefaultContainerName(int type, int frameX, int frameY) =>
         GetTile(type) is ModTile tile && tile.DefaultContainerName(frameX, frameY) is { IsNull: false } name ? name.Value ?? string.Empty : string.Empty;
-
-    public static bool CanExplode(int i, int j)
-    {
-        int type = Main.tile[i, j].type;
-        if (GetTile(type)?.CanExplode(i, j) == false)
-            return false;
-        foreach (GlobalTile g in Hooks.CanExplode)
-            if (!g.CanExplode(i, j, type))
-                return false;
-        return true;
-    }
 
     public static bool IsLockedChest(int i, int j, int type) => GetTile(type)?.IsLockedChest(i, j) ?? false;
 

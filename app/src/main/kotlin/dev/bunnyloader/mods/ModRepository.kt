@@ -314,16 +314,10 @@ class ModRepository(private val context: Context) {
         list().filter { !it.isOutdated && isEnabled(it.uid) }.mapNotNull { m -> nativeEntry(m)?.let { "${m.uid}=$it" } }
 
     fun enabledSourceBuilds(): List<SourceBuild> {
-        val mods = list().filter { !it.isOutdated && isEnabled(it.uid) && it.packType == PackType.MOD }
-        val byUid = mods.associateBy { it.uid }
-        val order = ModOrder.dependenciesFirst(
-            mods.map { it.uid },
-            mods.associate { it.uid to it.id },
-            mods.associate { it.uid to it.dependencies },
-        )
         val outputs = mutableListOf<Pair<ModManifest, String>>()
         val builds = mutableListOf<SourceBuild>()
-        for (m in order.map(byUid::getValue)) {
+        for (m in list()) {
+            if (m.isOutdated || !isEnabled(m.uid) || m.packType != PackType.MOD) continue
             val dir = dirOf(m.uid) ?: continue
             val entry = entryOf(dir) ?: continue
             val source = entry.extension.equals("cs", ignoreCase = true)
@@ -340,6 +334,8 @@ class ModRepository(private val context: Context) {
     private fun nativeEntry(m: ModManifest): String? = when (m.packType) {
         PackType.TEXTURE -> "@texture"
         PackType.FONT -> "@font"
+        // Só existe na lista da tela: um `.bl` nunca se declara TML.
+        PackType.TML -> null
         PackType.MOD -> entryName(m.uid)
     }
 

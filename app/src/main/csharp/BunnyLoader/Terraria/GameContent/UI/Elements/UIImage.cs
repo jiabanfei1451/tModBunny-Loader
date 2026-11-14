@@ -9,7 +9,12 @@ namespace Terraria.GameContent.UI.Elements;
 public class UIImage : UIElement
 {
     Asset<Texture2D>? texture;
-    Texture2D nonReloadingTexture;
+    // `Texture2D` e uma CLASSE proxy (nao struct): `default` e `null`. O
+    // `CurrentTexture()` original chamava `.IsNull` nela e estourava
+    // NullReferenceException na PRIMEIRA imagem de UI construida no Load do
+    // mod (Fargowiltas/StatSheetUI.OnInitialize) — o Load inteiro era dado
+    // como falho e nada mais era registrado. Nao pode ser non-nullable.
+    Texture2D? nonReloadingTexture;
     bool measured;
     public float ImageScale = 1f;
     public float Rotation;
@@ -32,7 +37,7 @@ public class UIImage : UIElement
     public void SetImage(Asset<Texture2D> value)
     {
         texture = value;
-        nonReloadingTexture = default;
+        nonReloadingTexture = null;
         measured = false;
         Measure();
     }
@@ -50,8 +55,8 @@ public class UIImage : UIElement
         if (measured || !AllowResizingDimensions) return false;
         try
         {
-            Texture2D tex = CurrentTexture();
-            if (tex.IsNull) return false;
+            Texture2D? tex = CurrentTexture();
+            if (tex is null || tex.IsNull) return false;
             Width.Set(tex.Width, 0f);
             Height.Set(tex.Height, 0f);
             measured = true;
@@ -63,13 +68,27 @@ public class UIImage : UIElement
         }
     }
 
-    Texture2D CurrentTexture() => !nonReloadingTexture.IsNull ? nonReloadingTexture : texture != null ? texture.Value : default;
+    Texture2D? CurrentTexture()
+    {
+        if (nonReloadingTexture is not null) return nonReloadingTexture;
+        if (texture is null) return null;
+        try
+        {
+            // Fora da thread do jogo o Asset ainda nao pode ser carregado —
+            // isso e layout de UI, nao um erro fatal (o Load do mod continua).
+            return texture.Value;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     protected override void DrawSelf(SpriteBatch spriteBatch)
     {
         if (Measure()) Recalculate();
-        Texture2D tex = CurrentTexture();
-        if (tex.IsNull) return;
+        Texture2D? tex = CurrentTexture();
+        if (tex is null || tex.IsNull) return;
         CalculatedStyle d = GetDimensions();
         if (ScaleToFit)
         {

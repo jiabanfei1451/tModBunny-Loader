@@ -15,14 +15,14 @@ internal static class GameTipHooks
         var defaults = self._tipsDefault;
         var gamepad = self._tipsGamepad;
         var keyboard = self._tipsKeyboard;
-        LocalizedText[] defaultTexts = defaults, gamepadTexts = gamepad, keyboardTexts = keyboard;
+        LocalizedText[] defaultTexts = ToManaged(defaults), gamepadTexts = ToManaged(gamepad), keyboardTexts = ToManaged(keyboard);
         var tips = new List<GameTipData>();
         foreach (LocalizedText text in defaultTexts) tips.Add(new(text));
         foreach (LocalizedText text in gamepadTexts) tips.Add(new(text));
         foreach (LocalizedText text in keyboardTexts) tips.Add(new(text));
         int nativeCount = tips.Count;
         foreach (Mod mod in Host.Mods)
-            foreach (LocalizedText text in (LocalizedText[])Language.FindAll((key, value) => key != null && key.StartsWith($"Mods.{mod.Name}.GameTips.", StringComparison.Ordinal)))
+            foreach (LocalizedText text in Language.FindAll((key, value) => key != null && key.StartsWith($"Mods.{mod.Name}.GameTips.", StringComparison.Ordinal)))
                 tips.Add(new(text, mod));
         foreach (ModSystem system in SystemLoader.With(nameof(ModSystem.ModifyGameTipVisibility)))
         {
@@ -40,10 +40,25 @@ internal static class GameTipHooks
         using var pinDefault = new GameHandle(defaults.Pointer);
         using var pinPad = new GameHandle(gamepad.Pointer);
         using var pinKeys = new GameHandle(keyboard.Pointer);
-        self._tipsDefault = GameArrayBuilder.Create<LocalizedText>(filtered.ToArray());
-        if (!gamepad.IsNull) self._tipsGamepad = GameArrayBuilder.Create<LocalizedText>(pads.ToArray());
-        if (!keyboard.IsNull) self._tipsKeyboard = GameArrayBuilder.Create<LocalizedText>(keys.ToArray());
+        self._tipsDefault = ToNative(filtered.ToArray());
+        if (!gamepad.IsNull) self._tipsGamepad = ToNative(pads.ToArray());
+        if (!keyboard.IsNull) self._tipsKeyboard = ToNative(keys.ToArray());
         try { orig(self, time); }
         finally { self._tipsDefault = defaults; self._tipsGamepad = gamepad; self._tipsKeyboard = keyboard; }
+    }
+
+    static LocalizedText[] ToManaged(GameRefArray<LocalizedText> array)
+    {
+        if (array.IsNull) return Array.Empty<LocalizedText>();
+        var result = new LocalizedText[array.Length];
+        for (int i = 0; i < result.Length; i++) result[i] = array[i];
+        return result;
+    }
+
+    static GameRefArray<LocalizedText> ToNative(LocalizedText[] items)
+    {
+        var array = GameRefArray<LocalizedText>.New(LocalizedText.Class, items.Length);
+        for (int i = 0; i < items.Length; i++) array[i] = items[i];
+        return array;
     }
 }

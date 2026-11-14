@@ -3,7 +3,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.Map;
 
-public readonly partial struct IMapLayer
+public sealed partial class IMapLayer
 {
     public static IMapLayer Digtoise => Find(DigtoiseMapLayer.Class);
     public static IMapLayer BossBag => Find(BossBagMapLayer.Class);

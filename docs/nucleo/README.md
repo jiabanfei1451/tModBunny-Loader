@@ -79,7 +79,7 @@ sequenceDiagram
     participant S as probe (core thread)
     participant G as game thread
     A->>A: eligibility (Terraria installed, or it closes)
-    A->>U: System.loadLibrary: main, unity, il2cpp
+    A->>U: System.loadLibrary: c++_shared, main, unity, il2cpp
     A->>B: System.loadLibrary("bunny")
     B->>B: constructor: hooks il2cpp_init, starts the probe
     A->>B: NativeBridge.init(config: mods folder, enabled ones, log)
@@ -96,8 +96,8 @@ sequenceDiagram
 
 In order:
 
-1. **Kotlin.** `GameActivity` checks eligibility (Terraria installed on the
-   device), checks that the runtime is in the
+1. **Kotlin.** `GameActivity` checks eligibility (the official Terraria from
+   Google Play installed on the device), checks that the runtime is in the
    build, loads the game's `.so` files by name and, after them, `libbunny.so`.
 2. **`libbunny`'s constructor.** `bl_on_load`
    ([`boot/Entry.cpp`](../../app/src/main/cpp/boot/Entry.cpp)) installs the
@@ -259,16 +259,6 @@ the native stages and filters around hot game code, and the hooks themselves.
    `NativeApi`, a table of function pointers that only grows at the end; its
    size is checked when the runtime starts, so a `BunnyLoader.dll` from
    another build is refused instead of calling the wrong function.
-7. **No C++ exceptions, anywhere.** Nothing compiles with `-fexceptions`. A
-   game exception comes from `libil2cpp`'s `__cxa_throw` with libgcc's
-   unwinder; a `catch` in `libbunny`, or a `libbunny` frame with a pending
-   destructor, would hand it to `libbunny`'s personality, which reads the
-   context as LLVM libunwind's and kills the process. Code that calls the game
-   and may see an exception goes through `il2cpp::guardedCall`
-   (`il2cpp/GuardedCall.S`), which needs no unwinder. A native hook in the
-   middle of a game stack has no personality and is simply unwound through.
-8. **No comments in the code.** The why lives in these docs and in the
-   commit history; logs and errors are in English.
 
 ## The log
 

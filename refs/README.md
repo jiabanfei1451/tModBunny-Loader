@@ -26,7 +26,7 @@ Variables: `ADB_SERIAL`, `IL2CPPDUMPER`, `PKG`, `ABI`.
 
 1. Find and pull the APK:
    ```bash
-   adb shell pm path com.and.games505.TerrariaPaid
+   adb shell pm path com.and.games505.Terraria
    adb pull <path>/base.apk refs/base.apk
    ```
 2. Extract (the APK is a zip):
@@ -64,7 +64,7 @@ refs/
 
 | Item | Value |
 |---|---|
-| Package | `com.and.games505.TerrariaPaid` |
+| Package | `com.and.games505.Terraria` |
 | versionName | **1.4.5.8.6** |
 | versionCode | **301720** |
 | minSdk | 23 |

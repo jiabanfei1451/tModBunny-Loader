@@ -4,9 +4,9 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.ID;
 
-public readonly partial struct ItemID
+public sealed partial class ItemID
 {
-    public readonly partial struct Sets
+    public sealed partial class Sets
     {
         static bool[] catchingTools = Array.Empty<bool>();
         static bool[] golfClubs = Array.Empty<bool>();

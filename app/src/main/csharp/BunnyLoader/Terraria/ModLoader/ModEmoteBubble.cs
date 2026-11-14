@@ -21,7 +21,7 @@ public abstract class ModEmoteBubble : ModType<EmoteBubble, ModEmoteBubble>, ILo
 
     protected sealed override void Register() => EmoteBubbleLoader.Add(this);
 
-    protected override EmoteBubble CreateTemplateEntity() => default;
+    protected override EmoteBubble CreateTemplateEntity() => TemplateEntity.Create<EmoteBubble>(EmoteBubble.Class);
 
     public void AddToCategory(int categoryId) => EmoteBubbleLoader.AddToCategory(this, categoryId);
 

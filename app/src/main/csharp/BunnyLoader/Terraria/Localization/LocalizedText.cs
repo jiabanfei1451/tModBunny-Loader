@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.Localization;
 
-public readonly partial struct LocalizedText
+public sealed partial class LocalizedText
 {
     static readonly Dictionary<(string Key, string Value), GameHandle> Kept = new();
     public string Format(params object?[] args) => Formatting.Apply(Value ?? "", args);

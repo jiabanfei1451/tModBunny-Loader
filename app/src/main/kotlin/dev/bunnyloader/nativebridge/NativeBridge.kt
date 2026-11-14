@@ -4,6 +4,12 @@ package dev.bunnyloader.nativebridge
 class NativeConfig(
     @JvmField val gameLibDir: String,
     @JvmField val modsDir: String,
+    /**
+     * Onde ficam os mods do tModLoader (`.tmod` já extraídos, um por pasta).
+     * Vazio desliga o fluxo TML. O nativo lê de lá o `mode.txt` com os nomes
+     * habilitados e carrega `<pasta>/<Nome>.dll` como qualquer outro mod.
+     */
+    @JvmField val tmlDir: String = "",
     /** Um por mod habilitado, no formato `uid=entry`. Ver ModRepository. */
     @JvmField val enabledMods: Array<String>,
     @JvmField val logPath: String,

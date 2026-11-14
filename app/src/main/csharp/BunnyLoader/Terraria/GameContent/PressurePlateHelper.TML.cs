@@ -3,7 +3,7 @@ using Microsoft.Xna.Framework;
 
 namespace Terraria.GameContent;
 
-public readonly unsafe partial struct PressurePlateHelper
+public unsafe sealed partial class PressurePlateHelper
 {
     public static bool IsPressed(Point location) => new GameDictionary(PressurePlatesPressed_).ContainsKey(location);
 }

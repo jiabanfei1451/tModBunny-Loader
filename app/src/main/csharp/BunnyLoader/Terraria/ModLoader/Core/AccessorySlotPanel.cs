@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
@@ -28,7 +28,7 @@ internal static unsafe class AccessorySlotPanel
     static TransactionButton_Layout button;
     static nint buttonSource;
     static float buttonScale = 1f;
-    static GameArray<Item> accessoryTemp, dyeTemp, accessoryOrigin, dyeOrigin;
+    static GameRefArray<Item> accessoryTemp, dyeTemp, accessoryOrigin, dyeOrigin;
     static Item air;
     static bool drawingMod;
 
@@ -57,7 +57,6 @@ internal static unsafe class AccessorySlotPanel
         On_GUIEquipment.DrawUnequipButton += DrawUnequipButton;
         On_GUIEquipment.DrawHideShowButton += DrawHideShowButton;
         On_GUIEquipment.DrawShareButton += DrawShareButton;
-        On_Main.MouseText_DrawItemTooltip_GetLinesInfo += TooltipLines;
     }
 
     static nint Keep(nint pointer)
@@ -140,7 +139,7 @@ internal static unsafe class AccessorySlotPanel
 
     static bool modOver;
 
-    static void ItemOverHook(On_GUIEquipment.orig_ItemOver orig, GUIEquipment self, BunnyLoader.Interop.GameArray<Item> inv, int index, GUIEquipment.EquipmentItemType equipmentType, int itemContext, ref int itemDragStart)
+    static void ItemOverHook(On_GUIEquipment.orig_ItemOver orig, GUIEquipment self, BunnyLoader.Interop.GameRefArray<Item> inv, int index, GUIEquipment.EquipmentItemType equipmentType, int itemContext, ref int itemDragStart)
     {
         if (!modOver && selectedCell != null && Main.mouseLeft)
             ClearSelection();
@@ -403,15 +402,15 @@ internal static unsafe class AccessorySlotPanel
             return;
         air = Item.New();
         Keep(air.Pointer);
-        accessoryTemp = GameArray<Item>.New(Item.Class, 20);
+        accessoryTemp = GameRefArray<Item>.New(Item.Class, 20);
         Keep(accessoryTemp.Pointer);
-        dyeTemp = GameArray<Item>.New(Item.Class, 10);
+        dyeTemp = GameRefArray<Item>.New(Item.Class, 10);
         Keep(dyeTemp.Pointer);
-        accessoryOrigin = GameArray<Item>.New(Item.Class, 20);
+        accessoryOrigin = GameRefArray<Item>.New(Item.Class, 20);
         Keep(accessoryOrigin.Pointer);
-        dyeOrigin = GameArray<Item>.New(Item.Class, 10);
+        dyeOrigin = GameRefArray<Item>.New(Item.Class, 10);
         Keep(dyeOrigin.Pointer);
-        foreach (GameArray<Item> array in new[] { accessoryTemp, dyeTemp, accessoryOrigin, dyeOrigin })
+        foreach (GameRefArray<Item> array in new[] { accessoryTemp, dyeTemp, accessoryOrigin, dyeOrigin })
             for (int i = 0; i < array.Length; i++) array[i] = air;
     }
 
@@ -675,7 +674,7 @@ internal static unsafe class AccessorySlotPanel
         ControlAnchor.SetGridItemRegion(region);
         try
         {
-            Swapped(player, slots, slot, column, () => WithoutLoadoutShare(column, () =>
+            Swapped(player, slots, slot, column, () =>
             {
                 switch (column)
                 {
@@ -683,7 +682,7 @@ internal static unsafe class AccessorySlotPanel
                     case Vanity: equipment.AccessoryVanityDrawImp(vanillaGrid[Vanity], 0, position, scale); break;
                     default: equipment.AccessoryDyeDrawImp(vanillaGrid[Dye], 0, position, scale); break;
                 }
-            }));
+            });
         }
         finally
         {
@@ -700,7 +699,7 @@ internal static unsafe class AccessorySlotPanel
     {
         if (accessoryTemp.IsNull)
             return;
-        foreach (GameArray<Item> array in new[] { accessoryOrigin, dyeOrigin, accessoryTemp, dyeTemp })
+        foreach (GameRefArray<Item> array in new[] { accessoryOrigin, dyeOrigin, accessoryTemp, dyeTemp })
             for (int i = 0; i < array.Length; i++)
             {
                 if (array[i].IsNull || array[i].IsAir) continue;
@@ -742,7 +741,7 @@ internal static unsafe class AccessorySlotPanel
         }
     }
 
-    static GameArray<Item> StorageOf(ModAccessorySlotPlayer slots, int column) => column == Dye ? slots.exDyesAccessory : slots.exAccessorySlot;
+    static GameRefArray<Item> StorageOf(ModAccessorySlotPlayer slots, int column) => column == Dye ? slots.exDyesAccessory : slots.exAccessorySlot;
 
     static int IndexOf(ModAccessorySlotPlayer slots, int slot, int column) => column == Vanity ? slot + slots.SlotCount : slot;
 
@@ -763,19 +762,6 @@ internal static unsafe class AccessorySlotPanel
         player.QuickSpawnItem(player.GetSource_FromThis(), item);
     }
 
-    static void WithoutLoadoutShare(int column, Action call)
-    {
-        GameArray<bool> share = ItemSlot.canLoadoutShareAt;
-        int context = ContextOf(column);
-        bool shared = !share.IsNull && (uint)context < (uint)share.Length && share[context];
-        if (shared) share[context] = false;
-        try { call(); }
-        finally
-        {
-            if (shared) share[context] = true;
-        }
-    }
-
     static int ContextOf(int column) => column switch
     {
         Functional => ItemSlot.Context.EquipAccessory,
@@ -794,8 +780,8 @@ internal static unsafe class AccessorySlotPanel
         modOver = true;
         try
         {
-            AccessorySlotHooks.Scope(slot, () => WithoutLoadoutShare(column, () =>
-                equipment.ItemOver(column == Dye ? dyeTemp : accessoryTemp, proxy, TypeOf(column), ContextOf(column), ref dragStart)));
+            AccessorySlotHooks.Scope(slot, () =>
+                equipment.ItemOver(column == Dye ? dyeTemp : accessoryTemp, proxy, TypeOf(column), ContextOf(column), ref dragStart));
         }
         finally { modOver = false; }
         if (dragStart == proxy) dragCell = cell;
@@ -823,8 +809,8 @@ internal static unsafe class AccessorySlotPanel
         dragCell = null;
         EnsureTemps();
         RescueReturned(slots);
-        GameArray<Item> origin = column == Dye ? dyeOrigin : accessoryOrigin;
-        GameArray<Item> storage = StorageOf(slots, column);
+        GameRefArray<Item> origin = column == Dye ? dyeOrigin : accessoryOrigin;
+        GameRefArray<Item> storage = StorageOf(slots, column);
         int index = IndexOf(slots, slot, column), proxy = ProxyOf(column);
         origin[proxy] = storage[index];
         AccessorySlotHooks.Scope(slot, () => ItemSlot.LeftClick(origin, ContextOf(column), proxy));
@@ -865,38 +851,7 @@ internal static unsafe class AccessorySlotPanel
 
     static void DrawHideShowButton(On_GUIEquipment.orig_DrawHideShowButton orig, GUIEquipment self) => WithSelected(self, () => orig(self));
 
-    static void DrawShareButton(On_GUIEquipment.orig_DrawShareButton orig, GUIEquipment self)
-    {
-        if (selectedCell == null || Main.gameMenu) orig(self);
-    }
-
-    static void TooltipLines(On_Main.orig_MouseText_DrawItemTooltip_GetLinesInfo orig, Item item, ref int yoyoLogo, ref int researchLine, ref int materialsLine, float oldKB, ref int numLines,
-        GameArray<GameString> toolTipLine, GameArray<bool> preFixLine, GameArray<bool> badPreFixLine, ref int setBonusLine, ref Color setBonusColour, ref int sharedLine)
-    {
-        orig(item, ref yoyoLogo, ref researchLine, ref materialsLine, oldKB, ref numLines, toolTipLine, preFixLine, badPreFixLine, ref setBonusLine, ref setBonusColour, ref sharedLine);
-        if (selectedCell == null && overCell == null || item.IsNull || sharedLine < 0 || sharedLine >= numLines ||
-            item.tooltipContext is not (ItemSlot.Context.EquipAccessory or ItemSlot.Context.EquipAccessoryVanity or ItemSlot.Context.EquipDye) ||
-            item.tooltipSlot is not (AccessorySlotHooks.FunctionalProxySlot or AccessorySlotHooks.VanityProxySlot))
-            return;
-        int removed = sharedLine;
-        for (int k = removed; k < numLines - 1; k++)
-        {
-            toolTipLine[k] = toolTipLine[k + 1];
-            preFixLine[k] = preFixLine[k + 1];
-            badPreFixLine[k] = badPreFixLine[k + 1];
-        }
-        numLines--;
-        sharedLine = -1;
-        Shift(ref yoyoLogo, removed);
-        Shift(ref researchLine, removed);
-        Shift(ref materialsLine, removed);
-        Shift(ref setBonusLine, removed);
-    }
-
-    static void Shift(ref int line, int removed)
-    {
-        if (line > removed) line--;
-    }
+    static void DrawShareButton(On_GUIEquipment.orig_DrawShareButton orig, GUIEquipment self) => WithSelected(self, () => orig(self));
 
     static void DrawCustomLocations(GUIEquipment equipment, Player player, ModAccessorySlotPlayer slots)
     {

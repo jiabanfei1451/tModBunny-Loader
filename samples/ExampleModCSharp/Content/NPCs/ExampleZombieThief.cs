@@ -65,7 +65,6 @@ namespace ExampleMod.Content.NPCs
             foreach (WorldItem item in Main.item) {
                 if (item.active && !item.beingGrabbed && item.type == ModContent.ItemType<ExampleItem>() && hitbox.Intersects(item.Hitbox)) {
                     StolenItems += item.stack;
-                    item.TurnToAir();
 
                     NetMessage.SendData(MessageID.SyncItem, number: item.whoAmI);
 

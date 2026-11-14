@@ -112,8 +112,10 @@ internal static unsafe class ItemHooks
     {
         lock (Gate)
         {
-            if (Installed.Add(key)) install();
+            if (!Installed.Add(key)) return;
         }
+        Log.Info($"hook: once '{key}'");
+        install();
     }
 
     internal static Hook? Raw(string signature, IntPtr replacement) => Raw("Terraria", "Player", signature, replacement);
@@ -129,25 +131,6 @@ internal static unsafe class ItemHooks
             Log.Error($"item hooks: {type}.{signature} is not hooked: {e.Message}");
             return null;
         }
-    }
-
-    internal static Hook? Gated(GameClass type, string signature, IntPtr replacement, int arg, int pointerOffset, int fieldOffset, int fieldSize)
-    {
-        try
-        {
-            return Hook.InstallGated(type, signature, replacement, arg, pointerOffset, fieldOffset, fieldSize);
-        }
-        catch (Exception e)
-        {
-            Log.Error($"item hooks: {type.FullName}.{signature} is not hooked: {e.Message}");
-            return null;
-        }
-    }
-
-    internal static int FieldOffset(GameClass type, string field)
-    {
-        int slot = -1;
-        return GameInterop.Offset(ref slot, type, field);
     }
 
     internal static void Report(string who, Exception e)
@@ -212,7 +195,14 @@ internal static unsafe class ItemHooks
         try
         {
             var player = new Player(self);
-            if (UseItem(new Item(itemPointer), player) != true) return;
+            // v64: so cancela quando o mod devolve false EXPLICITO. Quando
+            // nenhum mod sobrescreve UseItem o retorno e null — no tModLoader
+            // isso significa "uso normal", e o tempo do item tem de ser
+            // aplicado. Antes, null caia no != true e o item NUNCA recebia
+            // itemTime: um item com useAnimation=10 voltava a ser usavel a
+            // cada 10 quadros (~6x/s) em vez de a cada useTime=100, e cada
+            // uso disparava de novo o efeito do mod (era o "gera NPC sozinho").
+            if (UseItem(new Item(itemPointer), player) == false) return;
             lock (UsedBy) UsedBy[player.whoAmI] = itemPointer;
         }
         catch (Exception e) { Report("UseItem", e); }
@@ -220,6 +210,10 @@ internal static unsafe class ItemHooks
 
     static bool? UseItem(Item item, Player player)
     {
+        // v63: espelho do lado "uso". Comparar esta linha com a de
+        // ItemCheck_Shoot diz se o toque chega a usar o item mas nao chega ao
+        // Shoot (caminho de entrada diferente) ou se nem chega a usar.
+        Diag63.Once("use:" + item.type, 120, () => $"[v63] UseItem rodou {Diag63.Name(item)} pid={player.whoAmI} ctrlUse={player.controlUseItem} ctrlTile={player.controlUseTile}");
         bool? result = null;
         foreach (GlobalItem? g in ItemLoader.Globals.Slots(item) ?? Array.Empty<GlobalItem?>())
         {

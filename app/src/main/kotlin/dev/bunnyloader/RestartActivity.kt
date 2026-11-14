@@ -30,8 +30,8 @@ import java.io.File
  * sumir (`/proc/<pid>`) antes de abrir a GameActivity, para ela nascer num
  * processo novo, com a Unity, o IL2CPP e o motor JS do zero.
  *
- * Tela preta com a animação de carregamento: é o que aparece entre o jogo
- * fechar e a Unity desenhar o primeiro quadro.
+ * Tela preta com o girassol de carregamento do jogo: é o que aparece entre o
+ * jogo fechar e a Unity desenhar o primeiro quadro.
  */
 class RestartActivity : Activity() {
 
@@ -64,8 +64,7 @@ class RestartActivity : Activity() {
         box.gravity = Gravity.CENTER
         box.setBackgroundColor(Color.BLACK)
         val density = resources.displayMetrics.density
-        val side = (84 * density).toInt()
-        box.addView(LoadingStrip(this), LinearLayout.LayoutParams(side, side))
+        box.addView(Sunflower(this), LinearLayout.LayoutParams((52 * 1.6f * density).toInt(), (54 * 1.6f * density).toInt()))
         val label = TextView(this)
         label.text = "Reiniciando..."
         label.setTextColor(Color.WHITE)
@@ -76,8 +75,8 @@ class RestartActivity : Activity() {
         return box
     }
 
-    /** A animação de carregamento: spr_loading, uma tira vertical de quadros quadrados. */
-    internal class LoadingStrip(context: Context) : View(context) {
+    /** O girassol do jogo abrindo e fechando: spr_loading, 19 quadros de 52x54. */
+    internal class Sunflower(context: Context) : View(context) {
         private val strip: Bitmap? = runCatching {
             BitmapFactory.decodeResource(context.resources, R.drawable.spr_loading,
                 BitmapFactory.Options().apply { inScaled = false })
@@ -89,12 +88,11 @@ class RestartActivity : Activity() {
 
         override fun onDraw(canvas: Canvas) {
             val s = strip ?: return
-            val side = s.width
-            val y = frame * side
-            src.set(0, y, side, y + side)
-            dst.set(0, 0, width, height)
+            val y = frame * FRAME_H
+            src.set(0, y, FRAME_W, minOf(s.height, y + FRAME_H))
+            dst.set(0, 0, width, height * src.height() / FRAME_H)
             canvas.drawBitmap(s, src, dst, paint)
-            frame = (frame + 1) % (s.height / side)
+            frame = (frame + 1) % FRAMES
             postInvalidateDelayed(FRAME_MS)
         }
     }
@@ -105,6 +103,9 @@ class RestartActivity : Activity() {
         private const val POLL_MS = 40L
         /** Se ele não sumir nesse tempo, abre assim mesmo. */
         private const val WAIT_MS = 5000L
-        private const val FRAME_MS = 125L
+        private const val FRAMES = 19
+        private const val FRAME_W = 52
+        private const val FRAME_H = 54
+        private const val FRAME_MS = 60L
     }
 }

@@ -1,4 +1,5 @@
 #include "content/npcs/NpcLootHooks.h"
+#include "content/npcs/CodeMatch.h"
 #include "core/Log.h"
 #include "hook/Arm64Frame.h"
 #include "hook/HookManager.h"
@@ -31,7 +32,7 @@ thread_local std::vector<int32_t> t_hearts;
 bool stage(Il2CppClass* npc, const char* signature, size_t offset, std::array<uint32_t, 4> expected, void* replacement, void** original) {
     const MethodInfo* method = il2cpp::findMethodBySignature(npc, il2cpp::parseSignature(signature));
     auto* code = method ? static_cast<uint8_t*>(il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + offset, expected.data(), 16) != 0 || !hook::install(code + offset, replacement, original)) {
+    if (!code || !bl::npccode::sameBlock(code, offset, expected) || !hook::install(code + offset, replacement, original)) {
         BL_ERROR("NPC loot: cannot hook %s at +0x%zx", signature, offset);
         return false;
     }
@@ -41,7 +42,7 @@ bool stage(Il2CppClass* npc, const char* signature, size_t offset, std::array<ui
 bool target(Il2CppClass* npc, const char* signature, size_t offset, std::array<uint32_t, 4> expected, void** address) {
     const MethodInfo* method = il2cpp::findMethodBySignature(npc, il2cpp::parseSignature(signature));
     auto* code = method ? static_cast<uint8_t*>(il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + offset, expected.data(), 16) != 0) return false;
+    if (!code || !bl::npccode::sameBlock(code, offset, expected)) return false;
     *address = code + offset;
     return true;
 }

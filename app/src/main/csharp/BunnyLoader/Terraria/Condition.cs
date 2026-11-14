@@ -6,29 +6,18 @@ using Terraria.Localization;
 
 namespace Terraria;
 
+/// <summary>
+/// Porte fiel de <c>patches/tModLoader/Terraria/Condition.cs</c> do tML 1.4.5,
+/// restrito à superfície que este dump do jogo expõe.
+///
+/// Os mods acessam esses campos por <c>ldsfld</c>; o IlPatcher reescreve para
+/// <c>call __get_X</c>, então TODO campo público do original precisa existir
+/// aqui ou o mod quebra com MissingMethodException em tempo de execução.
+/// </summary>
 public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
 {
-    public Condition(string LocalizationKey, Func<bool> Predicate) : this(Language.GetOrRegister(LocalizationKey, () => Readable(LocalizationKey)), Predicate) { }
-
-    public static Condition NpcIsPresent(int npcId) => new(Language.GetOrRegister("Conditions.NpcIsPresent", () => "Requires {0} to be present").WithFormatArgs(Lang.GetNPCName(npcId)), () => NPC.AnyNPCs(npcId));
-
-    public static Condition GolfScoreOver(int score) => new(Language.GetOrRegister("Conditions.GolfScoreOver", () => "When the player has a golf score of {0} or more").WithFormatArgs(score), () => Me.golferScoreAccumulated >= score);
-
-    static float BestiaryCompletion()
-    {
-        var report = Main.GetBestiaryProgressReport();
-        return report.EntriesTotal == 0 ? 1f : report.CompletionAmountTotal / report.EntriesTotal;
-    }
-
-    public static Condition BestiaryFilledPercent(int percent)
-    {
-        if (percent >= 100) return new(Language.GetOrRegister("Conditions.BestiaryFull", () => "When the Bestiary has been filled completely"), () => BestiaryCompletion() >= 1f);
-        return new(Language.GetOrRegister("Conditions.BestiaryPercentage", () => "When the Bestiary is {0}% filled or more").WithFormatArgs(percent), () => BestiaryCompletion() >= percent / 100f);
-    }
-
-    public static Condition CurrentPriceAdjustmentUnder(float priceModifier) => new(Language.GetOrRegister("Conditions.CurrentPriceAdjustmentUnder", () => "When the vendor's price modifier is {0} or less").WithFormatArgs(priceModifier), () => Me.currentShoppingSettings.PriceAdjustment <= priceModifier);
-
-    public static Condition CurrentPriceAdjustmentOver(float priceModifier) => new(Language.GetOrRegister("Conditions.CurrentPriceAdjustmentOver", () => "When the vendor's price modifier is {0} or more").WithFormatArgs(priceModifier), () => Me.currentShoppingSettings.PriceAdjustment >= priceModifier);
+    public Condition(string LocalizationKey, Func<bool> Predicate)
+        : this(Language.GetOrRegister(LocalizationKey, () => Readable(LocalizationKey)), Predicate) { }
 
     public bool IsMet() => Predicate();
 
@@ -36,17 +25,19 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
 
     static Player Me => Main.LocalPlayer;
 
-    public static readonly Condition HappyWindyDay = new(Language.GetOrRegister("Conditions.HappyWindyDay", () => "During a happy windy day"), () => Main.IsItAHappyWindyDay);
-    public static readonly Condition MoonPhasesQuarter0 = new("Conditions.MoonPhasesQuarter0", () => Main.moonPhase / 2 == 0);
-    public static readonly Condition MoonPhasesQuarter1 = new("Conditions.MoonPhasesQuarter1", () => Main.moonPhase / 2 == 1);
-    public static readonly Condition MoonPhasesQuarter2 = new("Conditions.MoonPhasesQuarter2", () => Main.moonPhase / 2 == 2);
-    public static readonly Condition MoonPhasesQuarter3 = new("Conditions.MoonPhasesQuarter3", () => Main.moonPhase / 2 == 3);
-    public static readonly Condition IsNpcShimmered = new("Conditions.IsNpcShimmered", () => (uint)Me.talkNPC < 200u && Main.npc[Me.talkNPC].IsShimmerVariant);
+    static bool TalkingToNpc => (uint)Me.talkNPC < 200u;
+
+    // Near Liquids
     public static readonly Condition NearWater = new("Conditions.NearWater", () => Me.adjWaterSource || Me.adjTile[TileID.Sinks]);
     public static readonly Condition NearLava = new("Conditions.NearLava", () => Me.adjLava);
     public static readonly Condition NearHoney = new("Conditions.NearHoney", () => Me.adjHoney);
+    public static readonly Condition NearShimmer = new("Conditions.NearShimmer", () => Me.ZoneShimmer);
+
+    // Time
     public static readonly Condition TimeDay = new("Conditions.TimeDay", () => Main.dayTime);
     public static readonly Condition TimeNight = new("Conditions.TimeNight", () => !Main.dayTime);
+
+    // Biomes
     public static readonly Condition InDungeon = new("Conditions.InDungeon", () => Me.ZoneDungeon);
     public static readonly Condition InCorrupt = new("Conditions.InCorrupt", () => Me.ZoneCorrupt);
     public static readonly Condition InHallow = new("Conditions.InHallow", () => Me.ZoneHallow);
@@ -82,21 +73,28 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition InGraveyard = new("Conditions.InGraveyard", () => Me.ZoneGraveyard);
     public static readonly Condition InAether = new("Conditions.InAether", () => Me.ZoneShimmer);
     public static readonly Condition InShoppingZoneForest = new("Conditions.InShoppingForest", () => Me.ShoppingZone_Forest);
+    public static readonly Condition InBelowSurface = new("Conditions.InBelowSurface", () => Me.ShoppingZone_BelowSurface);
     public static readonly Condition InEvilBiome = new("Conditions.InEvilBiome", () => Me.ZoneCrimson || Me.ZoneCorrupt);
-    public static readonly Condition AnotherTownNPCNearby = new("Conditions.AnotherTownNPCNearby", () => GameContent.TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, Me.Center.ToTileCoordinates16()));
+
     public static readonly Condition NotInEvilBiome = new("Conditions.NotInEvilBiome", () => !Me.ZoneCrimson && !Me.ZoneCorrupt);
     public static readonly Condition NotInHallow = new("Conditions.NotInHallow", () => !Me.ZoneHallow);
     public static readonly Condition NotInGraveyard = new("Conditions.NotInGraveyard", () => !Me.ZoneGraveyard);
     public static readonly Condition NotInUnderworld = new("Conditions.NotInUnderworld", () => !Me.ZoneUnderworldHeight);
+
+    // Difficulty
     public static readonly Condition InClassicMode = new("Conditions.InClassicMode", () => !Main.expertMode);
     public static readonly Condition InExpertMode = new("Conditions.InExpertMode", () => Main.expertMode);
     public static readonly Condition InMasterMode = new("Conditions.InMasterMode", () => Main.masterMode);
     public static readonly Condition InJourneyMode = new("Conditions.InJourneyMode", () => Main.IsJourneyMode);
+
+    // World Flags
     public static readonly Condition Hardmode = new("Conditions.InHardmode", () => Main.hardMode);
     public static readonly Condition PreHardmode = new("Conditions.PreHardmode", () => !Main.hardMode);
     public static readonly Condition SmashedShadowOrb = new("Conditions.SmashedShadowOrb", () => WorldGen.shadowOrbSmashed);
     public static readonly Condition CrimsonWorld = new("Conditions.WorldCrimson", () => WorldGen.crimson);
     public static readonly Condition CorruptWorld = new("Conditions.WorldCorrupt", () => !WorldGen.crimson);
+
+    // World Types
     public static readonly Condition DrunkWorld = new("Conditions.WorldDrunk", () => Main.drunkWorld);
     public static readonly Condition RemixWorld = new("Conditions.WorldRemix", () => Main.remixWorld);
     public static readonly Condition NotTheBeesWorld = new("Conditions.WorldNotTheBees", () => Main.notTheBeesWorld);
@@ -105,12 +103,12 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition DontStarveWorld = new("Conditions.WorldDontStarve", () => Main.dontStarveWorld);
     public static readonly Condition NoTrapsWorld = new("Conditions.WorldNoTraps", () => Main.noTrapsWorld);
     public static readonly Condition ZenithWorld = new("Conditions.WorldZenith", () => Main.zenithWorld);
-    public static readonly Condition InBelowSurface = new("Conditions.InBelowSurface", () => Main.LocalPlayer.ShoppingZone_BelowSurface);
     public static readonly Condition SkyblockWorld = new("Conditions.WorldSkyblock", () => Main.skyblockWorld);
     public static readonly Condition VampireSeed = new("Conditions.SeedVampire", () => Main.vampireSeed);
     public static readonly Condition InfectedSeed = new("Conditions.SeedInfected", () => Main.infectedSeed);
     public static readonly Condition TeamBasedSpawnsSeed = new("Conditions.SeedTeamBasedSpawns", () => Main.teamBasedSpawnsSeed);
     public static readonly Condition DualDungeonsSeed = new("Conditions.SeedDualDungeons", () => Main.dualDungeonsSeed);
+
     public static readonly Condition NotDrunkWorld = new("Conditions.WorldNotDrunk", () => !Main.drunkWorld);
     public static readonly Condition NotRemixWorld = new("Conditions.WorldNotRemix", () => !Main.remixWorld);
     public static readonly Condition NotNotTheBeesWorld = new("Conditions.WorldNotNotTheBees", () => !Main.notTheBeesWorld);
@@ -124,6 +122,11 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition NotInfectedSeed = new("Conditions.SeedNotInfected", () => !Main.infectedSeed);
     public static readonly Condition NotTeamBasedSpawnsSeed = new("Conditions.SeedNotTeamBasedSpawns", () => !Main.teamBasedSpawnsSeed);
     public static readonly Condition NotDualDungeonsSeed = new("Conditions.SeedNotDualDungeons", () => !Main.dualDungeonsSeed);
+
+    // World Features
+    public static readonly Condition MechdusaSeedFeature = new("Conditions.SeedFeatureMechdusa", () => GameContent.SpecialSeedFeatures.Mechdusa);
+
+    // Events
     public static readonly Condition Christmas = new("Conditions.Christmas", () => Main.xMas);
     public static readonly Condition Halloween = new("Conditions.Halloween", () => Main.halloween);
     public static readonly Condition BloodMoon = new("Conditions.BloodMoon", () => Main.bloodMoon);
@@ -131,10 +134,14 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition Eclipse = new("Conditions.SolarEclipse", () => Main.eclipse);
     public static readonly Condition NotEclipse = new("Conditions.NotSolarEclipse", () => !Main.eclipse);
     public static readonly Condition EclipseOrBloodMoon = new("Conditions.BloodOrSun", () => Main.bloodMoon || Main.eclipse);
-    public static readonly Condition NotEclipseAndNotBloodMoon =new("Conditions.NotBloodOrSun", () => !Main.bloodMoon && !Main.eclipse);
+    public static readonly Condition NotEclipseAndNotBloodMoon = new("Conditions.NotBloodOrSun", () => !Main.bloodMoon && !Main.eclipse);
+
     public static readonly Condition Thunderstorm = new("Conditions.Thunderstorm", () => Main.IsItStorming);
     public static readonly Condition BirthdayParty = new("Conditions.BirthdayParty", () => GameContent.Events.BirthdayParty.PartyIsUp);
     public static readonly Condition LanternNight = new("Conditions.NightLanterns", () => GameContent.Events.LanternNight.LanternsUp);
+    public static readonly Condition HappyWindyDay = new("Conditions.HappyWindyDay", () => Main.IsItAHappyWindyDay);
+
+    // Bosses
     public static readonly Condition DownedKingSlime = new("Conditions.DownedKingSlime", () => NPC.downedSlimeKing);
     public static readonly Condition DownedEyeOfCthulhu = new("Conditions.DownedEyeOfCthulhu", () => NPC.downedBoss1);
     public static readonly Condition DownedEowOrBoc = new("Conditions.DownedBoss2", () => NPC.downedBoss2);
@@ -174,6 +181,7 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition DownedOldOnesArmyT1 = new("Conditions.DownedOldOnesArmyT1", () => GameContent.Events.DD2Event.DownedInvasionT1);
     public static readonly Condition DownedOldOnesArmyT2 = new("Conditions.DownedOldOnesArmyT2", () => GameContent.Events.DD2Event.DownedInvasionT2);
     public static readonly Condition DownedOldOnesArmyT3 = new("Conditions.DownedOldOnesArmyT3", () => GameContent.Events.DD2Event.DownedInvasionT3);
+
     public static readonly Condition NotDownedKingSlime = new("Conditions.NotDownedKingSlime", () => !NPC.downedSlimeKing);
     public static readonly Condition NotDownedEyeOfCthulhu = new("Conditions.NotDownedEyeOfCthulhu", () => !NPC.downedBoss1);
     public static readonly Condition NotDownedEowOrBoc = new("Conditions.NotDownedBoss2", () => !NPC.downedBoss2);
@@ -211,14 +219,22 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition NotDownedOldOnesArmyT1 = new("Conditions.NotDownedOldOnesArmyT1", () => !GameContent.Events.DD2Event.DownedInvasionT1);
     public static readonly Condition NotDownedOldOnesArmyT2 = new("Conditions.NotDownedOldOnesArmyT2", () => !GameContent.Events.DD2Event.DownedInvasionT2);
     public static readonly Condition NotDownedOldOnesArmyT3 = new("Conditions.NotDownedOldOnesArmyT3", () => !GameContent.Events.DD2Event.DownedInvasionT3);
+
+    // Misc
     public static readonly Condition BloodMoonOrHardmode = new("Conditions.BloodMoonOrHardmode", () => Main.bloodMoon || Main.hardMode);
     public static readonly Condition NightOrEclipse = new("Conditions.NightOrEclipse", () => !Main.dayTime || Main.eclipse);
+
     public static readonly Condition Multiplayer = new("Conditions.InMultiplayer", () => Main.netMode != NetmodeID.SinglePlayer);
+    public static readonly Condition AnotherTownNPCNearby = new("Conditions.AnotherTownNPCNearby", () => GameContent.TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, Me.Center.ToTileCoordinates16()));
+    public static readonly Condition IsNpcShimmered = new("Conditions.IsNpcShimmered", () => TalkingToNpc && Main.npc[Me.talkNPC].IsShimmerVariant);
     public static readonly Condition NotIsNpcShimmered = new("Conditions.NotIsNpcShimmered", () => !IsNpcShimmered.IsMet());
-    public static readonly Condition IsNpcHomeless = new("Conditions.IsNpcHomeless", () => Main.npc[Main.LocalPlayer.talkNPC].homeless);
-    public static readonly Condition NotIsNpcHomeless = new("Conditions.NotIsNpcHomeless", () => !Main.npc[Main.LocalPlayer.talkNPC].homeless);
+    public static readonly Condition IsNpcHomeless = new("Conditions.IsNpcHomeless", () => TalkingToNpc && Main.npc[Me.talkNPC].homeless);
+    public static readonly Condition NotIsNpcHomeless = new("Conditions.NotIsNpcHomeless", () => !(TalkingToNpc && Main.npc[Me.talkNPC].homeless));
+    /// <summary>Not Remix world, OR Celebration Mk10 AND not For the Worthy worlds.</summary>
     public static readonly Condition BiomeSpreadingItems = new("Conditions.BiomeSpreadingItems", () => !Main.remixWorld || (Main.tenthAnniversaryWorld && !Main.getGoodWorld));
-    public static readonly Condition NeedTorchGodsFavor = new("Conditions.TorchGodsFavor", () => Main.LocalPlayer.unlockedBiomeTorches);
+    public static readonly Condition NeedTorchGodsFavor = new("Conditions.TorchGodsFavor", () => Me.unlockedBiomeTorches);
+
+    // Moon phases
     public static readonly Condition MoonPhaseFull = new("Conditions.FullMoon", () => Main.GetMoonPhase() == MoonPhase.Full);
     public static readonly Condition MoonPhaseWaningGibbous = new("Conditions.WaningGibbousMoon", () => Main.GetMoonPhase() == MoonPhase.ThreeQuartersAtLeft);
     public static readonly Condition MoonPhaseThirdQuarter = new("Conditions.ThirdQuarterMoon", () => Main.GetMoonPhase() == MoonPhase.HalfAtLeft);
@@ -227,6 +243,10 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition MoonPhaseWaxingCrescent = new("Conditions.WaxingCrescentMoon", () => Main.GetMoonPhase() == MoonPhase.QuarterAtRight);
     public static readonly Condition MoonPhaseFirstQuarter = new("Conditions.FirstQuarterMoon", () => Main.GetMoonPhase() == MoonPhase.HalfAtRight);
     public static readonly Condition MoonPhaseWaxingGibbous = new("Conditions.WaxingGibbousMoon", () => Main.GetMoonPhase() == MoonPhase.ThreeQuartersAtRight);
+    public static readonly Condition MoonPhasesQuarter0 = new("Conditions.MoonPhasesQuarter0", () => Main.moonPhase / 2 == 0);
+    public static readonly Condition MoonPhasesQuarter1 = new("Conditions.MoonPhasesQuarter1", () => Main.moonPhase / 2 == 1);
+    public static readonly Condition MoonPhasesQuarter2 = new("Conditions.MoonPhasesQuarter2", () => Main.moonPhase / 2 == 2);
+    public static readonly Condition MoonPhasesQuarter3 = new("Conditions.MoonPhasesQuarter3", () => Main.moonPhase / 2 == 3);
     public static readonly Condition MoonPhasesHalf0 = new("Conditions.MoonPhasesHalf0", () => Main.moonPhase / 4 == 0);
     public static readonly Condition MoonPhasesHalf1 = new("Conditions.MoonPhasesHalf1", () => Main.moonPhase / 4 == 1);
     public static readonly Condition MoonPhasesEven = new("Conditions.MoonPhasesEven", () => Main.moonPhase % 2 == 0);
@@ -242,4 +262,25 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
     public static readonly Condition MoonPhases12 = new("Conditions.MoonPhases12", () => Main.moonPhase == 1 || Main.moonPhase == 2);
     public static readonly Condition MoonPhases35 = new("Conditions.MoonPhases35", () => Main.moonPhase == 3 || Main.moonPhase == 5);
     public static readonly Condition MoonPhases67 = new("Conditions.MoonPhases67", () => Main.moonPhase == 6 || Main.moonPhase == 7);
+
+    // Parameters
+    public static Condition PlayerCarriesItem(int itemId) => new(Language.GetOrRegister("Conditions.PlayerCarriesItem", () => "Requires {0} in inventory").WithFormatArgs(Lang.GetItemName(itemId)), () => Me.HasItem(itemId));
+    public static Condition GolfScoreOver(int score) => new(Language.GetOrRegister("Conditions.GolfScoreOver", () => "When the player has a golf score of {0} or more").WithFormatArgs(score), () => Me.golferScoreAccumulated >= score);
+    public static Condition NpcIsPresent(int npcId) => new(Language.GetOrRegister("Conditions.NpcIsPresent", () => "Requires {0} to be present").WithFormatArgs(Lang.GetNPCName(npcId)), () => NPC.AnyNPCs(npcId));
+    public static Condition AnglerQuestsFinishedOver(int quests) => new(Language.GetOrRegister("Conditions.AnglerQuestsFinishedOver", () => "After completing {0} angler quests").WithFormatArgs(quests), () => Me.anglerQuestsFinished >= quests);
+
+    static float BestiaryCompletion()
+    {
+        var report = Main.GetBestiaryProgressReport();
+        return report.EntriesTotal == 0 ? 1f : report.CompletionAmountTotal / report.EntriesTotal;
+    }
+
+    public static Condition BestiaryFilledPercent(int percent)
+    {
+        if (percent >= 100) return new(Language.GetOrRegister("Conditions.BestiaryFull", () => "When the Bestiary has been filled completely"), () => BestiaryCompletion() >= 1f);
+        return new(Language.GetOrRegister("Conditions.BestiaryPercentage", () => "When the Bestiary is {0}% filled or more").WithFormatArgs(percent), () => BestiaryCompletion() >= percent / 100f);
+    }
+
+    public static Condition CurrentPriceAdjustmentUnder(float priceModifier) => new(Language.GetOrRegister("Conditions.CurrentPriceAdjustmentUnder", () => "When the vendor's price modifier is {0} or less").WithFormatArgs(priceModifier), () => Me.currentShoppingSettings.PriceAdjustment <= priceModifier);
+    public static Condition CurrentPriceAdjustmentOver(float priceModifier) => new(Language.GetOrRegister("Conditions.CurrentPriceAdjustmentOver", () => "When the vendor's price modifier is {0} or more").WithFormatArgs(priceModifier), () => Me.currentShoppingSettings.PriceAdjustment >= priceModifier);
 }

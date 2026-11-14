@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using ReLogic.Content;
 using Terraria.DataStructures;
 using Terraria.Utilities;
 
@@ -75,8 +74,6 @@ public abstract class GlobalItem : GlobalType<Item, GlobalItem>
     public virtual void HoldItemFrame(Item item, Player player) { }
 
     public virtual bool AltFunctionUse(Item item, Player player) => false;
-
-    public virtual Asset<Texture2D>? AltFunctionIcon(Item item, Player player, bool alternative) => null;
 
     public virtual void HoldItem(Item item, Player player) { }
 
@@ -188,8 +185,6 @@ public abstract class GlobalItem : GlobalType<Item, GlobalItem>
 
     public virtual bool ApplyPotionDelay(Item item, Player player, int potionDelay) => true;
 
-    public virtual void Update(WorldItem item, ref float gravity, ref float maxFallSpeed) { }
-
     public virtual void PostUpdate(WorldItem item) { }
 
     public virtual void ExtractinatorUse(int extractType, int extractinatorBlockType, ref int resultType, ref int resultStack) { }
@@ -197,6 +192,12 @@ public abstract class GlobalItem : GlobalType<Item, GlobalItem>
     public virtual void GrabRange(WorldItem item, Player player, ref int grabRange) { }
 
     public virtual bool GrabStyle(WorldItem item, Player player) => false;
+
+    /// <summary>
+    /// O tML desta linha ainda usa <c>Item</c> (o <c>WorldItem</c> é de linha
+    /// mais nova); mods compilados no PC fazem override desta assinatura.
+    /// </summary>
+    public virtual bool GrabStyle(Item item, Player player) => false;
 
     public virtual bool CanPickup(WorldItem item, Player player) => true;
 
@@ -247,4 +248,11 @@ public abstract class GlobalItem : GlobalType<Item, GlobalItem>
     public virtual void PostDrawInInventory(Item item, SpriteBatch spriteBatch, Vector2 position, Rectangle frame, Color drawColor, Color itemColor, Vector2 origin, float scale) { }
 
     public virtual void ModifyItemLoot(Item item, ItemLoot itemLoot) { }
+
+    /// <summary>
+    /// tML: o mod decide se a isca é consumida (<c>null</c> = decide o jogo).
+    /// Sem este virtual o override do mod não casa com a base e o <c>call</c>
+    /// para <c>base.CanConsumeBait</c> vira MissingMethodException.
+    /// </summary>
+    public virtual bool? CanConsumeBait(Player player, Item bait) => null;
 }

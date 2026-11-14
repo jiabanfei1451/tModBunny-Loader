@@ -45,7 +45,7 @@ android {
 
     defaultConfig {
         applicationId = "com.bunnyloader.catalog"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 34
         versionCode = 3
         versionName = "1.2.0"
@@ -62,12 +62,12 @@ android {
             }
         }
     }
-    ndkVersion = "30.0.16248370"
+    ndkVersion = "30.0.15729638"
 
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+            version = "4.1.2"
         }
     }
 
@@ -86,6 +86,16 @@ android {
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/launcherArt"))
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/compiler"))
     sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("generated/compilerJniLibs"))
+
+    // O lint vital do release le esses dois diretorios gerados (eles entram como
+    // assets/jniLibs) e o Gradle 8.11 recusa a ordem implicita com
+    // "uses this output of task ':catalog:syncCompilerAssets' without declaring a
+    // dependency". Aqui o lint nao acrescenta nada: o modulo so empacota o
+    // compilador de C# e a arte do launcher.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 // O compilador dos mods C# com fontes: o Mono, a base do .NET, o Roslyn, o

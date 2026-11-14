@@ -33,6 +33,23 @@ public static unsafe class EquipLoader
 
     static bool installed;
 
+    /// <summary>
+    /// Texturas de equipamento que ficaram para depois.
+    ///
+    /// O conteudo do mod carrega antes de existir dispositivo grafico: criar um
+    /// <c>Texture2D</c> nessa janela derruba o processo com SIGTRAP
+    /// ("Graphics device is null", dentro de <c>Texture2D:Internal_Create</c>) —
+    /// foi assim que a v59 morreu ao instalar as texturas do Fargowiltas.
+    ///
+    /// O slot e o que o mod precisa em <c>SetDefaults</c> (<c>GetEquipSlot</c>),
+    /// entao ele e reservado na hora; so a IMAGEM espera o primeiro quadro, que
+    /// ja roda com a GPU pronta. Ate la o slot aponta para a textura vanilla 0
+    /// (nunca nulo: um slot nulo estoura no desenho quando alguem veste a peca).
+    /// </summary>
+    static readonly List<(EquipType Type, int Slot, EquipTexture Texture)> Late = new();
+
+    static bool lateHooked;
+
     public static int AddEquipTexture(Mod mod, string texture, EquipType type, ModItem? item = null, string? name = null, EquipTexture? equipTexture = null)
     {
         if (!mod.loading) throw new Exception("AddEquipTexture can only be called during loading");
@@ -97,7 +114,7 @@ public static unsafe class EquipLoader
         string? direct = mod.ResolveFile(name);
         if (direct != null && File.Exists(direct)) return direct;
         int slash = name.IndexOf('/');
-        if (slash > 0)
+        if (slash > 0 && name[..slash] == mod.Name)
         {
             string? inner = mod.ResolveFile(name[(slash + 1)..]);
             if (inner != null && File.Exists(inner)) return inner;
@@ -170,6 +187,12 @@ public static unsafe class EquipLoader
             int slot = vanilla + i;
             texture.Slot = slot;
             IntPtr asset = RequestTexture(texture);
+            if (asset == IntPtr.Zero)
+            {
+                // Slot reservado agora, imagem no primeiro quadro (ver `Late`).
+                asset = Placeholder(type);
+                QueueLate(type, slot, texture);
+            }
             foreach ((Func<GameArray<GameObject>> get, _) in TextureArrays(type)) get()[slot] = new GameObject(asset);
             if (NewFraming(type) is Func<GameArray<bool>> framing) framing()[slot] = true;
             if (type == EquipType.Wings) ArmorIDs.Wing.Sets.Stats[slot] = WingStats.Default;
@@ -189,20 +212,93 @@ public static unsafe class EquipLoader
         Log.Info($"equip textures: {list.Count} {type} (slots {vanilla}..{total - 1})");
     }
 
+    /// <summary>
+    /// Pede a textura ao jogo. Devolve <c>IntPtr.Zero</c> (sem excecao) quando
+    /// o pedido ainda nao pode ser atendido — antes do primeiro quadro nao ha
+    /// dispositivo grafico. Deixar a excecao subir abortava o
+    /// <c>InstallType</c> inteiro e levava junto TODAS as texturas daquele tipo
+    /// (cabecas, corpos, asas), nao so a que falhou.
+    /// </summary>
     static IntPtr RequestTexture(EquipTexture texture)
     {
         byte* file = Host.Utf8(texture.Texture), name = Host.Utf8(texture.Name);
         try
         {
-            IntPtr asset = Host.Native()->RequestModTexture(file, name);
-            if (asset == IntPtr.Zero) throw new InvalidOperationException($"{texture.Texture} is not an image the game can load");
-            return asset;
+            return Host.Native()->RequestModTexture(file, name);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"equip texture {texture.Name}: {e.Message}");
+            return IntPtr.Zero;
         }
         finally
         {
             Host.FreeUtf8(file);
             Host.FreeUtf8(name);
         }
+    }
+
+    /// <summary>Imagem de reserva para um slot cuja textura ainda nao carregou.</summary>
+    static IntPtr Placeholder(EquipType type)
+    {
+        foreach ((Func<GameArray<GameObject>> get, _) in TextureArrays(type))
+        {
+            GameArray<GameObject> array = get();
+            if (!array.IsNull && array.Length > 0) return array[0].Pointer;
+        }
+        return IntPtr.Zero;
+    }
+
+    static void QueueLate(EquipType type, int slot, EquipTexture texture)
+    {
+        lock (Gate) Late.Add((type, slot, texture));
+        if (lateHooked) return;
+        lateHooked = true;
+        // DoDraw e o primeiro ponto em que a GPU comprovadamente existe (o
+        // carregamento do conteudo roda bem antes de a superficie subir).
+        Core.ItemHooks.Once("EquipTexturesLate", () => On_Main.DoDraw += DrawLateTextures);
+    }
+
+    static void DrawLateTextures(On_Main.orig_DoDraw orig, Main self, Microsoft.Xna.Framework.GameTime gameTime)
+    {
+        InstallLateTextures();
+        orig(self, gameTime);
+    }
+
+    static int latePasses;
+
+    static void InstallLateTextures()
+    {
+        List<(EquipType Type, int Slot, EquipTexture Texture)> batch;
+        lock (Gate)
+        {
+            if (Late.Count == 0) return;
+            if (++latePasses > 600)
+            {
+                Log.Error($"equip textures: {Late.Count} textura(s) nunca carregaram ({Late[0].Texture.Name})");
+                Late.Clear();
+                return;
+            }
+            batch = new List<(EquipType, int, EquipTexture)>(Late);
+            Late.Clear();
+        }
+        int ok = 0;
+        foreach ((EquipType type, int slot, EquipTexture texture) in batch)
+        {
+            IntPtr asset = RequestTexture(texture);
+            if (asset == IntPtr.Zero)
+            {
+                lock (Gate) Late.Add((type, slot, texture));
+                continue;
+            }
+            try
+            {
+                foreach ((Func<GameArray<GameObject>> get, _) in TextureArrays(type)) get()[slot] = new GameObject(asset);
+                ok++;
+            }
+            catch (Exception e) { Log.Error($"equip texture {texture.Name} (slot {slot}): {e.Message}"); }
+        }
+        Log.Info($"equip textures: {ok}/{batch.Count} carregadas na primeira passada");
     }
 
     static void PrepareWingStats(int first, int total)

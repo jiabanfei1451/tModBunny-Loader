@@ -25,10 +25,10 @@ constexpr const char* kHeader = "bunny-npcs 1";
 constexpr int kTravellingMerchant = 368;
 
 struct SavedNpc {
-    std::string key;
+    std::string key;           // "<uid>/<nome>"
     float x = 0, y = 0;
     int homeless = 1, homeX = 0, homeY = 0, variation = 0;
-    std::string name;
+    std::string name;          // nome proprio (GivenName)
 };
 struct SavedRoom {
     std::string key;
@@ -39,18 +39,19 @@ std::mutex g_mx;
 ManagedNpcNeeds g_needs = nullptr;
 ManagedNpcSave g_save = nullptr;
 ManagedNpcLoad g_load = nullptr;
+// Por mundo: as linhas de mod nao carregado (voltam ao arquivo como estavam).
 std::map<std::string, std::vector<std::string>> g_kept;
 
 struct Point { int32_t x, y; };
 
 struct Refs {
     bool ok = false;
-    FieldInfo* activeWorld = nullptr;
-    int32_t path = -1, cloud = -1;
-    FieldInfo* npcs = nullptr;
-    FieldInfo* shimmered = nullptr;
-    FieldInfo* savesAndLoads = nullptr;
-    FieldInfo* townManager = nullptr;
+    FieldInfo* activeWorld = nullptr;   // Main.ActiveWorldFileData
+    int32_t path = -1, cloud = -1;      // FileData._path / _isCloudSave
+    FieldInfo* npcs = nullptr;          // Main.npc
+    FieldInfo* shimmered = nullptr;     // NPC.ShimmeredTownNPCs
+    FieldInfo* savesAndLoads = nullptr; // NPCID.Sets.SavesAndLoads
+    FieldInfo* townManager = nullptr;   // WorldGen.TownManager
     int32_t active = -1, type = -1, townNPC = -1, position = -1, homeless = -1;
     int32_t homeX = -1, homeY = -1, variation = -1, givenName = -1;
     const MethodInfo* setDefaults = nullptr;
@@ -135,6 +136,7 @@ std::string activeWorldPath() {
     return toUtf8(at<Il2CppString*>(data, g_refs.path));
 }
 
+// "<uid>/<nome>" <-> tipo, pelos NPCs registrados.
 std::string keyOf(int type) {
     for (const ModNpcInfo& n : modNpcs()) {
         if (n.type == type) return n.mod + "/" + n.name;
@@ -176,7 +178,7 @@ std::vector<std::string> readLines(const std::string& path) {
         if (!header) {
             header = true;
             if (s != kHeader) {
-                BL_ERROR("mod town NPCs: %s has an unknown header; ignored", path.c_str());
+                BL_ERROR("moradores de mod: %s com cabecalho desconhecido; ignorado", path.c_str());
                 break;
             }
             continue;
@@ -186,6 +188,7 @@ std::vector<std::string> readLines(const std::string& path) {
     return out;
 }
 
+/** Temporario + rename: queda no meio nao deixa arquivo pela metade. */
 void writeLines(const std::string& path, const std::vector<std::string>& lines) {
     if (lines.empty()) {
         std::remove(path.c_str());
@@ -194,7 +197,7 @@ void writeLines(const std::string& path, const std::vector<std::string>& lines) 
     const std::string tmp = path + ".tmp";
     FILE* f = std::fopen(tmp.c_str(), "wb");
     if (!f) {
-        BL_ERROR("mod town NPCs: could not write %s", tmp.c_str());
+        BL_ERROR("moradores de mod: nao consegui escrever %s", tmp.c_str());
         return;
     }
     std::fprintf(f, "%s\n", kHeader);
@@ -202,7 +205,7 @@ void writeLines(const std::string& path, const std::vector<std::string>& lines) 
     const bool ok = std::fflush(f) == 0;
     std::fclose(f);
     if (!ok || std::rename(tmp.c_str(), path.c_str()) != 0) {
-        BL_ERROR("mod town NPCs: failed to save %s", path.c_str());
+        BL_ERROR("moradores de mod: falha ao gravar %s", path.c_str());
         std::remove(tmp.c_str());
     }
 }
@@ -224,7 +227,11 @@ std::string savedColumns(const Refs& r, Il2CppObject* n) {
     return std::string(buf) + "\t" + toUtf8(at<Il2CppString*>(n, r.givenName));
 }
 
+// O que o save de agora tirou do .wld, para o arquivo ao lado (NPCs e
+// shimmer no SaveNPCs; salas no Save do TownRoomManager, que vem depois).
 std::vector<std::string> g_pending;
+
+// ------------------------------ salvar ------------------------------
 
 using SaveNpcsFn = int32_t (*)(Il2CppObject*, const MethodInfo*);
 SaveNpcsFn g_origSaveNpcs = nullptr;
@@ -232,6 +239,10 @@ SaveNpcsFn g_origSaveNpcs = nullptr;
 int32_t hkSaveNpcs(Il2CppObject* writer, const MethodInfo* m) {
     const Refs& r = g_refs;
     std::vector<std::string> lines;
+    // O .wld grava quem tem townNPC (e os NPCID.Sets.SavesAndLoads): esses
+    // flags saem so durante a chamada. NAO o `active` — o save automatico roda
+    // noutra thread, com o jogo andando, e um NPC inativo teria o lugar
+    // reusado nesse meio-tempo.
     std::vector<Il2CppObject*> hidden;
     std::vector<int> hiddenSets, hiddenShimmer;
     Il2CppArray* npcs = readStatic<Il2CppArray*>(r.npcs);
@@ -299,6 +310,8 @@ RoomsSaveFn g_origRoomsSave = nullptr;
 
 void hkRoomsSave(Il2CppObject* self, Il2CppObject* writer, const MethodInfo* m) {
     const Refs& r = g_refs;
+    // A sala de cada morador de mod: fora do .wld durante a gravacao (o load
+    // do jogo faz _hasRoom[tipo] = true, e sem o mod o tipo cai fora).
     std::vector<std::pair<int, Point>> rooms;
     for (const ModNpcInfo& n : modNpcs()) {
         Point p{};
@@ -315,6 +328,7 @@ void hkRoomsSave(Il2CppObject* self, Il2CppObject* writer, const MethodInfo* m) 
         *reinterpret_cast<void* const*>(r.setRoom));
     for (const auto& [type, p] : rooms) setRoom(self, type, p.x, p.y, r.setRoom);
 
+    // O Save do TownRoomManager vem depois do SaveNPCs: aqui o arquivo fecha.
     const std::string path = activeWorldPath();
     if (path.empty()) return;
     std::vector<std::string> lines;
@@ -331,14 +345,17 @@ void hkRoomsSave(Il2CppObject* self, Il2CppObject* writer, const MethodInfo* m) 
     }
     writeLines(path + kSuffix, lines);
     if (!lines.empty()) {
-        BL_INFO("mod town NPCs: world saved with no mod town NPC in the .wld; %zu line(s) in %s",
+        BL_INFO("moradores de mod: mundo salvo sem morador de mod no .wld; %zu linha(s) em %s",
                 lines.size(), (path + kSuffix).c_str());
     }
 }
 
+// ------------------------------ carregar ------------------------------
+
 using LoadNpcsFn = void (*)(Il2CppObject*, const MethodInfo*);
 LoadNpcsFn g_origLoadNpcs = nullptr;
 
+/** Um lugar livre em Main.npc (o ultimo e o vazio do jogo). */
 Il2CppObject* freeNpc() {
     const Refs& r = g_refs;
     Il2CppArray* npcs = readStatic<Il2CppArray*>(r.npcs);
@@ -358,10 +375,10 @@ Il2CppObject* restoreNpc(const SavedNpc& s, int type) {
         return nullptr;
     }
     int32_t t = type;
-    alignas(8) uint8_t spawnParams[32] = {};
+    alignas(8) uint8_t spawnParams[32] = {};   // NPCSpawnParams sem nada
     void* args[2] = {&t, spawnParams};
     Il2CppObject* exc = nullptr;
-    a.runtime_invoke(r.setDefaults, n, args, &exc);
+    a.runtime_invoke(r.setDefaults, n, args, &exc);   // passa pelo SetDefaults do mod
     if (exc) {
         BL_ERROR("mod NPC save: SetDefaults of %s threw", s.key.c_str());
         return nullptr;
@@ -433,7 +450,7 @@ void hkLoadNpcs(Il2CppObject* reader, const MethodInfo* m) {
             continue;
         }
         const int type = typeOf(c[1]);
-        if (type < 0) {
+        if (type < 0) {   // o mod nao esta: fica para quando voltar
             kept.push_back(line);
             continue;
         }
@@ -443,12 +460,12 @@ void hkLoadNpcs(Il2CppObject* reader, const MethodInfo* m) {
         } else if (c[0] == "shimmer" && shimmer && static_cast<uintptr_t>(type) < shimmer->length) {
             static_cast<uint8_t*>(arrayData(shimmer))[type] = 1;
         } else if (c[0] == "room") {
-            kept.push_back(line);
+            kept.push_back(line);   // a sala volta no Load do TownRoomManager, que vem depois
         }
     }
     std::lock_guard<std::mutex> l(g_mx);
     g_kept[path] = kept;
-    if (restored > 0) BL_INFO("mod town NPCs: %d restored from the companion file", restored);
+    if (restored > 0) BL_INFO("moradores de mod: %d reposto(s) do arquivo ao lado", restored);
 }
 
 using RoomsLoadFn = void (*)(Il2CppObject*, Il2CppObject*, const MethodInfo*);
@@ -477,7 +494,7 @@ void hkRoomsLoad(Il2CppObject* self, Il2CppObject* reader, const MethodInfo* m) 
     it->second = still;
 }
 
-}
+} // namespace
 
 void setManagedNpcData(ManagedNpcNeeds needs, ManagedNpcSave save, ManagedNpcLoad load) {
     g_needs = needs;
@@ -497,10 +514,10 @@ void installModNpcSave() {
         !hook::install(save, hkSaveNpcs, &g_origSaveNpcs) || !hook::install(load, hkLoadNpcs, &g_origLoadNpcs) ||
         !hook::install(roomsSave, hkRoomsSave, &g_origRoomsSave) ||
         !hook::install(roomsLoad, hkRoomsLoad, &g_origRoomsLoad)) {
-        BL_ERROR("mod town NPCs: no world save hook; a mod town NPC would go into the .wld by number");
+        BL_ERROR("moradores de mod: sem o save do mundo; morador de mod iria para o .wld pelo numero");
         return;
     }
-    BL_DEBUG("mod town NPCs: world save ready (%s)", kSuffix);
+    BL_DEBUG("moradores de mod: save do mundo pronto (%s)", kSuffix);
 }
 
-}
+} // namespace bl::runtime

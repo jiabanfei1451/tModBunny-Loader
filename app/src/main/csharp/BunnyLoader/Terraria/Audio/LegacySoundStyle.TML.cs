@@ -1,6 +1,6 @@
 namespace Terraria.Audio;
 
-public readonly partial struct LegacySoundStyle
+public sealed partial class LegacySoundStyle
 {
     public bool HasValue => !IsNull;
 

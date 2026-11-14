@@ -52,24 +52,24 @@ ModConfigShowcaseAcceptClientChanges: {
 }
 
 Common: {
-	LocalizedLabel: Este rótulo vem dos arquivos de tradução: {$Mods.ExampleMod.Common.PaperAirplane}
-	LocalizedTooltip: Esta dica vem dos arquivos de tradução.
-	LocalizedHeader: Cabeçalhos ajudam a organizar
-	LocalizedLabelDynamic: Rótulo Traduzido Dinâmico
-	InterpolatedLabel: Item: [i:{0}]. Número: {1} {^1:alteração;alterações}. Texto: {2}. Texto Traduzido: {3}.
+	LocalizedLabel: This Label is from the localization files: {$Mods.ExampleMod.Common.PaperAirplane}
+	LocalizedTooltip: This tooltip is from the localization files.
+	LocalizedHeader: Headers can help organize
+	LocalizedLabelDynamic: Localized Label Dynamic
+	InterpolatedLabel: Item: [i:{0}]. Number: {1} {^1:change;changes}. Text: {2}. Localized Text: {3}.
 	InterpolatedTooltip: "[c/{1}:Use to disable the] [c/{2}:{0}] [c/{1}:feature]"
 }
 
 ModConfigShowcaseAccessibility: {
-	DisplayName: Vitrine F: Acessibilidade
+	DisplayName: "Vitrine F: Acessibilidade"
 
 	Public: {
-		Label: Público
+		Label: Public
 		Tooltip: ""
 	}
 
 	pair: {
-		Label: par
+		Label: pair
 		Tooltip: ""
 	}
 
@@ -79,43 +79,43 @@ ModConfigShowcaseAccessibility: {
 	}
 
 	AutoProperty: {
-		Label: Propriedade Automática
+		Label: Auto Property
 		Tooltip: ""
 	}
 
 	Property: {
-		Label: Propriedade
+		Label: Property
 		Tooltip: ""
 	}
 
 	PresetA: {
-		Label: Predefinição A
+		Label: Preset A
 		Tooltip: ""
 	}
 
 	PresetB: {
-		Label: Predefinição B
+		Label: Preset B
 		Tooltip: ""
 	}
 
 	Data1: {
-		Label: Dados1
+		Label: Data1
 		Tooltip: ""
 	}
 
 	Data2: {
-		Label: Dados2
+		Label: Data2
 		Tooltip: ""
 	}
 
 	IgnoreWithLabelGetter: {
-		Label: Ignorar com Getter de Rótulo
+		Label: Ignore With Label Getter
 		Tooltip: ""
 	}
 }
 
 ModConfigShowcaseDataTypes: {
-	DisplayName: Vitrine A: Tipos de dados
+	DisplayName: "Vitrine A: Tipos de dados"
 
 	SomeBool: {
 		Label: Algum Bool
@@ -218,7 +218,7 @@ ModConfigShowcaseDataTypes: {
 	}
 
 	CustomKey: {
-		Label: Tecla Personalizada
+		Label: Custom Key
 		Tooltip: ""
 	}
 
@@ -244,7 +244,7 @@ ModConfigShowcaseDataTypes: {
 }
 
 ModConfigShowcaseDefaultValues: {
-	DisplayName: Vitrine D: Valores padrão
+	DisplayName: "Vitrine D: Valores padrão"
 
 	SimpleDefaultInt: {
 		Label: Simple Padrão Int
@@ -308,14 +308,14 @@ ModConfigShowcaseDefaultValues: {
 }
 
 ModConfigShowcaseLabels: {
-	DisplayName: Vitrine C: Rótulos
+	DisplayName: "Vitrine C: Rótulos"
 
 	SomeFloat: {
 		Label: Este é um float
 		Tooltip: Este texto aparece ao passar o dedo
 	}
 
-	LocalizedLabel.Label: Rótulo Traduzido
+	LocalizedLabel.Label: Localized Label
 
 	pairExample: {
 		Label: Pair Exemplo
@@ -343,28 +343,28 @@ ModConfigShowcaseLabels: {
 	}
 
 	simpleDataExample2: {
-		Label: SimpleData com Cor Sobrescrita
+		Label: OverridenColor SimpleData
 		Tooltip: ""
 	}
 
 	LocalizedLabelDynamic.Tooltip: ""
 
 	Headers: {
-		HeaderIdentifier: Seção de Cabeçalhos
+		HeaderIdentifier: Headers Section
 		ChatTagExample: "[i:19][c/00FF00:Green Text][i:ExampleMod/ExampleItem]"
 	}
 
 	StringFormatting: {
-		Label: Porcentagem: {0:p2}, Núm.: {1:N0}, Preenchimento: {2,4:D4}, Precisão: {3:0.000}
+		Label: "Percent: {0:p2}, Num: {1:N0}, Pad: {2,4:D4}, Percision: {3:0.000}"
 		Tooltip: ""
 	}
 }
 
 ModConfigShowcaseSubpages: {
-	DisplayName: Vitrine E: Subpáginas
+	DisplayName: "Vitrine E: Subpáginas"
 
 	gradient: {
-		Label: degradê
+		Label: gradient
 		Tooltip: ""
 	}
 
@@ -384,23 +384,23 @@ ModConfigShowcaseSubpages: {
 	}
 
 	pair: {
-		Label: Par Especial
+		Label: Special Pair
 		Tooltip: ""
 	}
 
-	Headers.SeparatePageExamples: Exemplos de Página Separada
+	Headers.SeparatePageExamples: SeparatePage Examples
 }
 
 Pair: {
-	Tooltip: Par é uma classe simples com um bool e um int
+	Tooltip: Pair is a simple class holding a bool and an int
 
 	enabled: {
-		Label: ativado
+		Label: enabled
 		Tooltip: ""
 	}
 
 	boost: {
-		Label: impulso
+		Label: boost
 		Tooltip: ""
 	}
 }
@@ -409,22 +409,22 @@ SimpleData: {
 	Tooltip: ""
 
 	Headers: {
-		FirstHeader: Incrível
-		SecondHeader: Ativado
+		FirstHeader: Awesome
+		SecondHeader: Enabled
 	}
 
 	boost: {
-		Label: impulso
+		Label: boost
 		Tooltip: ""
 	}
 
 	percent: {
-		Label: porcentagem
+		Label: percent
 		Tooltip: ""
 	}
 
 	enabled: {
-		Label: ativado
+		Label: enabled
 		Tooltip: ""
 	}
 
@@ -435,16 +435,16 @@ SimpleData: {
 }
 
 Gradient: {
-	Tooltip: Representa um degradê de uma cor para outra
+	Tooltip: Represents a gradient from one color to another
 
 	start: {
-		Label: início
-		Tooltip: A cor em que o degradê começa
+		Label: start
+		Tooltip: The color the gradient starts at
 	}
 
 	end: {
-		Label: fim
-		Tooltip: A cor em que o degradê termina
+		Label: end
+		Tooltip: The color the gradient ends at
 	}
 }
 
@@ -452,17 +452,17 @@ ComplexData: {
 	Tooltip: ""
 
 	ListOfInts: {
-		Label: Lista de Inteiros
+		Label: List Of Ints
 		Tooltip: ""
 	}
 
 	nestedSimple: {
-		Label: Simples Aninhado
+		Label: nested Simple
 		Tooltip: ""
 	}
 
 	IncrementalFloat: {
-		Label: Float Incremental
+		Label: Incremental Float
 		Tooltip: ""
 	}
 }
@@ -471,17 +471,17 @@ SubConfigExample: {
 	Tooltip: ""
 
 	boost: {
-		Label: impulso
+		Label: boost
 		Tooltip: ""
 	}
 
 	percent: {
-		Label: porcentagem
+		Label: percent
 		Tooltip: ""
 	}
 
 	enabled: {
-		Label: ativado
+		Label: enabled
 		Tooltip: ""
 	}
 
@@ -491,7 +491,7 @@ SubConfigExample: {
 	}
 
 	SubB: {
-		Label: Ainda Mais Sub
+		Label: Even More Sub
 		Tooltip: ""
 	}
 }
@@ -500,31 +500,31 @@ SubSubConfigExample: {
 	Tooltip: ""
 
 	whoa: {
-		Label: uau
+		Label: whoa
 		Tooltip: ""
 	}
 }
 
 Corner: {
-	Tooltip: Posição da Âncora
+	Tooltip: Anchor Position
 
 	TopLeft: {
-		Label: Superior Esquerdo
+		Label: Top Left
 		Tooltip: ""
 	}
 
 	TopRight: {
-		Label: Superior Direito
+		Label: Top Right
 		Tooltip: ""
 	}
 
 	BottomLeft: {
-		Label: Inferior Esquerdo
+		Label: Bottom Left
 		Tooltip: ""
 	}
 
 	BottomRight: {
-		Label: Inferior Direito
+		Label: Bottom Right
 		Tooltip: ""
 	}
 }

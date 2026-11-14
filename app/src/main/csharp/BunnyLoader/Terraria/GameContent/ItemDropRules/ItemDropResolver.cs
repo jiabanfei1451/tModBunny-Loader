@@ -2,7 +2,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.GameContent.ItemDropRules;
 
-public readonly partial struct ItemDropResolver
+public sealed partial class ItemDropResolver
 {
     public void TryDropping(DropAttemptInfo info)
     {

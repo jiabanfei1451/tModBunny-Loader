@@ -3,7 +3,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.GameContent.Achievements;
 
-public readonly partial struct AchievementsHelper
+public sealed partial class AchievementsHelper
 {
     internal static Action<Player, short, int>? itemPickup;
     internal static Action<short, int>? itemCraft;

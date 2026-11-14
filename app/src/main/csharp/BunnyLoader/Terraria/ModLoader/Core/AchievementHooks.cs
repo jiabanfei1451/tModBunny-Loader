@@ -99,7 +99,7 @@ internal static unsafe class AchievementHooks
     static void AchievementDraw(On_GUIAchievementsMenu.orig_AchievementDraw orig, GUIAchievementsMenu self, ItemGrid_Layout gridLayout, int index, Vector2 position, float scale)
     {
         var list = new GameList(self.SortedAchievementsData);
-        Achievement achievement = !list.IsNull && index >= 0 && index < list.Count ? list.Get<Achievement>(index) : default;
+        Achievement achievement = !list.IsNull && index >= 0 && index < list.Count ? new Achievement(list[index]) : null!;
         ModAchievement? modAchievement = AchievementLoader.Of(achievement);
         Texture2D texture = modAchievement != null ? TextureOf(modAchievement) : default;
         if (texture.IsNull)

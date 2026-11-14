@@ -4,7 +4,7 @@ using Microsoft.Xna.Framework;
 
 namespace Terraria;
 
-public readonly partial struct Collision
+public sealed partial class Collision
 {
     public static void LaserScan(Vector2 samplingPoint, Vector2 directionUnit, float samplingWidth, float maxDistance, float[] samples)
     {

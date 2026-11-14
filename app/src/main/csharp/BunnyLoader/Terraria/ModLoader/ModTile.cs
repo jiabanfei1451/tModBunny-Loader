@@ -14,11 +14,13 @@ public abstract class ModBlockType : ModTexturedType, ILocalizedModType
 {
     public ushort Type { get; internal set; }
 
-    public SoundStyle? HitSound = new SoundStyle(ID.SoundID.Dig);
+    // Contrato é PROPRIEDADE (`public SoundStyle? HitSound { get; set; }`).
+    public SoundStyle? HitSound { get; set; } = new SoundStyle(ID.SoundID.Dig);
 
-    public int DustType;
+    // Contrato é PROPRIEDADE (`{ get; set; } = 0`), campo não expõe setter.
+    public int DustType { get; set; }
 
-    public ushort VanillaFallbackOnModDeletion;
+    public ushort VanillaFallbackOnModDeletion { get; set; } = 0;
 
     public abstract string LocalizationCategory { get; }
 
@@ -67,9 +69,17 @@ public abstract class ModTile : ModBlockType
 
     public int MinPick;
 
-    public int[] AdjTiles = Array.Empty<int>();
+    // Contrato 1.4.4.9 (`ModTile.cs:40`): `public int[] AdjTiles { get; set; }`.
+    // Como CAMPO só existe `stfld AdjTiles`; um `.tmod` compilado no PC chama
+    // `callvirt set_AdjTiles(int[])`. `ModTile` é abstrato e por isso FICA FORA
+    // do ShimMap (BuildMap ignora abstract não-sealed), então o IlPatcher não
+    // converte esse call em stfld — vira MissingMethodException nos 3 altares
+    // do Fargowiltas. Virar propriedade expõe o setter de verdade.
+    public int[] AdjTiles { get; set; } = Array.Empty<int>();
 
-    public int AnimationFrameHeight;
+    // Contrato é PROPRIEDADE (`public int AnimationFrameHeight { get; set; }`),
+    // campo não expõe `set_AnimationFrameHeight`. Mesmo caso do DustType.
+    public int AnimationFrameHeight { get; set; }
 
     public virtual string HighlightTexture => Texture + "_Highlight";
 
@@ -81,7 +91,17 @@ public abstract class ModTile : ModBlockType
 
     public sealed override void SetupContent() => SetStaticDefaults();
 
-    public void AddMapEntry(Color color, LocalizedText? name = null, Func<string, int, int, string>? nameFunc = null)
+    // Contrato 1.4.4.9 tem DOIS overloads: `(Color, LocalizedText name = null)` e
+    // `(Color, LocalizedText name, Func<...> nameFunc)`. O mod chamando
+    // `AddMapEntry(color, nome)` compila para o overload de DOIS parâmetros; o
+    // shim só tinha o de três (com default), então o `callvirt` de 2 parâmetros
+    // não ligava -> MissingMethodException (4 tiles do Fargowiltas).
+    public void AddMapEntry(Color color, LocalizedText name = null)
+    {
+        TileLoader.AddMapEntry(this, color, name ?? CreateMapEntryName(), null);
+    }
+
+    public void AddMapEntry(Color color, LocalizedText name, Func<string, int, int, string> nameFunc)
     {
         TileLoader.AddMapEntry(this, color, name ?? CreateMapEntryName(), nameFunc);
     }
@@ -228,4 +248,7 @@ public abstract class ModTile : ModBlockType
     public virtual void AdjustMultiTileVineParameters(int i, int j, ref float? overrideWindCycle, ref float windPushPowerX, ref float windPushPowerY, ref bool dontRotateTopTiles, ref float totalWindMultiplier, ref Texture2D glowTexture, ref Color glowColor)
     {
     }
+
+    /// <summary>tML: o mod decide se o tile é escolhido ao "auto selecionar".</summary>
+    public virtual bool AutoSelect(int i, int j, Item item) => false;
 }

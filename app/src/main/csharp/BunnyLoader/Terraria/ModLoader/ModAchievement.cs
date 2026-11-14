@@ -80,7 +80,7 @@ public abstract class ModAchievement : ModType<Achievement, ModAchievement>, ILo
     public TileDestroyedCondition AddTileDestroyedCondition(string key, int[] tileIds) =>
         (TileDestroyedCondition)Add(TileDestroyedCondition.Create(User, GameArrayBuilder.Create<ushort>(tileIds.Select(x => (ushort)x).ToArray())), key);
 
-    public T AddCondition<T>(T condition) where T : struct, IGameObject
+    public T AddCondition<T>(T condition) where T : class, IGameObject
     {
         Add(new AchievementCondition(condition.Pointer), null);
         return condition;
@@ -121,7 +121,7 @@ public abstract class ModAchievement : ModType<Achievement, ModAchievement>, ILo
         AchievementLoader.Setup(this);
     }
 
-    protected sealed override Achievement CreateTemplateEntity() => default;
+    protected sealed override Achievement CreateTemplateEntity() => TemplateEntity.Create<Achievement>(Achievement.Class);
 
     public virtual void AutoStaticDefaults()
     {

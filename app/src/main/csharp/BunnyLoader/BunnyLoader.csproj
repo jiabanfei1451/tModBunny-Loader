@@ -38,6 +38,11 @@
     <ProjectReference Include="../BunnyLoader.Compiler/BunnyLoader.Compiler.csproj" />
   </ItemGroup>
 
+  <!-- Reescrita de IL dos mods PC (ldfld/stfld -> call get_X/set_X). -->
+  <ItemGroup>
+    <PackageReference Include="Mono.Cecil" Version="0.11.5" />
+  </ItemGroup>
+
   <Target Name="IncludeGameProxies" AfterTargets="GenerateGameProxies" BeforeTargets="CoreCompile">
     <ItemGroup>
       <Compile Include="$(ProxyGenOut)*.g.cs" />

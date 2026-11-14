@@ -27,12 +27,20 @@ bool MonoApi::load() {
             ok = false;
         }
     };
+    // Opcionais: se uma versão do Mono não exportar o preload hook, seguimos
+    // só com os eventos gerenciados (ShimAssembly.Install) em vez de derrubar
+    // todos os mods C#.
+    auto resolveOptional = [&](auto& slot, const char* name) {
+        slot = reinterpret_cast<std::remove_reference_t<decltype(slot)>>(dlsym(lib, name));
+    };
     resolve(monovm_initialize, "monovm_initialize");
     resolve(mono_set_assemblies_path, "mono_set_assemblies_path");
     resolve(mono_set_signal_chaining, "mono_set_signal_chaining");
     resolve(mono_set_crash_chaining, "mono_set_crash_chaining");
     resolve(mono_jit_init_version, "mono_jit_init_version");
     resolve(mono_domain_assembly_open, "mono_domain_assembly_open");
+    resolveOptional(mono_install_assembly_preload_hook, "mono_install_assembly_preload_hook");
+    resolveOptional(mono_assembly_name_get_name, "mono_assembly_name_get_name");
     resolve(mono_assembly_get_image, "mono_assembly_get_image");
     resolve(mono_class_from_name, "mono_class_from_name");
     resolve(mono_class_get_method_from_name, "mono_class_get_method_from_name");
@@ -48,4 +56,4 @@ bool MonoApi::load() {
     return ok;
 }
 
-}
+} // namespace bl::dotnet

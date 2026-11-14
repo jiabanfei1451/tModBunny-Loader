@@ -1,10 +1,11 @@
 using System.Collections.Generic;
+using Terraria.Audio;
 using Terraria.ModLoader.Core;
 using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Item : IEntityWithGlobals<GlobalItem>
+public sealed partial class Item : IEntityWithGlobals<GlobalItem>
 {
     public ModItem? ModItem => ItemLoader.InstanceOf(this);
 
@@ -75,4 +76,41 @@ public readonly partial struct Item : IEntityWithGlobals<GlobalItem>
         get => ItemLoader.ResearchUnlockCount(type);
         set => ItemLoader.SetResearchUnlockCount(type, value);
     }
+
+    /// <summary>O jogo declara <c>(short)</c>; o tML expõe <c>(int)</c>.</summary>
+    public void DefaultToCapturedCritter(int npcIdToSpawnOnUse) => DefaultToCapturedCritter((short)npcIdToSpawnOnUse);
+
+    static int __useSoundOffset = -1;
+
+    /// <summary>
+    /// No tML <c>Item.UseSound</c> é <c>SoundStyle?</c> — e é assim que o mod
+    /// usa: <c>item.UseSound = SoundID.Item1;</c> vira
+    /// <c>newobj Nullable&lt;SoundStyle&gt;</c> + <c>stfld</c>. No dump o campo
+    /// é uma REFERÊNCIA <c>LegacySoundStyle</c> (8 bytes). Ler/escrever o
+    /// ponteiro direto mantém o layout e dá a assinatura certa ao mod.
+    /// </summary>
+    public unsafe SoundStyle? UseSound
+    {
+        get
+        {
+            if (Pointer == 0) return null;
+            nint pointer = *(nint*)(Pointer + BunnyLoader.Interop.GameInterop.Offset(ref __useSoundOffset, Class, "UseSound"));
+            return pointer == 0 ? null : new SoundStyle(pointer);
+        }
+        set
+        {
+            if (Pointer == 0) return;
+            *(nint*)(Pointer + BunnyLoader.Interop.GameInterop.Offset(ref __useSoundOffset, Class, "UseSound")) =
+                value?.Pointer ?? 0;
+        }
+    }
+
+    /// <summary>
+    /// Assinatura de <c>NewItem</c> do tML 1.4.4 (com <c>noBroadcast</c>,
+    /// <c>noGrabDelay</c> e <c>reverseLookup</c>). Os sinalizadores extras não
+    /// têm equivalente nativo aqui; ficam aceitos e ignorados.
+    /// </summary>
+    public static int NewItem(Terraria.DataStructures.IEntitySource source, Microsoft.Xna.Framework.Rectangle rectangle,
+        int type, int stack, bool noBroadcast, int prefix, bool noGrabDelay, bool reverseLookup)
+        => NewItem(source, rectangle, type, stack, prefix);
 }

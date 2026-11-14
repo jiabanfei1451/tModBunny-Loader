@@ -19,6 +19,9 @@ public abstract class GlobalPylon : ModType
     {
     }
 
+    /// <summary>tML: <c>null</c> = deixa o jogo decidir. Ver <see cref="GlobalItem.CanConsumeBait"/>.</summary>
+    public virtual bool? ValidTeleportCheck_PreAnyDanger(TeleportPylonInfo pylonInfo) => null;
+
     protected sealed override void Register() => PylonHooks.Add(this);
 
     public sealed override void SetupContent() => SetStaticDefaults();

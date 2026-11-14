@@ -1559,20 +1559,21 @@ public class CheatBridge {
     }
 
     /**
-     * A animacao de carregamento, enquanto o catalogo monta.
+     * O girassol do jogo abrindo e fechando, enquanto o catalogo monta.
      *
-     * spr_loading.png e uma tira vertical de quadros quadrados. Desenhado a
-     * mao, quadro a quadro, porque AnimationDrawable pede um drawable por
+     * spr_loading.png e uma tira vertical de 19 quadros de 52x54: o botao
+     * abre, as petalas crescem, murcham e sobra a semente — e volta. Desenhado
+     * a mao, quadro a quadro, porque AnimationDrawable pede um drawable por
      * quadro e este menu roda sem a classe R do app.
      */
-    static final class LoadingStrip extends View {
-        private static final int VIEW_SIZE = 52, FRAME_MS = 125;
+    static final class Sunflower extends View {
+        private static final int FRAMES = 19, FRAME_W = 52, FRAME_H = 54, FRAME_MS = 60;
         private final Bitmap strip;
         private final Paint paint = new Paint();
         private final Rect src = new Rect(), dst = new Rect();
         private int frame;
 
-        LoadingStrip(Activity a) {
+        Sunflower(Activity a) {
             super(a);
             strip = sprite(a, "spr_loading");
             paint.setFilterBitmap(false);   // pixel art: vizinho-mais-proximo
@@ -1580,29 +1581,28 @@ public class CheatBridge {
 
         @Override protected void onMeasure(int wSpec, int hSpec) {
             Activity a = (Activity) getContext();
-            setMeasuredDimension(px(a, VIEW_SIZE), px(a, VIEW_SIZE));
+            setMeasuredDimension(px(a, FRAME_W), px(a, FRAME_H));
         }
 
         @Override protected void onDraw(Canvas c) {
             if (strip == null) return;
-            int size = strip.getWidth();
-            int y = frame * size;
-            src.set(0, y, size, y + size);
-            dst.set(0, 0, getWidth(), getHeight());
+            int y = frame * FRAME_H;
+            src.set(0, y, FRAME_W, Math.min(strip.getHeight(), y + FRAME_H));
+            dst.set(0, 0, getWidth(), getHeight() * src.height() / FRAME_H);
             c.drawBitmap(strip, src, dst, paint);
-            frame = (frame + 1) % (strip.getHeight() / size);
+            frame = (frame + 1) % FRAMES;
             // Some da tela (secao trocada) e a View e solta: o invalidate cai
             // no vazio e a animacao para sozinha.
             postInvalidateDelayed(FRAME_MS);
         }
     }
 
-    /** A animacao com o recado embaixo, no meio da coluna. */
+    /** O girassol com o recado embaixo, no meio da coluna. */
     private static View loadingView(Activity act, String message) {
         LinearLayout box = new LinearLayout(act);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.addView(new LoadingStrip(act));
+        box.addView(new Sunflower(act));
         TextView t = text(act, message, 11, INK_DIM);
         t.setGravity(Gravity.CENTER);
         t.setPadding(0, px(act, 8), 0, 0);

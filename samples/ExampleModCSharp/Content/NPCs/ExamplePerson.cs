@@ -290,7 +290,7 @@ namespace ExampleMod.Content.NPCs
                 Main.DoNPCPortraitHop();
 
                 int hiveBackpackItemIndex = LocalPlayer.FindItem(ItemID.HiveBackpack);
-                var entitySource = TalkNPC!.Value.GetSource_GiftOrReward();
+                var entitySource = TalkNPC!.GetSource_GiftOrReward();
 
                 int stack = LocalPlayer.inventory[hiveBackpackItemIndex].stack;
                 LocalPlayer.inventory[hiveBackpackItemIndex].TurnToAir();

@@ -5,9 +5,9 @@ using Terraria.DataStructures;
 
 namespace Terraria.ID;
 
-public readonly partial struct BuffID
+public sealed partial class BuffID
 {
-    public readonly partial struct Sets
+    public sealed partial class Sets
     {
         public static BuffTextHandlerTable BuffTextHandlers { get; } = new();
 

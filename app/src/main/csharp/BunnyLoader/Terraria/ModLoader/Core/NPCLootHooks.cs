@@ -12,6 +12,13 @@ internal static unsafe class NPCLootHooks
     static bool wanted;
     static IntPtr sampleMethod;
 
+    /// <summary>
+    /// Este binário não tem o ponto de gancho de NPCLoot: um hook a menos é
+    /// degradável, mas LANÇAR aqui derrubava o mod inteiro (Fargowiltas parou
+    /// em `NPCLoot() +0x2f8` antes de registrar qualquer conteúdo).
+    /// </summary>
+    static bool unavailable;
+
     internal static void Install(NPCMethod methods)
     {
         wanted |= (methods & (NPCMethod.ModifyNPCLoot | NPCMethod.ModifyGlobalLoot)) != 0;
@@ -19,8 +26,12 @@ internal static unsafe class NPCLootHooks
         if ((methods & NPCMethod.PreKill) != 0) flags |= 1;
         if ((methods & NPCMethod.OnKill) != 0) flags |= 2;
         if ((methods & NPCMethod.BossLoot) != 0) flags |= 4;
-        if (flags != 0 && Host.Native()->InstallNPCLootHooks(flags, &Event) == 0)
-            throw new InvalidOperationException("Could not install the native NPC loot stages.");
+        if (flags == 0 || unavailable) return;
+        if (Host.Native()->InstallNPCLootHooks(flags, &Event) == 0)
+        {
+            unavailable = true;
+            Log.Warn("NPC loot: sem ponto de gancho neste binário; seguindo sem os estágios nativos de loot");
+        }
     }
 
     internal static void ContentReady()

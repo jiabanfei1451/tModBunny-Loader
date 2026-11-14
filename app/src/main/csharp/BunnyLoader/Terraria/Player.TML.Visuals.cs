@@ -3,7 +3,7 @@ using Terraria.Graphics.Effects;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public void ManageSpecialBiomeVisuals(string biomeName, bool inZone, Vector2 activationSource = default)
     {

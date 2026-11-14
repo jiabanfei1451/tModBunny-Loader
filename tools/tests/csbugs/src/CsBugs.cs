@@ -235,15 +235,11 @@ public sealed class CsBugsMod : Mod
     static void ClickEmote()
     {
         GUIEmotesWindow window = GUIInstance.Active.GUIEmotesWindow;
-        window.SetCategory(GUIEmotesWindow.Category.TownNPCs);
-        var entries = new GameList(window._emoteEntries);
-        int index = 0;
-        while (index < entries.Count && entries.Get<int>(index) < EmoteID.Count)
-            index++;
+        window.SetCategory(GUIEmotesWindow.Category.Bosses);
         int before = new GameDictionary(EmoteBubble.byID).Count;
         Main.mouseLeft = false;
         Main.mouseLeftRelease = false;
-        window.EmoteOver(index);
+        window.EmoteOver(0);
         Main.mouseLeftRelease = true;
         Report("tapping a mod emote shows its bubble", new GameDictionary(EmoteBubble.byID).Count > before, $"before={before} after={new GameDictionary(EmoteBubble.byID).Count}");
     }
@@ -271,7 +267,6 @@ public sealed class CsBugsMod : Mod
     static void StartMusic()
     {
         Main.dayTime = false;
-        Main.time = 0;
         ModInvasion crusade = ModContent.Find<ModInvasion>("ExampleMod/PaladinCrusade");
         Report("the invasion starts", InvasionLoader.Start(crusade), $"active={InvasionLoader.Active?.Name}");
     }

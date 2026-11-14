@@ -436,9 +436,10 @@ internal static class SubworldNet
             return;
         }
 
-        MPSessionManager sessions = MPSessionManager.Instance;
-        if (!sessions.IsNull)
-            sessions.CurrentSession = sessions.CreateNewDirectSession(PlatformUser.CurrentUser, MPSessionManager.LobbyState.InProgress, address, port);
+        // v65: MPSessionManager/PlatformUser do Android nao batem com o modelo do
+        // upstream (sem Instance/CurrentSession/CreateNewDirectSession no dump).
+        // O registro de "sessao direta" so afeta o lobby do jogo mobile; a
+        // conexao em si segue em Netplay.StartTcpClient abaixo.
         SubworldTravel.ShowTouchControlsPrompt(false);
         Main.menuMode = 10;
         Netplay.StartTcpClient(false);

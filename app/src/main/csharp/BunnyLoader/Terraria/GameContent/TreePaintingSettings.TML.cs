@@ -1,6 +1,6 @@
 namespace Terraria.GameContent;
 
-public readonly partial struct TreePaintingSettings
+public sealed partial class TreePaintingSettings
 {
     public TreePaintingSettings() : this(New().Pointer)
     {

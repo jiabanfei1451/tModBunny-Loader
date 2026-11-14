@@ -6,7 +6,7 @@ using Terraria.ModLoader;
 
 namespace BunnyLoader;
 
-internal sealed class GlobalList<TEntity, TGlobal> where TEntity : struct, IGameObject where TGlobal : GlobalType<TEntity, TGlobal>
+internal sealed class GlobalList<TEntity, TGlobal> where TEntity : class, IGameObject where TGlobal : GlobalType<TEntity, TGlobal>
 {
     readonly object gate = new();
     readonly EntityInstances<TGlobal?[]> perEntity = new();

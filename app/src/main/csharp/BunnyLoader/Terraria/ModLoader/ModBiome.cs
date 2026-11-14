@@ -4,7 +4,7 @@ using Terraria.Localization;
 
 namespace Terraria.ModLoader;
 
-public abstract class ModBiome : ModSceneEffect, ILocalizedModType
+public abstract class ModBiome : ModSceneEffect, Terraria.GameContent.Personalities.IShoppingBiome, ILocalizedModType
 {
     public override SceneEffectPriority Priority => SceneEffectPriority.BiomeLow;
 
@@ -47,6 +47,11 @@ public abstract class ModBiome : ModSceneEffect, ILocalizedModType
     public override void SetStaticDefaults() { }
 
     public virtual bool IsBiomeActive(Player player) => false;
+
+    // IShoppingBiome: o tML liga o diálogo dos NPCs de cidade ao bioma.
+    string Terraria.GameContent.Personalities.IShoppingBiome.NameKey => ShoppingNameKey;
+
+    bool Terraria.GameContent.Personalities.IShoppingBiome.IsInBiome(Player player) => IsBiomeActive(player);
 
     public virtual void OnEnter(Player player) { }
 

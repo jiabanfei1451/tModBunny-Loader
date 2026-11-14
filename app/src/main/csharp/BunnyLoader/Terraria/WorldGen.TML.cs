@@ -2,7 +2,7 @@ using Terraria.ID;
 
 namespace Terraria;
 
-public readonly unsafe partial struct WorldGen
+public unsafe sealed partial class WorldGen
 {
     public static void SpreadInfectionToNearbyTile(int x, int y, int conversionType, int range = 3)
     {

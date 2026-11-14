@@ -135,7 +135,6 @@ public static class BossBarLoader
     internal static void Set(NPC npc, ModBossBar? bar)
     {
         if (npc.IsNull) return;
-        if (bar is NeverValidBossBar) BossBarHooks.Install(false);
         lock (Gate)
         {
             if (bar == null) assigned.Remove(npc.Pointer);

@@ -16,10 +16,10 @@ internal static unsafe class TouchButtonHooks
 
     static Hook? visible, quickDraw, iconFrame, controlName, controlFrame;
     static int frame;
-    static int groupFrame = -30;
-    static readonly List<(string Name, GameHandle Id, GameArray<ContolType> Actions)> groups = new();
+    static int groupFrame = int.MinValue;
+    static readonly List<(GameHandle Id, GameArray<ContolType> Actions)> groups = new();
     static readonly Dictionary<string, GameHandle> groupKeys = new();
-    static readonly Dictionary<string, int> chosen = new();
+    static int[] before = Array.Empty<int>();
 
     internal static bool Applied { get; private set; }
 
@@ -93,27 +93,22 @@ internal static unsafe class TouchButtonHooks
             Ensure(false);
         });
         Guard("groups", RefreshGroups);
-        orig(self, elapsedTime);
-        if (groups.Count > 0) Guard("group choice", () => GroupChoices(self));
-    }
-
-    static void GroupChoices(GUIVirtualInputController controller)
-    {
-        foreach ((string name, GameHandle id, GameArray<ContolType> actions) in groups)
+        int count = groups.Count;
+        if (count == 0)
         {
-            GUIVirtualInputController.GroupControlState state = GroupState(controller, id);
-            if (state.IsNull || state.CurrentState == GUIVirtualInputController.GroupControlState.State.Closed)
-            {
-                chosen.Remove(name);
-                continue;
-            }
-            if (state.CurrentState == GUIVirtualInputController.GroupControlState.State.Opening)
-            {
-                if (state.pressedIndex >= 0) chosen[name] = state.pressedIndex;
-                continue;
-            }
-            if (!chosen.Remove(name, out int index) || index == GroupCentre || index >= actions.Length) continue;
-            if (TouchButtonLoader.ByAction((int)actions[index]) is ModTouchButton button) TouchButtonLoader.Press(button);
+            orig(self, elapsedTime);
+            return;
+        }
+        if (before.Length < count) before = new int[count];
+        for (int i = 0; i < count; i++) before[i] = GroupIndex(self, groups[i].Id);
+        orig(self, elapsedTime);
+        for (int i = 0; i < count; i++)
+        {
+            int was = before[i];
+            GameArray<ContolType> actions = groups[i].Actions;
+            if (was < 0 || was == GroupCentre || was >= actions.Length) continue;
+            if (GroupIndex(self, groups[i].Id) != -1) continue;
+            if (TouchButtonLoader.ByAction((int)actions[was]) is ModTouchButton button) TouchButtonLoader.Press(button);
         }
     }
 
@@ -349,10 +344,10 @@ internal static unsafe class TouchButtonHooks
         if (styles.IsNull) return default;
         VirtualControlsProfile_Layout profile = styles.ActiveProfile;
         if (profile.IsNull) return default;
-        GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+        GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
         VirtualControlsHardwareConfiguration_Layout hardwareConfig = profile.HardwareConfig;
         if (controls.IsNull || hardwareConfig.IsNull) return default;
-        GameArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = hardwareConfig.Slots;
+        GameRefArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = hardwareConfig.Slots;
         if (slot < 0 || slot >= controls.Length || slots.IsNull || slot >= slots.Length) return default;
         VirtualControlsHardwareConfigurationMapping_Layout hardware = slots[slot];
         if (hardware.IsNull || hardware.Style.IsNull) return default;
@@ -368,10 +363,10 @@ internal static unsafe class TouchButtonHooks
         VirtualControlsStyles_Layout styles = TouchButtonLoader.Styles();
         VirtualControlsProfile_Layout profile = styles.IsNull ? default : styles.ActiveProfile;
         if (profile.IsNull) return;
-        GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+        GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
         VirtualControlsHardwareConfiguration_Layout hardwareConfig = profile.HardwareConfig;
         if (controls.IsNull || hardwareConfig.IsNull || hardwareConfig.Slots.IsNull) return;
-        GameArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = hardwareConfig.Slots;
+        GameRefArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = hardwareConfig.Slots;
         int n = Math.Min(controls.Length, slots.Length);
         for (int i = 0; i < n; i++)
         {
@@ -386,15 +381,15 @@ internal static unsafe class TouchButtonHooks
             string? id = hardware.SlotId;
             if (!ours || id == null) continue;
             if (!groupKeys.TryGetValue(id, out GameHandle? key)) groupKeys[id] = key = new GameHandle(GameString.New(id));
-            groups.Add((id, key, actions));
+            groups.Add((key, actions));
         }
     }
 
-    static GUIVirtualInputController.GroupControlState GroupState(GUIVirtualInputController controller, GameHandle id)
+    static int GroupIndex(GUIVirtualInputController controller, GameHandle id)
     {
         GameObject states = controller.GroupStates;
-        if (states.IsNull) return default;
+        if (states.IsNull) return -1;
         var dictionary = new GameDictionary(states);
-        return dictionary.TryGetValue(id.Target, out GUIVirtualInputController.GroupControlState state) ? state : default;
+        return dictionary.TryGetReference(id.Target, out IntPtr state) && state != IntPtr.Zero ? new GUIVirtualInputController.GroupControlState(state).pressedIndex : -1;
     }
 }

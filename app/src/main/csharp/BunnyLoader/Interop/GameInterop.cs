@@ -134,7 +134,12 @@ public static unsafe class GameInterop
                     $"{cls.FullName}: '{signature}': struct layout of {(bad == layout.Length - 1 ? "the return value" : $"parameter {bad + 1}")} differs from the game");
         }
         slot.Info = info;
-        Volatile.Write(ref slot.Fn, Host.Native()->MethodPointer(info));
+        IntPtr fn = Host.Native()->MethodPointer(info);
+        // Ponteiro 0 = metodo sem corpo. Instalar/callar isso vira SIGSEGV
+        // dentro do shadowhook (endereco 0) e mata o processo sem mensagem.
+        if (fn == IntPtr.Zero)
+            throw new MissingMethodException($"{cls.FullName}: '{signature}': sem corpo executavel");
+        Volatile.Write(ref slot.Fn, fn);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,12 +162,17 @@ public static unsafe class GameInterop
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Call(IntPtr fn, CallFrame* frame)
     {
+        // fn == 0 vira SIGSEGV (o callgame faz blr no registrador). Como isso
+        // mata o processo sem passar por excecao nenhuma, transformamos em erro
+        // gerenciavel: aparece no log e o jogo continua.
+        if (fn == IntPtr.Zero) throw new MissingMethodException("game method pointer is null");
         if (Host.Api->CallGame(fn, frame) == 0) ThrowGame();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CallFast(IntPtr fn, CallFrame* frame)
     {
+        if (fn == IntPtr.Zero) throw new MissingMethodException("game method pointer is null");
         var call = (delegate* unmanaged[SuppressGCTransition]<IntPtr, CallFrame*, int>)Host.Api->CallGame;
         if (call(fn, frame) == 0) ThrowGame();
     }

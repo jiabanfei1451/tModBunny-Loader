@@ -1,6 +1,6 @@
 namespace Terraria.GameContent.Drawing;
 
-public readonly unsafe partial struct TileDrawing
+public unsafe sealed partial class TileDrawing
 {
     public static bool IsVisible(Tile tile)
     {

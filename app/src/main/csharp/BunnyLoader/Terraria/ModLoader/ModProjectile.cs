@@ -8,7 +8,13 @@ namespace Terraria.ModLoader;
 
 public abstract class ModProjectile : ModType<Projectile, ModProjectile>, ILocalizedModType
 {
-    public ref Projectile Projectile => ref entity;
+    /// <summary>
+    /// No tML isto devolve o PROJÉTIL POR VALOR; aqui era <c>ref</c> e o mod
+    /// compilado no PC não achava <c>get_Projectile()</c> (assinatura de
+    /// retorno diferente). Os campos do proxy já são <c>ref</c>, então
+    /// <c>Projectile.ai[0] = 1</c> continua escrevendo na memória nativa.
+    /// </summary>
+    public Projectile Projectile => entity;
 
     public int Type { get; internal set; }
 
@@ -22,46 +28,17 @@ public abstract class ModProjectile : ModType<Projectile, ModProjectile>, ILocal
 
     public int CooldownSlot { get; set; } = -1;
 
-    int drawOffsetX, drawOriginOffsetY;
-    float drawOriginOffsetX;
+    public int DrawOffsetX { get; set; }
 
-    public int DrawOffsetX
-    {
-        get => drawOffsetX;
-        set
-        {
-            drawOffsetX = value;
-            if (value != 0) Core.ProjectileHooks.WantDrawOffset();
-        }
-    }
+    public int DrawOriginOffsetY { get; set; }
 
-    public int DrawOriginOffsetY
-    {
-        get => drawOriginOffsetY;
-        set
-        {
-            drawOriginOffsetY = value;
-            if (value != 0) Core.ProjectileHooks.WantDrawOffset();
-        }
-    }
-
-    public float DrawOriginOffsetX
-    {
-        get => drawOriginOffsetX;
-        set
-        {
-            drawOriginOffsetX = value;
-            if (value != 0) Core.ProjectileHooks.WantDrawOffset();
-        }
-    }
-
-    internal bool HasDrawOffset => drawOffsetX != 0 || drawOriginOffsetY != 0 || drawOriginOffsetX != 0;
+    public float DrawOriginOffsetX { get; set; }
 
     public virtual string Texture => (GetType().Namespace + "." + Name).Replace('.', '/');
 
     public virtual string GlowTexture => Texture + "_Glow";
 
-    protected sealed override Projectile CreateTemplateEntity() => default;
+    protected sealed override Projectile CreateTemplateEntity() => TemplateEntity.Create<Projectile>(Projectile.Class);
 
     protected sealed override void Register() => ProjectileLoader.Register(this);
 

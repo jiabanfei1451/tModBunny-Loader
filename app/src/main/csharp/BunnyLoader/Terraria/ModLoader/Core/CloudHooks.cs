@@ -31,7 +31,7 @@ internal static class CloudHooks
 
     static int FreeSlot()
     {
-        GameArray<Cloud> clouds = Main.cloud;
+        GameRefArray<Cloud> clouds = Main.cloud;
         int count = Math.Min(200, clouds.Length);
         for (int i = 0; i < count; i++)
         {
@@ -79,7 +79,7 @@ internal static class CloudHooks
 
     static int IndexOf(Cloud cloud)
     {
-        GameArray<Cloud> clouds = Main.cloud;
+        GameRefArray<Cloud> clouds = Main.cloud;
         for (int i = 0; i < clouds.Length; i++)
         {
             if (clouds[i].Pointer == cloud.Pointer) return i;

@@ -8,6 +8,7 @@
 #include <dlfcn.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #include <cstring>
 #include <string>
@@ -38,6 +39,15 @@ std::string joined(const std::vector<std::string>& parts) {
     return out;
 }
 
+/**
+ * Os sinais de parar o mundo do Boehm (o coletor do IL2CPP). O SGen do Mono
+ * usa os MESMOS no Android (SIGPWR para suspender, SIGXCPU para retomar), e o
+ * manipulador instalado por ultimo ganha: se o do Mono ficasse, a coleta do
+ * jogo mandaria o sinal para uma thread que o Mono nao conhece e esperaria a
+ * resposta para sempre. Com a suspensao cooperativa (MONO_THREADS_SUSPEND),
+ * o Mono nao manda esses sinais; os do Boehm voltam ao lugar depois da
+ * inicializacao.
+ */
 struct SignalSnapshot {
     int signal;
     struct sigaction action;
@@ -58,6 +68,15 @@ bool sameHandler(const struct sigaction& a, const struct sigaction& b) {
     return a.sa_sigaction == b.sa_sigaction && a.sa_flags == b.sa_flags;
 }
 
+/**
+ * A janela da inicializacao do Mono. O mono_jit_init instala os manipuladores
+ * dele para SIGPWR/SIGXCPU logo no comeco e so devolve o controle segundos
+ * depois (no MuMu, com o houdini): uma coleta do jogo nesse meio manda o
+ * sinal para as threads do jogo, o manipulador do Mono nao as conhece e
+ * aborta ("mono_thread_info_current: info", 2026-10-26). Entao o coletor do
+ * jogo fica parado do comeco ao fim, e os manipuladores do Boehm voltam ANTES
+ * de ele ser religado.
+ */
 class GameGcPause {
 public:
     GameGcPause() {
@@ -96,9 +115,49 @@ private:
     std::vector<SignalSnapshot> saved_;
 };
 
-MonoDomain* initRuntime(const std::string& dir) {
+/**
+ * O shim (BunnyLoader.dll) aberto no dominio. E o que o preload hook devolve
+ * quando um `.tmod` pede `tModLoader`, `Terraria`, `FNA`... Ver a lista do
+ * lado C# em ShimAssembly.Identities (tirada de tMLMod.targets do 1.4.5).
+ */
+MonoAssembly* g_shimAssembly = nullptr;
+
+const char* const kShimIdentities[] = {
+    "tModLoader", "Terraria", "TerrariaServer", "Terraria.ModLoader",
+    "ReLogic", "FNA", "Microsoft.Xna.Framework",
+    "log4net", "Newtonsoft.Json", "Steamworks.NET", "Mono.Cecil",
+};
+
+/**
+ * mono_install_assembly_preload_hook: devolver um MonoAssembly* ja carregado
+ * e suficiente. E deterministico — nao depende de AppDomain.AssemblyResolve
+ * ter sido disparado pelo caminho RuntimeModule.GetTypes() do Mono.
+ */
+MonoAssembly* shimPreloadHook(MonoAssemblyName* aname, char**, void*) {
+    if (!g_shimAssembly || !aname) return nullptr;
     auto& m = mono();
-    setenv("MONO_THREADS_SUSPEND", "coop", 1);
+    const char* name = m.mono_assembly_name_get_name
+        ? m.mono_assembly_name_get_name(aname)
+        // MonoAssemblyName comeca com `const char* name` (mono/metadata/assembly.h).
+        : *reinterpret_cast<const char* const*>(aname);
+    if (!name) return nullptr;
+    for (const char* id : kShimIdentities) {
+        if (std::strcmp(name, id) != 0) continue;
+        // Se existe uma fachada com esse nome (tModLoader.dll), o caminho
+        // normal do Mono e melhor: ela TEM o nome certo e encaminha os tipos
+        // para o shim. O hook so substitui as identidades sem fachada.
+        const std::string facade = config().dotnetDir + "/" + name + ".dll";
+        struct stat st{};
+        if (stat(facade.c_str(), &st) == 0) return nullptr;
+        BL_INFO("dotnet: preload %s -> BunnyLoader.dll", name);
+        return g_shimAssembly;
+    }
+    return nullptr;
+}
+
+/** monovm_initialize + mono_jit_init, com os assemblies de `dir`. */
+MonoDomain* initRuntime(const std::string& dir) {
+    auto& m = mono();    setenv("MONO_THREADS_SUSPEND", "coop", 1);
     m.mono_set_signal_chaining(1);
     m.mono_set_crash_chaining(1);
     m.mono_set_assemblies_path(dir.c_str());
@@ -129,7 +188,7 @@ MonoDomain* initRuntime(const std::string& dir) {
     return domain;
 }
 
-}
+} // namespace
 
 DotnetHost& host() {
     static DotnetHost instance;
@@ -176,6 +235,16 @@ bool DotnetHost::start() {
     if (!hostClass) {
         BL_ERROR("dotnet: BunnyLoader.Host not found in %s", apiPath.c_str());
         return false;
+    }
+    // Depois que o shim existe e antes de qualquer mod: o Mono passa a
+    // resolver as identidades do tModLoader nele. Sem isto o GetTypes() de um
+    // .tmod morre em FileNotFoundException('tModLoader, Version=1.4.4.9').
+    g_shimAssembly = assembly;
+    if (m.mono_install_assembly_preload_hook) {
+        m.mono_install_assembly_preload_hook(&shimPreloadHook, nullptr);
+        BL_INFO("dotnet: preload hook de tModLoader instalado");
+    } else {
+        BL_WARN("dotnet: Mono sem preload hook; so os eventos gerenciados resolvem tModLoader");
     }
     auto entryPoint = [&](const char* name, int argc) -> void* {
         MonoMethod* method = m.mono_class_get_method_from_name(hostClass, name, argc);
@@ -229,10 +298,12 @@ void DotnetHost::consoleTick() {
 void DotnetHost::finishLoading() {
     if (!start()) return;
     auto& m = mono();
+    // O detach desfaz o registro inteiro, entao a volta ao BLOCKING nao
+    // precisa do par (exit_gc_unsafe).
     void* stackdata = nullptr;
     m.mono_threads_enter_gc_unsafe_region_unbalanced(&stackdata);
     if (MonoThread* thread = m.mono_thread_current()) m.mono_thread_detach(thread);
     BL_DEBUG("dotnet: load thread detached");
 }
 
-}
+} // namespace bl::dotnet

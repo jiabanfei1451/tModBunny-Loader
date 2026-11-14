@@ -4,7 +4,7 @@ using BunnyLoader.Interop;
 
 namespace ReLogic.Content;
 
-public readonly unsafe struct AssetArray<T> : IGameObject where T : struct, IGameObject
+public readonly unsafe struct AssetArray<T> : IGameObject where T : class, IGameObject
 {
     public readonly IntPtr Pointer;
 

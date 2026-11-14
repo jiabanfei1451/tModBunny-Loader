@@ -22,6 +22,8 @@ import dev.bunnyloader.game.ModAudio
 import dev.bunnyloader.game.ServerSync
 import dev.bunnyloader.game.UnityHost
 import dev.bunnyloader.mods.ModRepository
+import dev.bunnyloader.mods.TmlFlow
+import dev.bunnyloader.mods.TmlMods
 import dev.bunnyloader.nativebridge.NativeBridge
 import dev.bunnyloader.nativebridge.NativeConfig
 import java.io.File
@@ -128,6 +130,11 @@ class GameActivity : Activity() {
         host = unity
         setContentView(view)
         view.requestFocus()
+        announceTmlMods()
+        // O painel de carregamento NAO e mais uma View do Android: quem desenha
+        // e o shim, dentro do jogo (LoadingWindow.cs), com o SpriteBatch e a
+        // fonte do proprio menu. A View ficava por cima do SurfaceView, com
+        // escala e posicao diferentes do que o jogo desenha.
         BootLog.add(this, "=== UnityPlayer no ar ===")
     }
 
@@ -154,6 +161,109 @@ class GameActivity : Activity() {
         return File(dir, "bunny_$stamp.txt")
     }
 
+    /**
+     * Um `.tmod` ligado precisa aparecer NA TELA do jogo: sem isto o usuário
+     * liga o interruptor, entra no jogo e não tem como saber se o fluxo TML
+     * chegou a subir (o carregamento acontece dentro do processo :game, antes
+     * de a Unity desenhar qualquer coisa).
+     *
+     * Duas pistas: um Toast e uma faixa sobre o jogo por alguns segundos. A
+     * faixa usa `addContentView`, o mesmo mecanismo do botão de mods do
+     * CheatBridge; não é clicável e some sozinha, então não come o toque.
+     */
+    private var loadingPanel: dev.bunnyloader.game.LoadingPanel? = null
+    private var progressHandler: android.os.Handler? = null
+
+    /**
+     * Painel de progresso antigo (View do Android sobre o SurfaceView).
+     *
+     * Nao e mais chamado: a barra agora e desenhada pelo jogo
+     * (`BunnyLoader/Screen/LoadingWindow.cs`, hook em `Main.DoDraw`), com a
+     * mesma matriz e a mesma fonte do menu — a View ficava com escala e
+     * posicao proprias, por cima da interface do jogo.
+     *
+     * Fica aqui como reserva: se o hook nao entrar em algum aparelho, basta
+     * chamar `startLoadingPanel()` de novo no fim de `onCreate`.
+     */
+    private fun startLoadingPanel() {
+        val file = java.io.File(java.io.File(filesDir, "dotnet"), "tml-progress.txt")
+        if (!file.parentFile!!.isDirectory) return
+        val panel = dev.bunnyloader.game.LoadingPanel(this).apply {
+            title = "正在加载 C# 内容…"
+            isClickable = false
+            isFocusable = false
+        }
+        val params = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+        )
+        runCatching { addContentView(panel, params) }.onFailure { return }
+        loadingPanel = panel
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        progressHandler = handler
+        var idle = 0
+        val tick = object : Runnable {
+            override fun run() {
+                if (loadingPanel !== panel) return
+                val text = runCatching { if (file.isFile) file.readText().trim() else "" }.getOrDefault("")
+                if (text.isNotEmpty()) {
+                    idle = 0
+                    val cut = text.indexOf('|')
+                    if (cut > 0) {
+                        text.substring(0, cut).trim().toIntOrNull()?.let { panel.target = it / 100f }
+                        panel.title = text.substring(cut + 1).trim()
+                    } else {
+                        panel.title = text
+                    }
+                } else if (++idle > 24) {
+                    // ~6 s sem escrita: o carregamento terminou (ou nao ha mods).
+                    hideLoadingPanel()
+                    return
+                }
+                handler.postDelayed(this, 250)
+            }
+        }
+        handler.post(tick)
+        handler.postDelayed({ hideLoadingPanel() }, 300_000)
+    }
+
+    private fun hideLoadingPanel() {
+        progressHandler?.removeCallbacksAndMessages(null)
+        progressHandler = null
+        val panel = loadingPanel ?: return
+        loadingPanel = null
+        runCatching { (panel.parent as? android.view.ViewGroup)?.removeView(panel) }
+    }
+
+    private fun announceTmlMods() {
+        // O :game pode subir sem o launcher ter aberto a aba TML; garante aqui
+        // a migração de layout e a conversão dos `.rawimg` do tML 1.4.5.
+        runCatching { TmlMods.upgrade(this) }
+        // O núcleo decide o caminho do tModLoader lendo `TML/mode.txt`. Esse
+        // arquivo era escrito só quando a aba TML abria: quem tocava em Jogar
+        // sem passar por lá subia o jogo pelo caminho normal, sem mod nenhum,
+        // e a tela de carregamento sumia num piscar. Reescrever aqui custa um
+        // arquivo de texto e fecha o buraco também para quem entra direto no
+        // :game (atalho, reinício).
+        runCatching { TmlFlow.writeMarker(this) }
+        val names = runCatching { TmlMods.enabled(this).sorted() }.getOrDefault(emptyList())
+        if (names.isEmpty()) return
+        val list = names.joinToString(", ")
+        BootLog.add(this, "TML: fluxo ativo, mods ligados = $list")
+        // O shim divide a barra de progresso pelo número de mods; ele não tem
+        // como contar os `.tmod` sozinho (cada LoadMod chega isolado).
+        val dotnet = java.io.File(filesDir, "dotnet")
+        if (dotnet.isDirectory) {
+            runCatching { java.io.File(dotnet, "tml-count.txt").writeText(names.size.toString()) }
+        }
+        MenuLocalization.initialize(this)
+        val text = MenuLocalization.text("TmlLaunchLoading", list)
+        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+        // A faixa no topo saiu: quem mostra o que esta carregando agora e o
+        // painel central (startLoadingPanel), e duas coisas ao mesmo tempo
+        // tampavam o menu do jogo justamente na abertura.
+    }
+
     private fun startNativeCore() {
         if (!NativeBridge.ensureLoaded()) {
             Log.i(TAG, "nucleo nativo ausente (bl.nativeBuild=false) - seguindo sem mods")
@@ -171,6 +281,10 @@ class GameActivity : Activity() {
                 NativeConfig(
                     gameLibDir = BundledRuntime.libDir(this).absolutePath,
                     modsDir = repo.modsDir.absolutePath,
+                    // A pasta dos .tmod: irmã de bunny_packs, dentro do nosso
+                    // Android/data. Sem root não há como usar a raiz do
+                    // armazenamento como diretório de trabalho.
+                    tmlDir = TmlMods.dir(this).absolutePath,
                     enabledMods = (session?.mods ?: repo.enabledSpecs()).toTypedArray(),
                     logPath = logFile.absolutePath,
                     // Canal de dev: adb push <arquivo> para a NOSSA pasta
@@ -290,6 +404,7 @@ class GameActivity : Activity() {
     override fun onStop() { super.onStop(); host?.stop() }
 
     override fun onDestroy() {
+        hideLoadingPanel()
         if (currentRef?.get() === this) currentRef = null
         val hadHost = host != null
         host?.destroy()

@@ -5,12 +5,31 @@ using BunnyLoader.Interop;
 
 namespace Terraria.GameContent.Bestiary;
 
-public readonly partial struct BestiaryEntry
+public sealed partial class BestiaryEntry
 {
-    public BestiaryInfoList Info => new(Info_);
+    /// <summary>Wrapper ao vivo da lista nativa (uso interno do shim).</summary>
+    public BestiaryInfoList InfoList => new(Info_);
+
+    /// <summary>
+    /// O tML declara <c>Info</c> como <c>List&lt;IBestiaryInfoElement&gt;</c>;
+    /// aqui a lista nativa é do il2cpp, então o que dá para entregar é um
+    /// RETRATO gerenciado. Ler funciona; um <c>Add</c> do mod se perde.
+    /// </summary>
+    public List<IBestiaryInfoElement> Info
+    {
+        get
+        {
+            var result = new List<IBestiaryInfoElement>();
+            if (IsNull) return result;
+            var native = new GameList(Info_);
+            int count = native.Count;
+            for (int i = 0; i < count; i++) result.Add(new IBestiaryInfoElement(native[i]));
+            return result;
+        }
+    }
 }
 
-public readonly partial struct FlavorTextBestiaryInfoElement
+public sealed partial class FlavorTextBestiaryInfoElement
 {
     public FlavorTextBestiaryInfoElement(string languageKey) : this(New(languageKey).Pointer) { }
 }

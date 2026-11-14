@@ -16,6 +16,7 @@ namespace bl::graphics {
 
 namespace {
 
+// Uma textura com FBO proprio, do tamanho do viewport (vezes a escala).
 struct Surface {
     GLuint texture = 0, fbo = 0;
     GLint w = 0, h = 0;
@@ -24,19 +25,21 @@ struct Surface {
 struct Resources {
     bool tried = false, ok = false;
     GLuint vao = 0, vbo = 0, sampler = 0;
-    Surface copy;
-    Surface history;
+    Surface copy;      // a copia da tela (uScreen)
+    Surface history;   // o mundo do quadro anterior
     bool historyValid = false;
-    std::unordered_map<std::string, Surface> targets;
+    std::unordered_map<std::string, Surface> targets;   // nome@escala -> alvo
 };
 
 Resources g_res;
 std::mutex g_statsMutex;
-RenderStats g_local;
+RenderStats g_local;   // so os campos do lado GL
 bool g_loggedFirst = false;
 bool g_warnedOffset = false;
+// O glGetError espera a GPU em alguns drivers: so nos primeiros quadros,
+// para descobrir se o blit vale neste aparelho.
 int g_errorChecks = 30;
-bool g_useCopy = false;
+bool g_useCopy = false;   // o blit falhou aqui: copia simples
 
 bool init() {
     if (g_res.tried) return g_res.ok;
@@ -53,6 +56,8 @@ bool init() {
     g.VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     g.EnableVertexAttribArray(0);
 
+    // Sampler proprio: as texturas dos efeitos nao dependem do sampler que
+    // estiver na unidade, nem mexem no da Unity.
     g.GenSamplers(1, &g_res.sampler);
     g.SamplerParameteri(g_res.sampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     g.SamplerParameteri(g_res.sampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -62,6 +67,7 @@ bool init() {
     return true;
 }
 
+// (Re)cria a superficie se o tamanho mudou. true se ela ficou nova (sem conteudo).
 bool ensureSurface(Surface& s, GLint w, GLint h, const char* what, bool& fresh) {
     fresh = false;
     if (s.texture && s.w == w && s.h == h) return true;
@@ -77,14 +83,14 @@ bool ensureSurface(Surface& s, GLint w, GLint h, const char* what, bool& fresh) 
     g.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s.texture, 0);
     const GLenum status = g.CheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        BL_ERROR("screen effects: %s FBO incomplete (0x%x) at %dx%d", what, status, w, h);
+        BL_ERROR("efeitos de tela: FBO de %s incompleto (0x%x) em %dx%d", what, status, w, h);
         s.w = s.h = 0;
         return false;
     }
     s.w = w;
     s.h = h;
     fresh = true;
-    BL_DEBUG("screen effects: %s at %dx%d", what, w, h);
+    BL_DEBUG("efeitos de tela: %s em %dx%d", what, w, h);
     return true;
 }
 
@@ -96,13 +102,14 @@ void logFirst(const DrawTarget& target) {
     g.GetIntegerv(GL_SAMPLES, &samples);
     const char* version = reinterpret_cast<const char*>(g.GetString(GL_VERSION));
     const char* renderer = reinterpret_cast<const char*>(g.GetString(GL_RENDERER));
-    BL_INFO("screen effects: GL '%s' in '%s'; fbo %d viewport=%d,%d %dx%d samples=%d",
+    BL_INFO("efeitos de tela: GL '%s' em '%s'; fbo %d viewport=%d,%d %dx%d samples=%d",
             version ? version : "?", renderer ? renderer : "?", target.fbo,
             target.viewport[0], target.viewport[1], target.viewport[2], target.viewport[3], samples);
     std::lock_guard<std::mutex> lock(g_statsMutex);
     g_local.samples = samples;
 }
 
+// Pixels relativos a origem do viewport.
 struct Box {
     GLint x = 0, y = 0, w = 0, h = 0;
     bool contains(const Box& o) const {
@@ -110,6 +117,8 @@ struct Box {
     }
 };
 
+// A caixa do passo (fracao do viewport) em pixels de uma superficie de
+// largura x altura, com 2 px de folga para o filtro linear.
 Box pixelBox(const float* box, GLint width, GLint height) {
     const float fw = static_cast<float>(width), fh = static_cast<float>(height);
     const GLint x0 = std::max(0, static_cast<GLint>(std::floor(box[0] * fw)) - 2);
@@ -119,6 +128,9 @@ Box pixelBox(const float* box, GLint width, GLint height) {
     return {x0, y0, std::max(0, x1 - x0), std::max(0, y1 - y0)};
 }
 
+// Copia um pedaco da tela (pixels relativos ao viewport) para uma superficie
+// do tamanho do viewport. O blit resolve multisample; se o driver o recusar
+// nos primeiros quadros, fica a copia simples.
 bool copyScreen(const DrawTarget& t, Surface& dst, const Box& box) {
     auto& g = gl();
     const GLint vx = t.viewport[0], vy = t.viewport[1];
@@ -133,7 +145,7 @@ bool copyScreen(const DrawTarget& t, Surface& dst, const Box& box) {
         const GLenum error = g.GetError();
         if (error == GL_NO_ERROR) return true;
         g_useCopy = true;
-        BL_WARN("screen effects: blit refused (0x%x); using a plain copy", error);
+        BL_WARN("efeitos de tela: blit recusado (0x%x); usando copia simples", error);
         std::lock_guard<std::mutex> lock(g_statsMutex);
         g_local.blitError = static_cast<int32_t>(error);
     }
@@ -164,13 +176,14 @@ void setUniform(GLint loc, const UniformValue& u) {
     }
 }
 
+/** O estado de um quadro em execucao. */
 class FrameRun {
 public:
     FrameRun(const EffectFrame& frame, const DrawTarget& target) : frame_(frame), t_(target) {}
 
     bool Prepare() {
         bool fresh = false;
-        if (!ensureSurface(g_res.copy, t_.viewport[2], t_.viewport[3], "screen copy", fresh)) return false;
+        if (!ensureSurface(g_res.copy, t_.viewport[2], t_.viewport[3], "copia da tela", fresh)) return false;
         for (const TargetSpec& spec : frame_.targets) {
             const GLint w = std::max(1, static_cast<GLint>(std::lround(t_.viewport[2] * spec.scale)));
             const GLint h = std::max(1, static_cast<GLint>(std::lround(t_.viewport[3] * spec.scale)));
@@ -192,6 +205,7 @@ public:
         const Box box = pixelBox(e.box, dw, dh);
         if (box.w <= 0 || box.h <= 0) return false;
 
+        // O que o passo le da tela, na caixa dele em pixels da tela.
         const bool readsScreen = shader->builtin.screen >= 0 || e.source == kTexScreen || readsTexture(e, kTexScreen);
         if (readsScreen && !refreshCopy(pixelBox(e.box, t_.viewport[2], t_.viewport[3]))) return false;
 
@@ -218,6 +232,7 @@ public:
 
         const float vw = static_cast<float>(t_.viewport[2]), vh = static_cast<float>(t_.viewport[3]);
         const BuiltinUniforms& b = shader->builtin;
+        // uBox em fracao do viewport, recalculada dos pixels: o vUV bate com o fragmento.
         if (b.box >= 0) {
             const float fw = static_cast<float>(dw), fh = static_cast<float>(dh);
             g.Uniform4f(b.box, box.x / fw, box.y / fh, (box.x + box.w) / fw, (box.y + box.h) / fh);
@@ -245,9 +260,10 @@ public:
         return true;
     }
 
+    // O mundo com os efeitos, para o History do proximo quadro.
     void SaveHistory() {
         bool fresh = false;
-        if (!ensureSurface(g_res.history, t_.viewport[2], t_.viewport[3], "previous frame", fresh)) return;
+        if (!ensureSurface(g_res.history, t_.viewport[2], t_.viewport[3], "quadro anterior", fresh)) return;
         g_res.historyValid = copyScreen(t_, g_res.history, {0, 0, t_.viewport[2], t_.viewport[3]});
     }
 
@@ -262,6 +278,8 @@ private:
         GLint w = 1, h = 1;
     };
 
+    // A textura de um kTex*, alvo ou textura do mod; o quadro anterior que
+    // ainda nao existe vira a copia da tela.
     Bound texture(int id) {
         const Surface* s = nullptr;
         if (id == kTexScreen) s = &g_res.copy;
@@ -283,6 +301,8 @@ private:
         return false;
     }
 
+    // A copia so e refeita se a tela mudou desde a ultima ou se a caixa nova
+    // sai da que ja esta copiada.
     bool refreshCopy(const Box& box) {
         if (!screenDirty_ && copied_.contains(box)) return true;
         if (!copyScreen(t_, g_res.copy, box)) return false;
@@ -306,7 +326,7 @@ private:
     bool screenDirty_ = true;
 };
 
-}
+} // namespace
 
 void EffectRenderer::Execute(const EffectFrame& frame, const DrawTarget& target, const GlShadow& state) {
     auto& g = gl();
@@ -327,7 +347,7 @@ void EffectRenderer::Execute(const EffectFrame& frame, const DrawTarget& target,
         g.GetIntegerv(GL_SAMPLES, &samples);
         if (samples > 0) {
             g_warnedOffset = true;
-            BL_WARN("screen effects: viewport with origin %d,%d and multisample; the copy may fail",
+            BL_WARN("efeitos de tela: viewport com origem %d,%d e multisample; a copia pode falhar",
                     target.viewport[0], target.viewport[1]);
         }
     }
@@ -379,4 +399,4 @@ void EffectRenderer::FillStats(RenderStats& stats) {
     stats.gpuTimer = GpuTimer::Available();
 }
 
-}
+} // namespace bl::graphics

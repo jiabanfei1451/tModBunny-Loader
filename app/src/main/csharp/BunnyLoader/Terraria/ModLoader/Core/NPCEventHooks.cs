@@ -73,6 +73,12 @@ internal static unsafe class NPCEventHooks
         return flags;
     }
 
+    /// <summary>
+    /// Eventos que o binário do jogo não permite instalar (o ponto de gancho
+    /// não foi encontrado). Ficam marcados para não tentar de novo a cada NPC.
+    /// </summary>
+    static uint unavailable;
+
     internal static void Want(int type, uint events)
     {
         uint[] masks = Volatile.Read(ref wanted);
@@ -80,8 +86,17 @@ internal static unsafe class NPCEventHooks
         if ((have & events) == events) return;
         lock (Gate)
         {
+            // Já sabemos que este binário não tem o ponto de gancho: seguir SEM
+            // o evento. Antes isto lançava e derrubava o mod inteiro — o
+            // Fargowiltas não chegava nem a registrar o conteúdo por causa de
+            // um único `bl` que mudou de deslocamento.
+            if ((unavailable & events) == events) return;
             if (Host.Native()->NPCEvents(type, events, &Event) == 0)
-                throw new InvalidOperationException($"NPC events: cannot install events {events} for type {type}");
+            {
+                unavailable |= events;
+                Log.Warn($"NPC events: sem ponto de gancho para 0x{events:X} neste binário; seguindo sem ele");
+                return;
+            }
             if (type < 0) Volatile.Write(ref all, all | events);
             else
             {
@@ -158,9 +173,31 @@ internal static unsafe class NPCEventHooks
 
     static int NewNPC(On_NPC.orig_NewNPC orig, IEntitySource source, int X, int Y, int Type, int Start, float ai0, float ai1, float ai2, float ai3, int Target)
     {
+        // Um item de template (so SetDefaults, sem UseItem) nao tem como pedir NPC.
+        // Se um NPC aparece ao brandir, o pedido veio de outro lugar: esta linha
+        // diz o tipo e as duas primeiras molduras do chamador.
+        Log.Info($"[mod] NewNPC type={Type} pos={X},{Y} src={source?.GetType().Name ?? "null"} por {Caller()}");
         int index = orig(source, X, Y, Type, Start, ai0, ai1, ai2, ai3, Target);
         if ((uint)index < 200u && Main.npc[index].active) NPCLoader.OnSpawn(Main.npc[index], source);
         return index;
+    }
+
+    static string Caller()
+    {
+        try
+        {
+            var trace = new System.Diagnostics.StackTrace(3, false);
+            string text = "";
+            for (int i = 0; i < trace.FrameCount && i < 6; i++)
+            {
+                var method = trace.GetFrame(i)?.GetMethod();
+                if (method == null) continue;
+                if (text.Length > 0) text += " < ";
+                text += method.DeclaringType?.Name + "." + method.Name;
+            }
+            return text.Length == 0 ? "?" : text;
+        }
+        catch { return "?"; }
     }
 
     static void VariantDefaults(On_NPC.orig_SetDefaultsFromNetId orig, NPC npc, int id, NPCSpawnParams spawnparams)

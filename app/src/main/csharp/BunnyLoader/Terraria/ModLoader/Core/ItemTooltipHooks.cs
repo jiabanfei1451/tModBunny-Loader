@@ -242,7 +242,7 @@ internal static unsafe class ItemTooltipHooks
 
         static string Tip(int i) => At(Lang.tip, i);
 
-        static string At(GameArray<LocalizedText> texts, int i) => texts.IsNull || i < 0 || i >= texts.Length || texts[i].IsNull ? "" : texts[i].Value ?? "";
+        static string At(GameRefArray<LocalizedText> texts, int i) => texts.IsNull || i < 0 || i >= texts.Length || texts[i].IsNull ? "" : texts[i].Value ?? "";
 
         static string Key(string key) => Language.GetTextValue(key) ?? "";
 

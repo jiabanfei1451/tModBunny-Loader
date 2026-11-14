@@ -243,16 +243,16 @@ internal static class BackgroundHooks
         return vanilla;
     }
 
-    static GameArray<Texture2D> GetBackTextureValues(On_Main.orig_get_backTextureValues orig, Main self)
+    static GameRefArray<Texture2D> GetBackTextureValues(On_Main.orig_get_backTextureValues orig, Main self)
     {
-        GameArray<Texture2D> values = orig(self);
+        GameRefArray<Texture2D> values = orig(self);
         Patch(Main.undergroundBackground, self, false, values);
         return values;
     }
 
-    static GameArray<Texture2D> GetOldBackTextureValues(On_Main.orig_get_oldBackTextureValues orig, Main self)
+    static GameRefArray<Texture2D> GetOldBackTextureValues(On_Main.orig_get_oldBackTextureValues orig, Main self)
     {
-        GameArray<Texture2D> values = orig(self);
+        GameRefArray<Texture2D> values = orig(self);
         Patch(Main.oldUndergroundBackground, self, true, values);
         return values;
     }
@@ -287,7 +287,7 @@ internal static class BackgroundHooks
         return fill;
     }
 
-    static void Patch(int style, Main self, bool old, GameArray<Texture2D> values)
+    static void Patch(int style, Main self, bool old, GameRefArray<Texture2D> values)
     {
         if (values.IsNull || values.Length < 5) return;
         if (style < UndergroundBackgroundStylesLoader.VanillaCount && GlobalBackgroundStyleLoader.All.Count == 0) return;
@@ -295,7 +295,7 @@ internal static class BackgroundHooks
         {
             if (FillOf(style, self, old) is not Fill fill) return;
             int last = fill.Textures[3] != null ? 3 : Array.FindLastIndex(fill.Textures, t => t != null);
-            if (values[last].Pointer == fill.Textures[last]!.Value.Pointer) return;
+            if (values[last].Pointer == fill.Textures[last]!.Pointer) return;
             GameArray<int> numbers = old ? self.oldBackTexture : self.backTexture;
             for (int k = 0; k < 5; k++)
             {

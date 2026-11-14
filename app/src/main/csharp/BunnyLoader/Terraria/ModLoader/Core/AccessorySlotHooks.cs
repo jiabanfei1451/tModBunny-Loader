@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json.Nodes;
 using BunnyLoader;
@@ -56,9 +56,9 @@ internal static class AccessorySlotHooks
         return slots;
     }
 
-    internal static GameArray<Item> NewItems(int length, out GameHandle? pin)
+    internal static GameRefArray<Item> NewItems(int length, out GameHandle? pin)
     {
-        GameArray<Item> array = GameArray<Item>.New(Item.Class, length);
+        GameRefArray<Item> array = GameRefArray<Item>.New(Item.Class, length);
         pin = new GameHandle(array.Pointer);
         for (int i = 0; i < length; i++)
             array[i] = Item.New();
@@ -172,7 +172,7 @@ internal static class AccessorySlotHooks
         return false;
     }
 
-    static bool ConflictsWithModSlots(GameArray<Item> inv, int context, Item item)
+    static bool ConflictsWithModSlots(GameRefArray<Item> inv, int context, Item item)
     {
         if (context is not (ItemSlot.Context.EquipAccessory or ItemSlot.Context.EquipAccessoryVanity))
             return false;
@@ -266,8 +266,6 @@ internal static class AccessorySlotHooks
             return;
         try { Of(player).OnEnterWorld(); }
         catch (Exception e) { ItemHooks.Report("ModAccessorySlot enter world", e); }
-        try { AccessorySlotNet.AfterEnterWorld(player); }
-        catch (Exception e) { ItemHooks.Report("ModAccessorySlot net", e); }
     }
 
     static void InternalSavePlayerFile(On_Player.orig_InternalSavePlayerFile orig, PlayerFileData playerFile)
@@ -313,7 +311,7 @@ internal static class AccessorySlotHooks
         return data;
     }
 
-    static int PickItemMovementAction(On_ItemSlot.orig_PickItemMovementAction orig, GameArray<Item> inv, int context, int slot, Item checkItem, bool backwardCheck, int initialSlot)
+    static int PickItemMovementAction(On_ItemSlot.orig_PickItemMovementAction orig, GameRefArray<Item> inv, int context, int slot, Item checkItem, bool backwardCheck, int initialSlot)
     {
         int action = orig(inv, context, slot, checkItem, backwardCheck, initialSlot);
         if (action == -1 || checkItem.IsNull || checkItem.IsAir)

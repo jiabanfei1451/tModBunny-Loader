@@ -83,7 +83,7 @@ public sealed class ContentIntTable
     internal IEnumerable<KeyValuePair<int, int>> All => values;
 }
 
-public readonly partial struct TileID
+public sealed partial class TileID
 {
     public static unsafe partial class Sets
     {
@@ -138,7 +138,7 @@ public readonly partial struct TileID
     }
 }
 
-public readonly partial struct ProjectileID
+public sealed partial class ProjectileID
 {
     public static unsafe partial class Sets
     {
@@ -161,9 +161,9 @@ public readonly partial struct ProjectileID
     }
 }
 
-public readonly partial struct ItemID
+public sealed partial class ItemID
 {
-    public readonly unsafe partial struct Sets
+    public unsafe sealed partial class Sets
     {
         public sealed class SandgunAmmoInfo
         {

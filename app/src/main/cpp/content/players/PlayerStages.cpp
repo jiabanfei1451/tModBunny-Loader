@@ -1,4 +1,5 @@
 #include "content/players/PlayerStages.h"
+#include "content/npcs/CodeMatch.h"
 
 #if defined(__aarch64__)
 #include "core/Log.h"
@@ -138,7 +139,7 @@ bool install(Stage& stage) {
         auto* player = findClass({"Terraria", "Player", ""});
         const MethodInfo* method = player ? findMethodBySignature(player, parseSignature(stage.signature)) : nullptr;
         auto* entry = method ? static_cast<uint8_t*>(methodPointer(method)) : nullptr;
-        if (!entry || std::memcmp(entry + stage.offset, stage.expected, sizeof(stage.expected)) != 0) {
+        if (!entry || !bl::npccode::sameBlock(entry, stage.offset, stage.expected, 4)) {
             BL_ERROR("%s: the game's method body is not the expected one", stage.name);
             stage.state = -1;
         } else if (!bl::hook::install(entry + stage.offset, reinterpret_cast<void*>(stage.bridge), stage.original)) {

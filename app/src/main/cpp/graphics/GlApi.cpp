@@ -10,20 +10,20 @@ GlApi& gl() {
 }
 
 bool GlApi::load() {
-    static int state = 0;
+    static int state = 0;   // 0 nao tentou, 1 ok, -1 falhou
     if (state != 0) return state > 0;
     state = -1;
 
     void* gles = dlopen("libGLESv2.so", RTLD_NOW);
     void* egl = dlopen("libEGL.so", RTLD_NOW);
     if (!gles || !egl) {
-        BL_ERROR("screen effects: libGLESv2/libEGL did not open; effects disabled");
+        BL_ERROR("efeitos de tela: libGLESv2/libEGL nao abriram; efeitos desligados");
         return false;
     }
 #define BL_GL_BIND(name)                                                          \
     name = reinterpret_cast<decltype(name)>(dlsym(gles, "gl" #name));             \
     if (!name) {                                                                  \
-        BL_ERROR("screen effects: gl" #name " missing; effects disabled");     \
+        BL_ERROR("efeitos de tela: gl" #name " ausente; efeitos desligados");     \
         return false;                                                             \
     }
     BL_GL_FUNCS(BL_GL_BIND)
@@ -35,4 +35,4 @@ bool GlApi::load() {
     return true;
 }
 
-}
+} // namespace bl::graphics

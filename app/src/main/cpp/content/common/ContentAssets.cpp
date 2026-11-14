@@ -6,6 +6,7 @@
 #include "il2cpp/Signature.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 
@@ -18,7 +19,7 @@ struct Refs {
     Il2CppClass* byteCls = nullptr;
     Il2CppClass* unityTex = nullptr;
     Il2CppClass* gameTex = nullptr;
-    Il2CppClass* assetCls = nullptr;
+    Il2CppClass* assetCls = nullptr;          // Asset<Texture2D>
     Il2CppClass* localizedTextCls = nullptr;
     const MethodInfo* unityCtor = nullptr;
     const MethodInfo* unityCtorNoMips = nullptr;
@@ -60,6 +61,9 @@ Refs& refs() {
     r.gameTex = findClass({"Microsoft.Xna.Framework.Graphics", "Texture2D", {}});
     r.localizedTextCls = findClass({"Terraria.Localization", "LocalizedText", {}});
 
+    // Asset<Texture2D> e generico: a classe fechada sai de uma tabela que o
+    // jogo ja encheu (TextureAssets.Item e um Asset<Texture2D>[]). Chamado na
+    // instalacao do conteudo, quando ela ja existe.
     Il2CppObject* items = nullptr;
     if (FieldInfo* f = textures ? findField(textures, "Item") : nullptr) a.field_static_get_value(f, &items);
     if (items) r.assetCls = a.class_get_element_class(a.object_get_class(items));
@@ -92,19 +96,24 @@ Refs& refs() {
            r.loadImage && r.gameCtor && r.assetCtor && r.assetSubmit && r.localizedTextCtor &&
            r.arraySet && a.array_new;
     if (!r.ok) {
-        BL_ERROR("mod content: references missing (Asset<Texture2D>=%p LoadImage=%p "
+        BL_ERROR("conteudo de mod: refs faltando (Asset<Texture2D>=%p LoadImage=%p "
                  "LocalizedText.ctor=%p SetValue=%p)", (void*)r.assetCls, (void*)r.loadImage,
                  (void*)r.localizedTextCtor, (void*)r.arraySet);
     }
     return r;
 }
 
+/**
+ * true se rodou sem excecao; o retorno vai em `ret`. As duas coisas separadas
+ * de proposito: metodo `void` devolve nulo do runtime_invoke, e tratar nulo
+ * como falha fazia todo construtor "falhar" com sucesso.
+ */
 bool invoke(const MethodInfo* m, void* self, void** args, const char* what,
             Il2CppObject** ret = nullptr) {
     Il2CppObject* exc = nullptr;
     Il2CppObject* r = il2cpp::api().runtime_invoke(m, self, args, &exc);
     if (exc) {
-        BL_ERROR("mod content: %s threw an exception", what);
+        BL_ERROR("conteudo de mod: %s lancou excecao", what);
         return false;
     }
     if (ret) *ret = r;
@@ -129,7 +138,7 @@ Il2CppArray* readBytes(const std::string& path, const unsigned char* data, size_
         return bytes;
     }
     FILE* f = std::fopen(path.c_str(), "rb");
-    if (!f) { BL_ERROR("mod content: texture does not open: %s", path.c_str()); return nullptr; }
+    if (!f) { BL_ERROR("conteudo de mod: textura nao abre: %s", path.c_str()); return nullptr; }
     std::fseek(f, 0, SEEK_END);
     const long n = std::ftell(f);
     std::fseek(f, 0, SEEK_SET);
@@ -137,13 +146,13 @@ Il2CppArray* readBytes(const std::string& path, const unsigned char* data, size_
     const size_t got = bytes ? std::fread(arrayData(bytes), 1, static_cast<size_t>(n), f) : 0;
     std::fclose(f);
     if (!bytes || got != static_cast<size_t>(n)) {
-        BL_ERROR("mod content: unreadable texture: %s", path.c_str());
+        BL_ERROR("conteudo de mod: textura ilegivel: %s", path.c_str());
         return nullptr;
     }
     return bytes;
 }
 
-}
+} // namespace
 
 static Il2CppObject* decodeGameTexture(const std::string& path, const unsigned char* data, size_t size,
                                        const std::string& what, int filterMode, bool lean, int* width, int* height) {
@@ -153,6 +162,7 @@ static Il2CppObject* decodeGameTexture(const std::string& path, const unsigned c
     Il2CppArray* bytes = readBytes(path, data, size);
     if (!bytes) return nullptr;
 
+    // Texture2D(2,2) nasce com mipmaps: o LoadImage os refaz no tamanho do PNG.
     Il2CppObject* ut = a.object_new(r.unityTex);
     int two = 2;
     if (lean) {
@@ -168,7 +178,7 @@ static Il2CppObject* decodeGameTexture(const std::string& path, const unsigned c
     void* c2[3] = {ut, bytes, &nonReadable};
     Il2CppObject* ok = invokeValue(r.loadImage, nullptr, c2, "ImageConversion.LoadImage");
     if (!ok || !*(reinterpret_cast<uint8_t*>(ok) + sizeof(Il2CppObject))) {
-        BL_ERROR("mod content: Unity did not decode the texture of %s", what.c_str());
+        BL_ERROR("conteudo de mod: a Unity nao decodificou a textura de %s", what.c_str());
         if (r.destroy) { void* args[1] = {ut}; invoke(r.destroy, nullptr, args, "Object.Destroy"); }
         return nullptr;
     }
@@ -176,8 +186,11 @@ static Il2CppObject* decodeGameTexture(const std::string& path, const unsigned c
         void* c3[1] = {&filterMode};
         invoke(r.setFilterMode, ut, c3, "Texture.filterMode");
     }
+    // Sem repetir: a Unity nasce em Repeat, e um recorte que passa da borda
+    // (o textureWidth = largura + 20 do ExampleMount) trazia o outro lado da
+    // textura de volta. No PC o jogo desenha com PointClamp.
     if (r.setWrapMode) {
-        int clamp = 1;
+        int clamp = 1;   // TextureWrapMode.Clamp
         void* c3[1] = {&clamp};
         invoke(r.setWrapMode, ut, c3, "Texture.wrapMode");
     }
@@ -186,7 +199,7 @@ static Il2CppObject* decodeGameTexture(const std::string& path, const unsigned c
 
     Il2CppObject* gt = a.object_new(r.gameTex);
     void* c4[1] = {ut};
-    if (!invoke(r.gameCtor, gt, c4, "game Texture2D")) return nullptr;
+    if (!invoke(r.gameCtor, gt, c4, "Texture2D do jogo")) return nullptr;
     return gt;
 }
 
@@ -221,7 +234,9 @@ Il2CppObject* loadTextureAsset(const std::string& path, const unsigned char* dat
         if (height) *height = h;
         return asset;
     }
-    Il2CppObject* gt = loadGameTexture(path, data, size, assetName, 0, width, height);
+    // Pixel art: vizinho-mais-proximo. A Unity nasce bilinear e a textura
+    // sairia borrada ao lado das do jogo.
+    Il2CppObject* gt = loadGameTexture(path, data, size, assetName, 0 /* FilterMode.Point */, width, height);
     if (!gt) return nullptr;
 
     Il2CppObject* asset = a.object_new(r.assetCls);
@@ -248,6 +263,8 @@ Il2CppObject* missingTextureAsset(int* width, int* height) {
     if (height) *height = h;
     return asset;
 }
+
+Il2CppClass* textureAssetClass() { return refs().assetCls; }
 
 std::string textureAssetName(Il2CppObject* asset) {
     const auto& r = refs();
@@ -361,6 +378,9 @@ bool textureAssetSize(Il2CppObject* asset, int* width, int* height) {
     auto value = [&] { return *reinterpret_cast<Il2CppObject**>(reinterpret_cast<char*>(asset) + r.valueOffset); };
     Il2CppObject* texture = value();
     if (!texture) {
+        // No mobile, ActionUnityLoad pede o Texture2D logico ao ContentManager:
+        // atlas e SourceAssetEntry fornecem Width/Height. A pagina Unity so e
+        // pedida ao desenhar (UnityBindTexture), nao ao ler essas dimensoes.
         if (!r.assetLoad || !invoke(r.assetLoad, asset, nullptr, "Asset.ActionUnityLoad")) return false;
         texture = value();
     }
@@ -368,6 +388,12 @@ bool textureAssetSize(Il2CppObject* asset, int* width, int* height) {
     *width = *reinterpret_cast<int*>(reinterpret_cast<char*>(texture) + r.widthOffset);
     *height = *reinterpret_cast<int*>(reinterpret_cast<char*>(texture) + r.heightOffset);
     return *width > 0 && *height > 0;
+}
+
+void destroyTextureAsset(Il2CppObject* asset) {
+    const Refs& r = refs();
+    if (!asset || r.valueOffset < 0) return;
+    destroyGameTexture(*reinterpret_cast<Il2CppObject**>(reinterpret_cast<char*>(asset) + r.valueOffset));
 }
 
 void destroyGameTexture(Il2CppObject* texture) {
@@ -402,6 +428,12 @@ std::string textForCulture(const CultureNames& names, const std::string& fallbac
 
 namespace {
 
+/**
+ * O texto tambem vai para o dicionario do idioma (LanguageManager.Instance.
+ * _localizedTexts), sob a mesma chave. O jogo guarda o nome de item e de NPC
+ * em tabelas por tipo, mas partes dele buscam pela CHAVE: a plaquinha do
+ * Bestiario (Language.GetTextValue("NPCName.X")) mostrava a chave crua.
+ */
 Il2CppObject* languageDictionary() {
     auto& a = il2cpp::api();
     static FieldInfo* instance = nullptr;
@@ -428,6 +460,18 @@ void registerLanguageKey(Il2CppString* key, Il2CppObject* text) {
     invoke(setItem, dict, args, "LanguageManager._localizedTexts[chave]");
 }
 
+} // namespace
+
+Il2CppObject* makeLocalizedText(const std::string& key, const std::string& text) {
+    auto& a = il2cpp::api();
+    const Refs& r = refs();
+    if (!r.ok) return nullptr;
+    Il2CppObject* t = a.object_new(r.localizedTextCls);
+    Il2CppString* k = a.string_new(key.c_str());
+    void* c[2] = {k, a.string_new(text.c_str())};
+    if (!invoke(r.localizedTextCtor, t, c, "LocalizedText.ctor")) return nullptr;
+    registerLanguageKey(k, t);
+    return t;
 }
 
 Il2CppObject* newLocalizedText(const std::string& key, const std::string& text) {
@@ -468,16 +512,6 @@ bool setLocalizedTextValue(Il2CppObject* text, const std::string& value) {
     if (!setValue) return false;
     void* args[1] = {a.string_new(value.c_str())};
     return invoke(setValue, text, args, "LocalizedText.SetValue");
-}
-
-void invalidateItemTooltips() {
-    auto& a = il2cpp::api();
-    static const MethodInfo* invalidate = nullptr;
-    if (!invalidate) {
-        Il2CppClass* tooltip = il2cpp::findClass({"Terraria.UI", "ItemTooltip", {}});
-        invalidate = tooltip ? a.class_get_method_from_name(tooltip, "InvalidateTooltips", 0) : nullptr;
-    }
-    if (invalidate) invoke(invalidate, nullptr, nullptr, "ItemTooltip.InvalidateTooltips");
 }
 
 std::string localizedTextValue(Il2CppObject* text) {
@@ -557,6 +591,43 @@ std::string normalizeTextureAssetName(std::string name) {
     return name;
 }
 
+/**
+ * `CaughtNPCItem.get_Texture()` do Fargowiltas devolve
+ * "Terraria/Images/NPC_<idDoNPC>" para os NPCs vanilla (e a textura do ModNPC
+ * para os de mod). No PC tModLoader isso e um arquivo solto em Content/Images;
+ * no mobile 1.4.5.8.6 essas imagens foram fundidas em atlas e NAO existem como
+ * asset com esse nome — daí os 27 erros
+ *   "mod content Fargowiltas/PartyGirl: the game image 'Terraria/Images/NPC_208'
+ *    does not exist on mobile"
+ * e os icones em branco no inventario.
+ *
+ * O jogo guarda exatamente essas texturas, ja carregadas, em
+ * `TextureAssets.Npc[npcId]` (Asset<Texture2D>[]). Em vez de tentar adivinhar o
+ * nome do atlas, lemos a entrada pelo id. O array e indexado por NPCID e ja foi
+ * crescido pelo TypeTables quando ha NPCs de mod.
+ */
+Il2CppObject* npcTextureById(const std::string& wanted) {
+    static const std::string prefix = "Images/NPC_";
+    if (wanted.size() <= prefix.size() || wanted.rfind(prefix, 0) != 0) return nullptr;
+    const char* digits = wanted.c_str() + prefix.size();
+    for (const char* p = digits; *p; ++p) if (*p < '0' || *p > '9') return nullptr;
+    long id = std::strtol(digits, nullptr, 10);
+    if (id < 0) return nullptr;
+
+    auto& a = il2cpp::api();
+    Il2CppClass* tex = il2cpp::findClass({"Terraria.GameContent", "TextureAssets", {}});
+    FieldInfo* field = tex ? il2cpp::findField(tex, "Npc") : nullptr;
+    Il2CppArray* array = nullptr;
+    if (field) a.field_static_get_value(field, &array);
+    if (!array || static_cast<uintptr_t>(id) >= array->length) return nullptr;
+    Il2CppObject* asset = static_cast<Il2CppObject**>(arrayData(array))[id];
+    // Nao devolver o placeholder 1x1: seria o mesmo "icone em branco".
+    if (!asset || a.object_get_class(asset) != refs().assetCls) return nullptr;
+    int w = 0, h = 0;
+    if (!textureAssetSize(asset, &w, &h) || w <= 1 || h <= 1) return nullptr;
+    return asset;
+}
+
 Il2CppObject* vanillaTextureAsset(const std::string& name, bool* missingOnMobile) {
     if (missingOnMobile) *missingOnMobile = false;
     const std::string wanted = normalizeTextureAssetName(name);
@@ -565,6 +636,10 @@ Il2CppObject* vanillaTextureAsset(const std::string& name, bool* missingOnMobile
     auto it = cache.find(wanted);
     if (it != cache.end()) {
         if (Il2CppObject* asset = a.gchandle_get_target(it->second)) return asset;
+    }
+    if (Il2CppObject* byId = npcTextureById(wanted)) {
+        cache[wanted] = a.gchandle_new(byId, false);
+        return byId;
     }
     Il2CppObject* found = nullptr;
     for (Il2CppObject* asset : textureAssets()) {
@@ -602,4 +677,18 @@ Il2CppObject* vanillaTextureAsset(const std::string& name, bool* missingOnMobile
     return found;
 }
 
+/**
+ * Tooltip de item em cache no jogo (upstream 0.5.3+): trocar texto de idioma
+ * so aparece depois de invalidar. Sem isto o `ModLanguage` linka mas o tooltip
+ * continua com o texto antigo.
+ */
+void invalidateItemTooltips() {
+    static const MethodInfo* invalidate = nullptr;
+    if (!invalidate) {
+        Il2CppClass* tooltip = il2cpp::findClass({"Terraria.UI", "ItemTooltip", {}});
+        invalidate = tooltip ? il2cpp::api().class_get_method_from_name(tooltip, "InvalidateTooltips", 0) : nullptr;
+    }
+    if (invalidate) invoke(invalidate, nullptr, nullptr, "ItemTooltip.InvalidateTooltips");
 }
+
+} // namespace bl::runtime::content

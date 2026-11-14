@@ -19,8 +19,10 @@ std::string readString(JNIEnv* env, jobject obj, jclass cls, const char* name) {
     return out;
 }
 
-}
+} // namespace
 
+// O System.loadLibrary("bunny") do NativeBridge entrega a JavaVM aqui: o
+// unico jeito de te-la antes do Android 12 (core/AppJni.cpp).
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     bl::setAppJavaVM(vm);
     return JNI_VERSION_1_6;
@@ -33,6 +35,7 @@ Java_dev_bunnyloader_nativebridge_NativeBridge_init(JNIEnv* env, jobject, jobjec
 
     c.gameLibDir = readString(env, cfg, cls, "gameLibDir");
     c.modsDir    = readString(env, cfg, cls, "modsDir");
+    c.tmlDir     = readString(env, cfg, cls, "tmlDir");
     c.logPath    = readString(env, cfg, cls, "logPath");
     c.cmdPath    = readString(env, cfg, cls, "cmdPath");
     c.showErrors = env->GetBooleanField(cfg, env->GetFieldID(cls, "showErrors", "Z"));
@@ -66,11 +69,11 @@ Java_dev_bunnyloader_nativebridge_NativeBridge_init(JNIEnv* env, jobject, jobjec
 
     bl::log::setVerbose(c.verboseLog);
     bl::log::open(c.logPath.c_str());
-    BL_INFO("Bunny Loader starting, game version %lld (log: %s)", (long long)c.gameVersion,
-            c.verboseLog ? "detailed" : "short; details under Settings > Detailed log");
+    BL_INFO("Bunny Loader iniciando, versao do jogo %lld (log %s)", (long long)c.gameVersion,
+            c.verboseLog ? "detalhado" : "resumido; detalhes em Configuracoes > Log detalhado");
 
     if (!bl::loader::installWatcher()) {
-        g_lastError = "failed to install the il2cpp_init watcher";
+        g_lastError = "falha ao instalar o watcher de il2cpp_init";
         return JNI_FALSE;
     }
     return JNI_TRUE;

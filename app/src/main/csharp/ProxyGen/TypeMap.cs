@@ -21,6 +21,13 @@ sealed class TypeUse
     public bool CheckSize;
     public bool IsString;
     public bool Converted;
+    /// <summary>
+    /// O proxy e uma CLASSE (referencia real no tModLoader/IL2CPP), nao um
+    /// struct. Isso muda o formato do array que o contem: um array IL2CPP de
+    /// referencias guarda PONTEIROS para os objetos, enquanto um array de
+    /// valores embute o valor na memoria do array.
+    /// </summary>
+    public bool IsClassProxy;
     public Func<string, string> ToRaw = e => e;
     public Func<string, string> FromRaw = e => e;
     public List<Type> Refs = new();
@@ -62,10 +69,33 @@ sealed class TypeMap
 
     public static string Key(Type t) => t.FullName ?? t.Name;
 
+    /// <summary>
+    /// O <c>SoundStyle</c> do tML (`record struct`, ponteiro na fronteira).
+    /// Usado tanto para o próprio tipo quanto para os campos do <c>SoundID</c>,
+    /// que no dump são <c>LegacySoundStyle</c> (classe) mas no tML são
+    /// <c>SoundStyle</c> — sem isso o mod faz
+    /// <c>newobj Nullable&lt;SoundStyle&gt;</c> com uma referência na pilha e o
+    /// Mono recusa com InvalidProgramException.
+    /// </summary>
+    public static TypeUse SoundStyleUse(string sig) => new()
+    {
+        Cs = "global::Terraria.Audio.SoundStyle", Sig = sig, Abi = AbiClass.Int, Size = 8, Align = 8,
+        Converted = true,
+        ToRaw = e => $"(long)(({e}).Pointer)",
+        FromRaw = e => $"new global::Terraria.Audio.SoundStyle((nint)({e}))",
+    };
+
     public static string ProxyNamespace(Type t)
     {
         Type top = Outermost(t);
         string ns = top.Namespace ?? "";
+        // Este port (Unity) declara Color em `Microsoft.Xna.Framework.Graphics`,
+        // mas no PC/FNA o tipo é `Microsoft.Xna.Framework.Color` — e é ESSE nome
+        // que o mod compilado no PC referencia. Sem o mesmo nome, toda chamada
+        // com Color na assinatura vira TypeLoadException no aparelho.
+        // O `Class` emitido continua apontando para o nome nativo (NewClass usa
+        // o namespace do dump), então a busca no il2cpp não muda.
+        if (top.FullName == "Microsoft.Xna.Framework.Graphics.Color") return "Microsoft.Xna.Framework";
         if (ns == "Terraria.DataStructures" && top.Name == "ItemCreationContext")
             return "BunnyLoader.Interop.DataStructures";
         if ((ns == "Terraria.WorldBuilding" && top.Name is "GenPass" or "GenBase") ||
@@ -264,8 +294,6 @@ sealed class TypeMap
                     FromRaw = e => $"{RT}.GameString.Read((nint)({e}))",
                 };
             case "System.Object": return Ref($"{RT}.GameObject", sig);
-            case "System.TimeSpan": return new TypeUse { Cs = "global::System.TimeSpan", Sig = sig, Abi = AbiClass.Composite, Size = 8, Align = 8, CheckSize = true };
-            case "System.Guid": return new TypeUse { Cs = "global::System.Guid", Sig = sig, Abi = AbiClass.Composite, Size = 16, Align = 4, CheckSize = true };
         }
         if (t.IsPointer) return Prim("nint", AbiClass.Int, 8);
         if (!t.IsArray && !t.IsGenericType && !IsGame(t))
@@ -299,11 +327,18 @@ sealed class TypeMap
         {
             if (t.GetArrayRank() == 1 && AssetOf(t.GetElementType()!) is string assetArg)
                 return Ref($"global::ReLogic.Content.AssetArray<{assetArg}>", sig);
-            TypeUse? elem = Map(t.GetElementType()!, true);
+            Type? elementType = t.GetElementType();
+            TypeUse? elem = Map(elementType!, true);
             if (elem == null || elem.Abi == AbiClass.Void) return Ref($"{RT}.GameObject", sig);
             int rank = t.GetArrayRank();
-            if (rank == 1) return Ref($"{RT}.GameArray<{elem.Cs}>", sig, elem.Refs);
-            if (rank == 2) return Ref($"{RT}.GameArray2D<{elem.Cs}>", sig, elem.Refs);
+            // Elemento de REFERENCIA (Item[], Player[], Texture2D[]...): o
+            // array IL2CPP guarda ponteiros para os objetos, entao o
+            // container precisa desempacotar o ponteiro e montar o proxy.
+            // Elemento de VALOR (int[], bool[], Vector2[]...): o valor esta
+            // embutido na memoria do array e o indice pode devolver `ref T`.
+            string container = elem.IsClassProxy ? $"{RT}.GameRefArray" : $"{RT}.GameArray";
+            if (rank == 1) return Ref($"{container}<{elem.Cs}>", sig, elem.Refs);
+            if (rank == 2) return Ref($"{RT}.{(elem.IsClassProxy ? "GameRefArray2D" : "GameArray2D")}<{elem.Cs}>", sig, elem.Refs);
             return Ref($"{RT}.GameObject", sig);
         }
         if (t.IsGenericType)
@@ -325,20 +360,57 @@ sealed class TypeMap
                 if (v == null || v.Abi == AbiClass.Void) return null;
                 int align = Math.Max(1, v.Align);
                 int size = Round(align + v.Size, align);
+                // Em PARAMETRO/retorno o tipo e GameNullable (as conversoes
+                // implicitas e o empilhamento nativo dependem dele). Quando o
+                // slot e um CAMPO, o Program.cs troca por System.Nullable<T>:
+                // o Mono resolve `ldfld/stfld` pelo nome E pela assinatura.
+                string cs = $"{RT}.GameNullable<{v.Cs}>";
                 return new TypeUse
                 {
-                    Cs = $"{RT}.GameNullable<{v.Cs}>", Sig = sig, Abi = AbiClass.Composite, Size = size, Align = align, CheckSize = true,
+                    Cs = cs, Sig = sig, Abi = AbiClass.Composite, Size = size, Align = align, CheckSize = true,
                     Refs = new List<Type>(v.Refs),
                 };
             }
             if (t.IsValueType) return null;
             return Ref($"{RT}.GameObject", sig);
         }
+        // SoundStyle: o tML o declara `record struct` e o dump como classe.
+        // O shim o escreve à mão (ver Terraria/Audio/SoundStyle.cs), então
+        // aqui ele atravessa a fronteira como PONTEIRO (Converted): ler um
+        // campo dá `new SoundStyle((nint)ptr)` e escrever manda `.Pointer`.
+        if (t.FullName == "Terraria.Audio.SoundStyle")
+        {
+            return new TypeUse
+            {
+                Cs = "global::Terraria.Audio.SoundStyle", Sig = sig, Abi = AbiClass.Int, Size = 8, Align = 8,
+                Converted = true,
+                ToRaw = e => $"(long)(({e}).Pointer)",
+                FromRaw = e => $"new global::Terraria.Audio.SoundStyle((nint)({e}))",
+                Refs = { t },
+            };
+        }
+        // PlayerDrawSet: STRUCT no tML, CLASSE no dump. O proxy é um struct
+        // com só o ponteiro; o `ref` da assinatura do mod passa a bater.
+        if (t.FullName == "Terraria.DataStructures.PlayerDrawSet")
+        {
+            return new TypeUse
+            {
+                Cs = "global::Terraria.DataStructures.PlayerDrawSet", Sig = sig, Abi = AbiClass.Int, Size = 8, Align = 8,
+                Converted = true,
+                ToRaw = e => $"(long)(({e}).Pointer)",
+                FromRaw = e => $"new global::Terraria.DataStructures.PlayerDrawSet((nint)({e}))",
+                Refs = { t },
+            };
+        }
         if (!t.IsValueType)
         {
             if (!Supported(t)) return Ref($"{RT}.GameObject", sig);
             Register(t, GenMode.Opaque);
-            return Ref(ProxyName(t), sig, new[] { t });
+            TypeUse use = Ref(ProxyName(t), sig, new[] { t });
+            use.IsClassProxy = true;
+            use.ToRaw = e => $"(long)(({e})?.Pointer ?? 0)";
+            use.FromRaw = e => $"(({e}) == 0 ? null! : new {use.Cs}((nint)({e})))";
+            return use;
         }
         if (!Supported(t)) return null;
         StructLayout? layout = Layout(t);

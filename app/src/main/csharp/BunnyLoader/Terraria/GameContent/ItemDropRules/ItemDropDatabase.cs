@@ -4,7 +4,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.GameContent.ItemDropRules;
 
-public readonly partial struct ItemDropDatabase
+public sealed partial class ItemDropDatabase
 {
     static readonly Dictionary<(IntPtr, int), List<IItemDropRule>> ItemEntries = new();
 

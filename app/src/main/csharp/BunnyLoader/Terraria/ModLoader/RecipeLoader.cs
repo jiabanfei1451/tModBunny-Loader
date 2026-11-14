@@ -15,16 +15,14 @@ public static class RecipeLoader
     internal sealed class Extra
     {
         public Mod? Mod;
-        public readonly List<Mod> Editors = new();
         public readonly List<Condition> Conditions = new();
         public readonly List<Condition> DecraftConditions = new();
         public Recipe.OnCraftCallback? OnCraft;
         public Recipe.IngredientQuantityCallback? ConsumeIngredient;
         public bool Disabled;
         public int Index = -1;
+        public bool Overflow;
         public GameHandle? Pin;
-        public Recipe OrderTarget;
-        public bool OrderAfter;
     }
 
     static readonly object Gate = new();
@@ -39,7 +37,7 @@ public static class RecipeLoader
 
     static readonly HashSet<nint> GroupsToSort = new();
 
-    static bool vanillaGroups, filtering, beyond, ordering, edited;
+    static bool vanillaGroups, filtering, beyond;
 
     static int added;
 
@@ -113,54 +111,43 @@ public static class RecipeLoader
         return recipe;
     }
 
+    /// <summary>
+    /// Marca a receita como impossível de representar no nativo
+    /// (<c>Item[15]</c>). Ela não entra em <c>Main.recipe</c>: uma receita com
+    /// ingredientes faltando seria craftável de graça.
+    /// </summary>
+    internal static void MarkOverflow(Recipe recipe, int itemID)
+    {
+        Extra extra = DataOf(recipe);
+        if (extra.Overflow) return;
+        extra.Overflow = true;
+        Log.Warn($"recipe (result {recipe.createItem.type}): more than 15 ingredients, {itemID} and the rest were dropped; recipe discarded");
+    }
+
     internal static void Register(Recipe recipe)
     {
-        CheckBeforeRegister(recipe);
         Extra extra = DataOf(recipe);
+        if (extra.Overflow)
+        {
+            extra.Pin?.Dispose();
+            extra.Pin = null;
+            return;
+        }
         int index = Recipe.numRecipes;
         var recipes = Main.recipe;
-        bool grew = index >= recipes.Length;
-        if (grew)
+        if (index >= recipes.Length)
         {
-            var grown = GameArray<Recipe>.New(Recipe.Class, index + 1);
+            var grown = GameRefArray<Recipe>.New(Recipe.Class, index + 1);
             for (int i = 0; i < recipes.Length; i++) grown[i] = recipes[i];
             Main.recipe = grown;
         }
         Recipe.currentRecipe = recipe;
-        try { Recipe.AddRecipe(); }
-        catch
-        {
-            if (grew) Main.recipe = recipes;
-            throw;
-        }
+        Recipe.AddRecipe();
         extra.Index = index;
         extra.Pin?.Dispose();
         extra.Pin = null;
         added++;
         if (index >= Recipe.maxRecipes) WantBeyond();
-    }
-
-    internal static void Edited(Recipe recipe)
-    {
-        if (!setupRecipes) return;
-        edited = true;
-        Mod? mod = CurrentMod;
-        if (mod == null) return;
-        Extra extra = DataOf(recipe);
-        if (extra.Mod != mod && !extra.Editors.Contains(mod)) extra.Editors.Add(mod);
-    }
-
-    static void CheckBeforeRegister(Recipe recipe)
-    {
-        var items = recipe.requiredItem;
-        if (items.IsNull) throw new RecipeException("A recipe without an ingredient array has been added.");
-        int end = -1;
-        for (int j = 0; j < items.Length; j++)
-        {
-            if (items[j].IsNull) throw new RecipeException($"A recipe with nothing in ingredient slot {j} has been added; set ingredients with Recipe.AddIngredient.");
-            if (end < 0 && items[j].type <= 0) end = j;
-        }
-        if (end < 0) throw new RecipeException($"A recipe with {items.Length} ingredients has been added; the game needs the last slot empty, so it takes at most {items.Length - 1}.");
     }
 
     internal static void BeginSetup() => setupRecipes = true;
@@ -176,143 +163,15 @@ public static class RecipeLoader
 
     static void Finish()
     {
-        if (added == 0 && GroupsToSort.Count == 0 && !ordering && !edited) return;
-        if (ordering) Step("recipe order", OrderRecipes);
+        if (added == 0 && GroupsToSort.Count == 0) return;
         foreach (nint pointer in GroupsToSort) Step("recipe groups", () => new RecipeGroup(pointer).SortDecraftingEntries());
-        Step("recipe ingredients", CheckIngredients);
-        Step("recipe quick lookups", Recipe.CreateRequiredItemQuickLookups);
-        Step("recipe materials", UpdateWhichItemsAreMaterials);
-        Step("recipe material fields", Recipe.UpdateMaterialFieldForAllRecipes);
-        Step("crafted items", Recipe.UpdateWhichItemsAreCrafted);
-        Step("shimmer recipes", ShimmerTransforms.UpdateRecipeSets);
-        Step("item samples after recipes", ContentSamples.FixItemsAfterRecipesAreAdded);
+        Step("recipes", Recipe.CreateRequiredItemQuickLookups);
+        Step("recipes", Recipe.UpdateMaterialFieldForAllRecipes);
+        Step("recipes", Recipe.UpdateWhichItemsAreMaterials);
+        Step("recipes", Recipe.UpdateWhichItemsAreCrafted);
+        Step("recipes", ShimmerTransforms.UpdateRecipeSets);
+        Step("recipes", ContentSamples.FixItemsAfterRecipesAreAdded);
         Log.Info($"recipes: {added} from C# mods (total {Recipe.numRecipes})");
-    }
-
-    static void CheckIngredients()
-    {
-        Item empty = Recipe.defaultRecipeItem;
-        if (!empty.IsNull && empty.type != 0)
-        {
-            Log.Error($"recipes: a mod turned the empty ingredient slot that all the game's recipes share into {ItemName(empty.type)}, so every recipe gained that ingredient. It was emptied again; mods should add ingredients with Recipe.AddIngredient.");
-            empty.TurnToAir();
-        }
-        var recipes = Main.recipe;
-        for (int i = 0, count = Math.Min(Recipe.numRecipes, recipes.Length); i < count; i++)
-        {
-            Recipe recipe = recipes[i];
-            if (recipe.IsNull) throw new InvalidOperationException($"Main.recipe[{i}] is null below Recipe.numRecipes ({Recipe.numRecipes})");
-            if (recipe.createItem.IsNull)
-            {
-                recipe.createItem = Item.New();
-                Disable(recipe, i, "has no result item");
-            }
-            var items = recipe.requiredItem;
-            if (items.IsNull) throw new InvalidOperationException($"{Describe(recipe, i)} has no ingredient array");
-            int end = -1;
-            for (int j = 0; j < items.Length; j++)
-            {
-                if (items[j].IsNull)
-                {
-                    items[j] = Item.New();
-                    Disable(recipe, i, $"had nothing in ingredient slot {j}");
-                }
-                if (end < 0 && items[j].type <= 0) end = j;
-            }
-            if (end >= 0) continue;
-            items[items.Length - 1] = Item.New();
-            Disable(recipe, i, $"had {items.Length} ingredients and no empty slot after the last one, which makes the game read past the end");
-        }
-    }
-
-    static void Disable(Recipe recipe, int index, string problem)
-    {
-        Log.Error($"recipes: {Describe(recipe, index)} {problem}. The recipe was turned off.");
-        DataOf(recipe).Disabled = true;
-        WantFilter();
-    }
-
-    static string Describe(Recipe recipe, int index)
-    {
-        Extra? extra = Peek(recipe);
-        string result = recipe.createItem.IsNull ? "nothing" : ItemName(recipe.createItem.type);
-        string origin = extra?.Mod is Mod mod ? $"added by {mod.Name}" : "from the game";
-        if (extra != null && extra.Editors.Count > 0) origin += $", changed by {string.Join(", ", extra.Editors.ConvertAll(m => m.Name))}";
-        return $"recipe #{index} for {result} ({origin})";
-    }
-
-    static string ItemName(int type)
-    {
-        try { return ItemLoader.GetItem(type)?.FullName ?? ItemID.Search.GetName(type) ?? $"item {type}"; }
-        catch (Exception) { return $"item {type}"; }
-    }
-
-    internal static void WantOrder() => ordering = true;
-
-    internal static int IndexOf(Recipe recipe)
-    {
-        if (recipe.IsNull) return -1;
-        Extra? extra = Peek(recipe);
-        if (extra != null && extra.Index >= 0) return extra.Index;
-        var recipes = Main.recipe;
-        for (int i = 0, count = Recipe.numRecipes; i < count && i < recipes.Length; i++)
-        {
-            if (recipes[i] == recipe) return i;
-        }
-        return -1;
-    }
-
-    internal static Recipe FirstRecipeFor(int itemId)
-    {
-        var recipes = Main.recipe;
-        for (int i = 0, count = Recipe.numRecipes; i < count && i < recipes.Length; i++)
-        {
-            Recipe recipe = recipes[i];
-            if (!recipe.IsNull && recipe.createItem.type == itemId) return recipe;
-        }
-        return default;
-    }
-
-    internal static Recipe OrderTargetOf(Recipe recipe) => Peek(recipe)?.OrderTarget ?? default;
-
-    static void OrderRecipes()
-    {
-        var recipes = Main.recipe;
-        int count = Math.Min(Recipe.numRecipes, recipes.Length);
-        var sortBefore = new Dictionary<nint, List<Recipe>>();
-        var sortAfter = new Dictionary<nint, List<Recipe>>();
-        var baseOrder = new List<Recipe>(count);
-        for (int k = 0; k < count; k++)
-        {
-            Recipe r = recipes[k];
-            Extra? extra = Peek(r);
-            if (extra == null || extra.OrderTarget.IsNull)
-            {
-                baseOrder.Add(r);
-                continue;
-            }
-            var lists = extra.OrderAfter ? sortAfter : sortBefore;
-            if (!lists.TryGetValue(extra.OrderTarget.Pointer, out List<Recipe>? list)) lists[extra.OrderTarget.Pointer] = list = new List<Recipe>();
-            list.Add(r);
-        }
-        if (sortBefore.Count == 0 && sortAfter.Count == 0) return;
-        var sorted = new List<Recipe>(count);
-        void Sort(Recipe r)
-        {
-            if (sortBefore.TryGetValue(r.Pointer, out List<Recipe>? before))
-                foreach (Recipe c in before) Sort(c);
-            sorted.Add(r);
-            if (sortAfter.TryGetValue(r.Pointer, out List<Recipe>? after))
-                foreach (Recipe c in after) Sort(c);
-        }
-        foreach (Recipe r in baseOrder) Sort(r);
-        if (sorted.Count != count) throw new InvalidOperationException($"recipe ordering lost recipes ({sorted.Count} of {count}): a recipe is sorted next to one that is not registered");
-        for (int k = 0; k < count; k++)
-        {
-            recipes[k] = sorted[k];
-            Extra? extra = Peek(sorted[k]);
-            if (extra != null && extra.Index >= 0) extra.Index = k;
-        }
     }
 
     static void Step(string what, Action step)
@@ -379,7 +238,7 @@ public static class RecipeLoader
                 try
                 {
                     RecipeGroup group = get();
-                    if (group.IsNull || group.RegisteredId < 0) continue;
+                    if (group is not { IsNull: false } || group.RegisteredId < 0) continue;
                     GroupsByKey.TryAdd(name, group);
                     GroupKeys.TryAdd(group.Pointer, name);
                 }
@@ -531,7 +390,7 @@ public static class RecipeLoader
 
     static void FindGuideBeyondMax(GUICraftGuidePopup popup)
     {
-        Item item = GUIInstance.Active.GUICraftGuide.guideItem;
+        Item item = Main.guideItem;
         if (item.IsNull || item.type < 1 || item.stack < 1) return;
         var recipes = Main.recipe;
         int total = Math.Min(Recipe.numRecipes, recipes.Length);
@@ -568,37 +427,6 @@ public static class RecipeLoader
             kept++;
         }
         popup.numAvailableGuideRecipes = kept;
-    }
-
-    static void UpdateWhichItemsAreMaterials()
-    {
-        var materials = ItemID.Sets.IsAMaterial;
-        var recipes = Main.recipe;
-        var groups = new Dictionary<int, RecipeGroup>();
-        for (int i = 0, count = Math.Min(Recipe.numRecipes, recipes.Length); i < count; i++)
-        {
-            var lookup = recipes[i].requiredItemQuickLookup;
-            for (int j = 0; j < lookup.Length; j++)
-            {
-                Recipe.RequiredItemEntry entry = lookup[j];
-                if (entry.itemIdOrRecipeGroup == 0) break;
-                if (entry.IsRecipeGroup)
-                {
-                    RecipeGroup group = entry.RecipeGroup;
-                    if (!group.IsNull) groups[group.RegisteredId] = group;
-                }
-                else if ((uint)entry.itemIdOrRecipeGroup < (uint)materials.Length) materials[entry.itemIdOrRecipeGroup] = true;
-            }
-        }
-        foreach (RecipeGroup group in groups.Values)
-        {
-            var items = new GameList(group.Items);
-            for (int k = 0; k < items.Count; k++)
-            {
-                int type = items.Get<int>(k);
-                if ((uint)type < (uint)materials.Length) materials[type] = true;
-            }
-        }
     }
 
     static bool UsesItem(Recipe recipe, int type)

@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria;
 
-public readonly unsafe partial struct Animation
+public unsafe sealed partial class Animation
 {
     static readonly Dictionary<int, (int FrameRate, int[] Frames)> AnimationFrameDatas = new();
 

@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Terraria.ModLoader</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Test Local\**;*Performance\**" />
+    <EmbeddedResource Remove="Test Local\**;*Performance\**" />
+    <None Remove="Test Local\**;*Performance\**" />
+  </ItemGroup>
+  <ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.2.0" />
+		<PackageReference Include="MSTest.TestAdapter" Version="2.2.8" />
+		<PackageReference Include="MSTest.TestFramework" Version="2.2.8" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\src\tModLoader\Terraria\Terraria.csproj" />
+		<!-- Only Project and Package references are inherited from Terraria.csproj, so we must specify the raw dll references again -->
+		<Reference Include="..\src\tModLoader\Terraria\Libraries\Common\*.dll" Private="true" />
+  </ItemGroup>
+</Project>

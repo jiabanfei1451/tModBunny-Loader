@@ -4,7 +4,6 @@ using System.Linq;
 using System.Runtime;
 using System.Runtime.InteropServices;
 using System;
-using System.Threading;
 using BunnyLoader.Interop;
 using BunnyLoader;
 using ReLogic.Content;
@@ -20,23 +19,11 @@ public static class ModContent
 
     static readonly Dictionary<string, List<IModType>> ByName = new(StringComparer.Ordinal);
 
-    static int instancesVersion;
-
-    static class InstanceCache<T> where T : class
-    {
-        internal static T? Value;
-        internal static int Version = -1;
-    }
-
     public static T GetInstance<T>() where T : class
     {
-        if (Volatile.Read(ref InstanceCache<T>.Version) == Volatile.Read(ref instancesVersion)) return InstanceCache<T>.Value!;
         lock (Instances)
         {
-            T? found = Instances.TryGetValue(typeof(T), out object? instance) ? (T)instance : null;
-            InstanceCache<T>.Value = found;
-            Volatile.Write(ref InstanceCache<T>.Version, instancesVersion);
-            return found!;
+            return Instances.TryGetValue(typeof(T), out object? instance) ? (T)instance : null!;
         }
     }
 
@@ -106,7 +93,7 @@ public static class ModContent
     public static bool TryFind<T>(string modName, string name, out T value) where T : IModType =>
         TryFind(modName + "/" + name, out value);
 
-    public static Asset<T> Request<T>(string name, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : struct, IGameObject
+    public static Asset<T> Request<T>(string name, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
     {
         Asset<T>.CheckSupported();
         (string modName, string path) = SplitName(name);
@@ -127,7 +114,7 @@ public static class ModContent
         };
     }
 
-    public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : struct, IGameObject
+    public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
     {
         if (!HasAsset(name))
         {
@@ -183,7 +170,6 @@ public static class ModContent
         lock (Instances)
         {
             Instances[instance.GetType()] = instance;
-            Volatile.Write(ref instancesVersion, instancesVersion + 1);
             if (instance is IModType content)
             {
                 if (!ByName.TryGetValue(content.FullName, out List<IModType>? list)) ByName[content.FullName] = list = new List<IModType>();
@@ -220,6 +206,9 @@ public static class ModContent
     static IEnumerable<int> SetupSteps()
     {
         Mod[] mods = Host.Mods;
+        // Os mods já carregaram (0..55%); daqui para a frente é a instalação
+        // do conteúdo, que é a parte longa da abertura.
+        Progress.Write("正在安装内容…", 55);
         ServerSyncHooks.Install();
         yield return 0;
         ServerSyncHooks.InstallMenus();
@@ -434,10 +423,9 @@ public static class ModContent
         try { Core.TownNPCFlagHooks.WantActsLike(); }
         catch (Exception e) { Log.Error($"town NPC flags: setup failed: {e}"); }
         CustomContentSetup.ContentReady();
-        try { LocalizationLoader.ResolvePlaceholders(); }
-        catch (Exception e) { Log.Error($"localization: placeholders could not be resolved: {e}"); }
         foreach (Mod mod in mods)
         {
+            Progress.Write($"正在最后处理：{mod.Name}…", 88);
             Run(mod, "PostSetupContent", mod.PostSetupContent);
             yield return 0;
             foreach (ModSystem system in SystemLoader.Of(mod))
@@ -466,12 +454,6 @@ public static class ModContent
         try { NPCProfileHooks.ContentReady(); }
         catch (Exception e) { Log.Error($"town NPC profiles: they could not be set up: {e}"); }
         yield return 0;
-        try { ItemTouchCategories.ContentReady(); }
-        catch (Exception e) { Log.Error($"item hooks: the touch categories could not be set: {e}"); }
-        yield return 0;
-        try { ItemWorldHooks.ContentReady(); }
-        catch (Exception e) { Log.Error($"item hooks: PostUpdate is not hooked: {e}"); }
-        yield return 0;
         try { ItemOpenHooks.ContentReady(); }
         catch (Exception e) { Log.Error($"item hooks: the right click items could not be listed: {e}"); }
         yield return 0;
@@ -495,6 +477,7 @@ public static class ModContent
         foreach (Mod mod in mods)
         {
             RecipeLoader.SetCurrentMod(mod);
+            Progress.Write($"正在添加配方：{mod.Name}…", 72);
             Run(mod, "AddRecipes", mod.AddRecipes);
             yield return 0;
             foreach (ModSystem system in SystemLoader.Of(mod))
@@ -527,6 +510,7 @@ public static class ModContent
         RecipeLoader.EndSetup();
         SystemLoader.PostSetupRecipes();
         MenuLoader.Ready = true;
+        Progress.Write("内容加载完成", 100);
         foreach (Mod mod in mods)
         {
             bool created = mod.GetContent<ModItem>().Any(i => ItemHooks.Overrides(i.GetType(), typeof(ModItem), nameof(ModItem.OnCreated))) ||

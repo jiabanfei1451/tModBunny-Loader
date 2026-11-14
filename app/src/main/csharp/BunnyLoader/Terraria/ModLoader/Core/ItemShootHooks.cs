@@ -102,6 +102,9 @@ internal static class ItemShootHooks
 
     static void ItemCheck_Shoot(On_Player.orig_ItemCheck_Shoot orig, Player self, int i, Item sItem, int weaponDamage, bool withAudioVisualFeedback)
     {
+        // v63: qual caminho de entrada chegou aqui (toque x joystick). Se o uso
+        // por toque nao aparecer NESTA linha, ele nao passa por ItemCheck_Shoot.
+        Diag63.Once("ics:" + sItem.type, 120, () => $"[v63] ItemCheck_Shoot tipo={sItem.type} mod={Diag63.Name(sItem)} pid={self.whoAmI} ctrlUse={self.controlUseItem} ctrlTile={self.controlUseTile} mIf={self.mouseInterface}");
         if (!ItemCombatHooks.Wanted(globalShoot, sItem))
         {
             orig(self, i, sItem, weaponDamage, withAudioVisualFeedback);
@@ -112,10 +115,45 @@ internal static class ItemShootHooks
             self.ApplyItemTime(sItem);
             return;
         }
+        // O `ModItem.Shoot` do tModLoader roda AQUI, antes de o jogo decidir
+        // qual projetil criar.
+        //
+        // Antes esta chamada ficava dentro do gancho de
+        // `Projectile.NewProjectile`, o que so funcionava para itens que
+        // realmente criam projetil: um item cujo Shoot apenas invoca um NPC
+        // (invocacao de chefe, por exemplo) nunca chamava NewProjectile e
+        // portanto NUNCA chamava Shoot — o item simplesmente "nao fazia nada",
+        // sem erro nenhum no log. Era esse o sintoma de "usar o item nao
+        // invoca o NPC".
+        if (!ShootFromItem(self, sItem))
+        {
+            self.ApplyItemTime(sItem);
+            return;
+        }
         Shot? outer = shot;
         shot = new Shot { Player = self, Item = sItem };
         try { orig(self, i, sItem, weaponDamage, withAudioVisualFeedback); }
         finally { shot = outer; }
+    }
+
+    static bool ShootFromItem(Player player, Item item)
+    {
+        Diag63.Once("sfi:" + item.type, 120, () => $"[v63] ShootFromItem mod={Diag63.Name(item)} shoot={item.shoot} dano={item.damage} pid={player.whoAmI}");
+        try
+        {
+            // O ammo usado nao chega aqui (so o jogo sabe depois de PickAmmo);
+            // 0 = "sem municao", que e o mesmo valor do tModLoader quando o
+            // item nao consome municao.
+            var source = EntitySource_ItemUse_WithAmmo.New(new Terraria.IEntitySourceTarget(player.Pointer), item, 0);
+            Vector2 position = player.Center;
+            Vector2 velocity = new Vector2(player.direction, 0f) * item.shootSpeed;
+            return Shoot(item, player, source, position, velocity, item.shoot, item.damage, item.knockBack);
+        }
+        catch (Exception e)
+        {
+            ItemHooks.Report("Shoot", e);
+            return true;
+        }
     }
 
     static int NewProjectile(On_Projectile.orig_NewProjectile_IEntitySource_float_float_float_float_int_int_float_int_float_float_float_NewProjectileModifier orig,
@@ -151,7 +189,10 @@ internal static class ItemShootHooks
                 (position, velocity, type, damage, knockBack) = (stats.Position, stats.Velocity, stats.Type, stats.Damage, stats.Knockback);
             }
             var source = EntitySource_ItemUse_WithAmmo.Is(spawnSource) ? EntitySource_ItemUse_WithAmmo.From(spawnSource) : default;
-            if (!Shoot(item, player, source, position, velocity, type, damage, knockBack)) return 1000;
+            // `Shoot` nao e chamado aqui: ele roda em `ItemCheck_Shoot`, que e
+            // o ponto equivalente do tModLoader e tambem cobre os itens que nao
+            // criam projetil. Chamar nos dois lugares executava o Shoot duas
+            // vezes por uso.
             return orig(spawnSource, position.X, position.Y, velocity.X, velocity.Y, type, damage, knockBack, owner, ai0, ai1, ai2, modifier);
         }
         finally { shot = current; }
@@ -323,7 +364,7 @@ internal static class ItemShootHooks
     static bool Eligible(Player player, Item weapon, Item item) =>
         !item.IsNull && item.type > 0 && item.stack > 0 && CanChooseAmmo(weapon, item, player);
 
-    static Item PickAmmo_IterateRange(On_Player.orig_PickAmmo_IterateRange orig, Player self, Item sItem, GameArray<Item> items, GameArray<int> slotIterationOrder, bool allowAmmoCycling)
+    static Item PickAmmo_IterateRange(On_Player.orig_PickAmmo_IterateRange orig, Player self, Item sItem, GameRefArray<Item> items, GameArray<int> slotIterationOrder, bool allowAmmoCycling)
     {
         if (!ItemCombatHooks.Wanted(globalSelection, sItem)) return orig(self, sItem, items, slotIterationOrder, allowAmmoCycling);
         try

@@ -1,19 +1,11 @@
-using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using BunnyLoader;
-using BunnyLoader.Interop;
 using Terraria.ID;
 
 namespace Terraria.ModLoader.Core;
 
-internal static unsafe class TownNPCFlagHooks
+internal static class TownNPCFlagHooks
 {
     static readonly List<int> hidden = new();
-
-    static Hook? trySyncing;
-
-    static int needsUpdateOffset = -1;
 
     internal static void WantActsLike()
     {
@@ -26,9 +18,7 @@ internal static unsafe class TownNPCFlagHooks
                 On_NPC.get_isLikeATownNPC += IsLikeATownNPC;
                 On_NPC.get_CanBeTalkedTo += CanBeTalkedTo;
                 On_NPC.get_CanTalk += CanTalk;
-                needsUpdateOffset = ItemHooks.FieldOffset(NPC.Class, "needsUniqueInfoUpdate");
-                trySyncing = ItemHooks.Gated(NPC.Class, "void TrySyncingUniqueTownNPCData(int npcIndex)",
-                    (IntPtr)(delegate* unmanaged<IntPtr, int, IntPtr, void>)&TrySyncing, 0, -1, needsUpdateOffset, 1);
+                On_NPC.TrySyncingUniqueTownNPCData += TrySyncing;
             });
             return;
         }
@@ -56,32 +46,16 @@ internal static unsafe class TownNPCFlagHooks
 
     static bool CanTalk(On_NPC.orig_get_CanTalk orig, NPC self) => orig(self) || (Acts(self) && self.aiStyle == 7 && self.velocity.Y == 0f && !NPCID.Sets.IsTownPet[self.type]);
 
-    [UnmanagedCallersOnly]
-    static void TrySyncing(IntPtr pointer, int npcIndex, IntPtr method)
+    static void TrySyncing(On_NPC.orig_TrySyncingUniqueTownNPCData orig, NPC self, int npcIndex)
     {
-        Hook? hook = trySyncing;
-        if (hook == null) return;
-        var self = new NPC(pointer);
-        bool lend = false;
-        if (Main.netMode != 1 && needsUpdateOffset >= 0) *(byte*)(pointer + needsUpdateOffset) = 0;
-        else
+        if (self.townNPC || !Acts(self))
         {
-            try { lend = !self.townNPC && Acts(self); }
-            catch (Exception e) { ItemHooks.Report("ActsLikeTownNPC sync", e); }
+            orig(self, npcIndex);
+            return;
         }
-        if (lend) self.townNPC = true;
-        try
-        {
-            var call = GameCall.Returning(RetKind.Int);
-            call.Arg(pointer);
-            call.Arg(npcIndex);
-            call.Arg(method);
-            ItemHooks.Original(ref call, hook, "NPC.TrySyncingUniqueTownNPCData");
-        }
-        finally
-        {
-            if (lend) self.townNPC = false;
-        }
+        self.townNPC = true;
+        orig(self, npcIndex);
+        self.townNPC = false;
     }
 
     static bool CanShowHomelessText(On_NPC.orig_CanShowHomelessText orig, int npcIndex) => orig(npcIndex) && !Staying(Main.npc[npcIndex]);

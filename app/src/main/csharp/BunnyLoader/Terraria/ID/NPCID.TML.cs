@@ -4,7 +4,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.ID;
 
-public readonly partial struct NPCID
+public sealed partial class NPCID
 {
     public static partial class Sets
     {
@@ -75,4 +75,9 @@ public readonly partial struct NPCID
         public static ref bool[] ImmuneToRegularBuffs { get { NPCImmunity.Enable(); return ref RegularImmunity; } }
         public static ref bool?[][] SpecificDebuffImmunity { get { NPCImmunity.Enable(); return ref SpecificImmunity; } }
     }
+
+    // tML patch transforma `const short Count` em `static readonly short`
+    // (NPCLoader.NPCCount), então o mod lê `ldsfld NPCID::Count`. O gerado saía
+    // `const short`, que não tem armazenamento em runtime -> MissingField.
+    public static readonly short Count = 697;
 }

@@ -3,7 +3,7 @@ using BunnyLoader;
 
 namespace Terraria;
 
-public readonly unsafe partial struct Chest
+public unsafe sealed partial class Chest
 {
     public Item GetItem(int slot)
     {

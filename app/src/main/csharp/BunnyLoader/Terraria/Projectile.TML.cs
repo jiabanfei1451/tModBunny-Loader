@@ -5,7 +5,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Projectile : IEntityWithGlobals<GlobalProjectile>
+public sealed partial class Projectile : IEntityWithGlobals<GlobalProjectile>
 {
     public IReadOnlyList<GlobalProjectile> EntityGlobals => ProjectileLoader.Globals.Of(this);
 
@@ -46,7 +46,7 @@ public readonly partial struct Projectile : IEntityWithGlobals<GlobalProjectile>
 
     public void CloneDefaults(int TypeToClone) => ProjectileLoader.CloneDefaults(this, TypeToClone);
 
-    public DrawData GetDefaultDrawData(Player player, Microsoft.Xna.Framework.Graphics.Color lightColor)
+    public DrawData GetDefaultDrawData(Player player, Microsoft.Xna.Framework.Color lightColor)
     {
         Microsoft.Xna.Framework.Graphics.Texture2D texture = Terraria.GameContent.TextureAssets.Projectile[type].Value;
         int drawOffsetX = 0;

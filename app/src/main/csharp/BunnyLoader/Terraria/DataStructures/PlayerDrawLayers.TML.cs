@@ -71,7 +71,7 @@ internal sealed class VanillaPlayerDrawLayer : PlayerDrawLayer
     protected override void Draw(ref PlayerDrawSet drawInfo) => drawFunc(ref drawInfo);
 }
 
-public readonly partial struct PlayerDrawLayers
+public sealed partial class PlayerDrawLayers
 {
     static void TorsoPlus(ref PlayerDrawSet info) => DrawPlayer_extra_TorsoPlus(info);
 

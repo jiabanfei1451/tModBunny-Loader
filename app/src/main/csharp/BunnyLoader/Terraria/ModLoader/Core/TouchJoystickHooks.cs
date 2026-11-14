@@ -60,8 +60,8 @@ internal static class TouchJoystickHooks
         VirtualControlsStyles_Layout styles = TouchButtonLoader.Styles();
         VirtualControlsProfile_Layout profile = styles.IsNull ? default : styles.ActiveProfile;
         if (profile.IsNull || profile.HardwareConfig.IsNull) return false;
-        GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
-        GameArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = profile.HardwareConfig.Slots;
+        GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+        GameRefArray<VirtualControlsHardwareConfigurationMapping_Layout> slots = profile.HardwareConfig.Slots;
         int count = controls.IsNull || slots.IsNull ? 0 : Math.Min(controls.Length, slots.Length);
         for (int i = 0; i < count; i++)
         {

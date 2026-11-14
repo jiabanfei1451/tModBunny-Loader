@@ -89,11 +89,50 @@ internal val EdgePad = 14.dp
  * (offline na primeira abertura), fica a lista por nome, sem posição.
  */
 @Composable
-fun InicioTab(shell: Shell, onOpen: (String) -> Unit) {
+fun InicioTab(shell: Shell, onHide: () -> Unit = {}, onOpen: (String) -> Unit) {
     val scroll = rememberScrollState()
     LaunchedEffect(Unit) { shell.refreshRemote() }
+    // Arrastar para cima quando a tela não tem mais o que rolar (o caso comum:
+    // o Início cabe na tela, e já está no topo) esconde a interface e deixa só
+    // o cenário. Conta só o arraste com a rolagem no fim, e zera a cada gesto.
+    // A conexão é uma só (rememberUpdatedState): recriá-la a cada recomposição
+    // zerava a conta no meio do arraste.
+    val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 90.dp.toPx() }
+    val hide by androidx.compose.runtime.rememberUpdatedState(onHide)
+    val hideOnPull = remember(scroll, threshold) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            var pulled = 0f
+            override fun onPreScroll(
+                available: androidx.compose.ui.geometry.Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource,
+            ): androidx.compose.ui.geometry.Offset {
+                // Puxar para cima (y negativo) com a rolagem já no fim: conta.
+                // Qualquer movimento para baixo zera.
+                if (available.y < 0f && !scroll.canScrollForward) {
+                    pulled -= available.y
+                    if (pulled > threshold) { pulled = 0f; hide() }
+                } else if (available.y > 0f) {
+                    pulled = 0f
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                pulled = 0f
+                return androidx.compose.ui.unit.Velocity.Zero
+            }
+        }
+    }
+    // Sem o efeito de esticar da borda: ele comia o arraste no fim da rolagem
+    // antes de a conexão acima ver (available.y chegava 0).
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.foundation.LocalOverscrollConfiguration provides null,
+    ) {
     StorePullToRefresh(shell, Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        Column(Modifier.fillMaxSize()
+            .nestedScroll(hideOnPull)
+            .verticalScroll(scroll)) {
             // O título vai de ponta a ponta, FORA do padding da coluna.
             //
             // O `aspectRatio` é o que faz a coisa funcionar, e a falta dele era
@@ -152,6 +191,7 @@ fun InicioTab(shell: Shell, onOpen: (String) -> Unit) {
             }
         }
         PixelScrollbar(scroll, Modifier.fillMaxSize())
+    }
     }
 }
 
@@ -425,7 +465,7 @@ private fun NewModsTitle() {
  */
 @Composable
 private fun NewBadge(modifier: Modifier = Modifier) {
-    val paused = LocalAnimationsPaused.current
+    val fx = LocalThemeFx.current
     val bob = androidx.compose.animation.core.rememberInfiniteTransition(label = "selo novo")
     val lift by bob.animateFloat(0f, 1f,
         androidx.compose.animation.core.infiniteRepeatable(
@@ -439,7 +479,7 @@ private fun NewBadge(modifier: Modifier = Modifier) {
         filterQuality = FilterQuality.None,
         modifier = modifier.size(42.dp, 20.dp).graphicsLayer {
             // Um pixel da arte (2 dp) por vez: nada de meio pixel borrado.
-            translationY = if (paused()) 0f else -kotlin.math.round(lift) * step
+            translationY = if (fx.paused()) 0f else -kotlin.math.round(lift) * step
         },
     )
 }
@@ -505,11 +545,20 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
 fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var type by rememberSaveable { mutableStateOf(PackType.MOD) }
+    val context = LocalContext.current
+    // A lista de `.tmod` sai do disco, não do índice em memória: relê ao abrir
+    // a aba e depois de cada import (um `.tmod` pode ter entrado pela pasta).
+    LaunchedEffect(type) { if (type == PackType.TML) shell.reloadTml() }
+    var tmlOpen by remember { mutableStateOf<dev.bunnyloader.mods.TmlMod?>(null) }
+    var logOpen by remember { mutableStateOf(false) }
     val search = rememberPackageSearchIndex(shell.packages)
     val packages = remember(shell.packages, shell.enabled, type, query, search) {
         filterPackages(shell.packages, shell.enabled, PackageStatus.ALL, PackageSort.LOAD, type, query, index = search)
     }
-    val counts = remember(shell.packages) { shell.packages.groupingBy { it.manifest.packType }.eachCount() }
+    val counts = remember(shell.packages, shell.tmlMods) {
+        shell.packages.groupingBy { it.manifest.packType }.eachCount() +
+            (PackType.TML to shell.tmlMods.size)
+    }
     val manualOrder = query.isBlank()
     val state = rememberLazyListState()
     LaunchedEffect(type, query) { state.scrollToItem(0) }
@@ -535,17 +584,45 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            shell.importPackage(uri) { result ->
-                aviso = result.fold(
-                    onSuccess = { tr("InstalledCount", it.nameFor(UiLocalization.language)) to true },
-                    onFailure = {
-                        if (it is ImportCancelled) tr("ImportCancelled") to true
-                        else tr("Failed", it.message) to false
-                    },
-                )
+            // Um seletor só para os dois formatos: `.tmod` vai para a pasta do
+            // tModLoader, e todo o resto continua sendo pacote do launcher. A
+            // escolha é pelo nome do arquivo, antes de abrir qualquer coisa.
+            if (dev.bunnyloader.mods.TmlMods.isTmod(context, uri)) {
+                shell.importTml(uri) { result ->
+                    aviso = result.fold(
+                        onSuccess = { tr("InstalledCount", it.label) to true },
+                        onFailure = { tr("Failed", it.message) to false },
+                    )
+                }
+            } else {
+                shell.importPackage(uri) { result ->
+                    aviso = result.fold(
+                        onSuccess = { tr("InstalledCount", it.nameFor(UiLocalization.language)) to true },
+                        onFailure = {
+                            if (it is ImportCancelled) tr("ImportCancelled") to true
+                            else tr("Failed", it.message) to false
+                        },
+                    )
+                }
             }
         }
     }
+    // A ficha do `.tmod` toma a tela: atrás dela não há abas nem ordem de carga.
+    val detail = tmlOpen
+    if (detail != null) {
+        TmlModDetail(
+            mod = detail,
+            enabled = detail.name in shell.tmlEnabled,
+            onBack = { tmlOpen = null },
+            onToggle = { on -> shell.setTmlEnabled(detail.name, on) },
+        )
+        return
+    }
+    if (logOpen) {
+        ImportLogDialog(onDismiss = { logOpen = false })
+        return
+    }
+
     shell.importProgress?.let { ImportProgressDialog(it) }
     shell.pendingUpdate?.let { pkg ->
         UpdateImportDialog(pkg.manifest, pkg.installed ?: pkg.manifest, shell::answerUpdate)
@@ -597,6 +674,34 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
         }
         SearchField(query, { query = it }, Modifier.padding(start = EdgePad, end = EdgePad, top = 10.dp))
         PackTypeTabs(type, counts, { type = it }, Modifier.padding(start = EdgePad, end = EdgePad, top = 8.dp))
+        if (type == PackType.TML) {
+            val shown = remember(shell.tmlMods, query) {
+                if (query.isBlank()) shell.tmlMods
+                else shell.tmlMods.filter {
+                    it.label.contains(query, true) || it.name.contains(query, true) ||
+                        it.author.contains(query, true)
+                }
+            }
+            FilterResultLine(shown.size, query.isNotBlank(), { query = "" },
+                Modifier.padding(start = EdgePad, end = EdgePad, top = 6.dp)) {
+                Box(Modifier.pixelClickable { logOpen = true }.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    PixelText(tr("ImportLog"), size = Ts.Small, color = Bl.PressedText)
+                }
+            }
+            shell.tmlMessage?.let {
+                PixelText(it, size = Ts.Small, color = Bl.TextDim,
+                    modifier = Modifier.padding(start = EdgePad, end = EdgePad, top = 4.dp))
+            }
+            TmlModList(
+                mods = shown,
+                enabled = shell.tmlEnabled,
+                onOpen = { tmlOpen = it },
+                onToggle = { mod, on -> shell.setTmlEnabled(mod.name, on) },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                empty = { Empty(if (shell.tmlMods.isEmpty()) tr("TmlEmpty") else tr("NoPackagesInThisFilter")) },
+            )
+            return@Column
+        }
         FilterResultLine(packages.size, query.isNotBlank(), { query = "" },
             Modifier.padding(start = EdgePad, end = EdgePad, top = 6.dp))
         PixelText(if (manualOrder) tr("ReorderHint")
@@ -721,7 +826,12 @@ private fun SortButton(sort: ExploreSort, onSort: (ExploreSort) -> Unit) {
     }
 }
 
-/** O interruptor: dois quadros empilhados, desligado em cima e ligado embaixo. */
+/**
+ * O interruptor OFF/ON do próprio Terraria: dois quadros empilhados.
+ * O recorte vem do tamanho real do drawable (metade da altura por quadro):
+ * números fixos erram quando o PNG muda de resolução e o interruptor sai
+ * cortado/torto.
+ */
 @Composable
 fun SwitchSprite(on: Boolean, onToggle: () -> Unit) {
     val sheet = ImageBitmap.imageResource(R.drawable.ic_switch)
@@ -733,7 +843,10 @@ fun SwitchSprite(on: Boolean, onToggle: () -> Unit) {
 // =========================== Configurações ===========================
 
 @Composable
-fun ConfigTab(shell: Shell) {
+fun ConfigTab(
+    shell: Shell, scenery: String, onScenery: (String) -> Unit,
+    themeEffects: Boolean, onThemeEffects: (Boolean) -> Unit,
+) {
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scroll = rememberScrollState()
@@ -754,6 +867,8 @@ fun ConfigTab(shell: Shell) {
 
     Box {
         Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = EdgePad)) {
+            ProfileHeader(prefs, Modifier.padding(top = 14.dp))
+
             SectionTitle(tr("Community"))
             DiscordCard()
 
@@ -769,6 +884,13 @@ fun ConfigTab(shell: Shell) {
 
             SectionTitle(tr("Appearance"))
             LanguagePicker()
+            SceneryPicker(scenery, onScenery)
+            Setting(
+                tr("ThemeEffects"),
+                tr("ThemeEffectsDescription"),
+                themeEffects,
+                onThemeEffects,
+            )
 
             SectionTitle(tr("Mods"))
             Setting(
@@ -825,11 +947,12 @@ fun ConfigTab(shell: Shell) {
                     ) {
                         PixelButton(tr("ViewReport"), { log = BootLog.read(ctx) },
                             fontSize = Ts.Small)
-                        if (log.isNotEmpty()) {
-                            PixelButton(tr("Copy"), {
-                                clipboard.setText(AnnotatedString(log))
-                            }, fontSize = Ts.Small)
-                        }
+                        // 「复制」和「查看」同一层、始终可用：以前它被 log.isNotEmpty() 挡着，
+                        // 必须先点过一次查看才会出现，等于把复制藏在查看里面。
+                        // 现在直接自己读报告再复制，不依赖上一步。
+                        PixelButton(tr("Copy"), {
+                            clipboard.setText(AnnotatedString(BootLog.read(ctx)))
+                        }, fontSize = Ts.Small)
                     }
                     if (log.isNotEmpty()) {
                         Box(
@@ -878,6 +1001,30 @@ private fun LanguagePicker() {
                 label = tr("Language"),
                 onPrev = { UiLocalization.select(context, options[(index - 1).mod(options.size)]) },
                 onNext = { UiLocalization.select(context, options[(index + 1).mod(options.size)]) },
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+    }
+}
+
+/**
+ * O cenário do fundo. Um seletor de setas em vez de lista suspensa: são cinco
+ * opções, e a seta é o seletor que o próprio Terraria usa nos menus dele.
+ */
+@Composable
+private fun SceneryPicker(choice: String, onChoice: (String) -> Unit) {
+    val options = listOf("") + Biome.entries.map { it.name }
+    val i = options.indexOf(choice).coerceAtLeast(0)
+    val label = Biome.entries.firstOrNull { it.name == choice }?.label?.let { tr(it) } ?: tr("Automatic")
+    PixelCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Column(Modifier.padding(12.dp).fillMaxWidth()) {
+            PixelText(tr("Scene"), size = Ts.Item)
+            PixelText(tr("SceneDescription"),
+                size = Ts.Small, color = Bl.TextFaint)
+            PixelSelect(
+                label,
+                onPrev = { onChoice(options[(i - 1).mod(options.size)]) },
+                onNext = { onChoice(options[(i + 1).mod(options.size)]) },
                 modifier = Modifier.padding(top = 10.dp),
             )
         }

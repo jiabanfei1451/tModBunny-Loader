@@ -79,9 +79,9 @@ public static partial class UtilsExtensions
 
     public static Vector2 Size(this ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> asset) => asset.Value.Size();
 
-    public static int Width(this ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> asset) => asset.Value.Width;
+    public static int Width(this ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>? asset) => asset?.Value?.Width ?? 0;
 
-    public static int Height(this ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D> asset) => asset.Value.Height;
+    public static int Height(this ReLogic.Content.Asset<Microsoft.Xna.Framework.Graphics.Texture2D>? asset) => asset?.Value?.Height ?? 0;
 
     public static Rectangle Frame(this Microsoft.Xna.Framework.Graphics.Texture2D tex, int horizontalFrames = 1, int verticalFrames = 1, int frameX = 0, int frameY = 0, int sizeOffsetX = 0, int sizeOffsetY = 0) =>
         Utils.Frame(tex, horizontalFrames, verticalFrames, frameX, frameY, sizeOffsetX, sizeOffsetY);
@@ -90,7 +90,7 @@ public static partial class UtilsExtensions
         tex.Value.Frame(horizontalFrames, verticalFrames, frameX, frameY, sizeOffsetX, sizeOffsetY);
 
     public static ReLogic.Content.Asset<T> Request<T>(this ReLogic.Content.IAssetRepository repository, string assetName, ReLogic.Content.AssetRequestMode mode = ReLogic.Content.AssetRequestMode.AsyncLoad)
-        where T : struct, BunnyLoader.Interop.IGameObject =>
+        where T : class, BunnyLoader.Interop.IGameObject =>
         Terraria.ModLoader.ModContent.Request<T>("Terraria/" + assetName.Replace('\\', '/'), mode);
 
     public static Vector2 RotatedBy(this Vector2 spinningpoint, double radians, Vector2 center = default)

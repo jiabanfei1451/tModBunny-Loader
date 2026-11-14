@@ -221,18 +221,3 @@ ExampleExplosive:
     DisplayName: Explosivo de Exemplo
     Tooltip: "{$ItemTooltip.Dynamite}"
 }
-ExampleSubworldKey:
-{
-    DisplayName: Chave da Dimensão de Exemplo
-    Tooltip: Leva às Planícies de Exemplo e de volta
-}
-ExampleAdvancedSubworldKey:
-{
-    DisplayName: Chave da Dimensão Avançada de Exemplo
-    Tooltip: Leva às Colinas Noturnas de Exemplo e de volta, sem tela de carregamento
-}
-ExampleWorldFileSubworldKey:
-{
-    DisplayName: Chave da Arena de Exemplo
-    Tooltip: Leva à Arena de Exemplo, carregada de um arquivo .wld, e de volta
-}

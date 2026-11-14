@@ -1,7 +1,7 @@
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
 
-public readonly unsafe partial struct Cursor
+public unsafe sealed partial class Cursor
 {
     static int positionOffset = -1;
 

@@ -29,10 +29,16 @@ internal static unsafe class SubworldWorldHooks
         hideOcean = subworld != null && Read(subworld, nameof(ModSubworld.HideOcean), () => subworld.HideOcean, true);
         randomTileUpdates = subworld != null && Read(subworld, nameof(ModSubworld.RandomTileUpdates), () => subworld.RandomTileUpdates, false);
         savePlayerChanges = subworld == null || Read(subworld, nameof(ModSubworld.SavePlayerChanges), () => subworld.SavePlayerChanges, true);
-        if (hideUnderworld != underworldPatched && Host.Native()->HideUnderworld(hideUnderworld ? 1 : 0) != 0) underworldPatched = hideUnderworld;
-        if (hideOcean != oceanPatched && Host.Native()->HideOcean(hideOcean ? 1 : 0) != 0) oceanPatched = hideOcean;
+        // v65: as exportacoes nativas HideUnderworld/HideOcean/HideMapFrame ainda
+        // NAO existem no libbunny.so (sao novas no upstream 0.5.4). Sem elas o
+        // mapa/mapa-mundi continua desenhando o fundo vanilla do subworld; o
+        // resto do subworld funciona. Ao acrescentar as exportacoes em
+        // cpp/script/dotnet/NativeApi.cpp, restaurar as tres linhas abaixo.
+        _ = hideUnderworld; _ = hideOcean;
         bool hideFrame = subworld != null;
-        if (hideFrame != framePatched && Host.Native()->HideMapFrame(hideFrame ? 1 : 0) != 0) framePatched = hideFrame;
+        _ = hideFrame;
+        // underworldPatched / oceanPatched / framePatched ficam so como estado
+        // para quando as exportacoes existirem.
     }
 
     static bool Read(ModSubworld subworld, string name, Func<bool> value, bool fallback)

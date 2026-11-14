@@ -3,7 +3,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public ref StatModifier PotionDelayModifier => ref PlayerPotionDelayHooks.Get(this);
 }

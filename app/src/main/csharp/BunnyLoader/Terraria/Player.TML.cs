@@ -5,7 +5,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public HashSet<int> NearbyModTorch => Terraria.ModLoader.Core.TileHooks.ModTorches(whoAmI);
 
@@ -134,4 +134,10 @@ public readonly partial struct Player
     }
 
     public int GetWeaponArmorPenetration(Item sItem) => (int)(sItem.armorPenetration + GetTotalArmorPenetration(sItem.DamageType));
+
+    /// <summary>
+    /// A sobrecarga de 4 parâmetros é do tML (o jogo só tem 3). O último
+    /// argumento é "veio de outro jogador", que aqui não muda o efeito.
+    /// </summary>
+    public void AddBuff(int type, int time, bool fromNetPvP, bool fromPlayer) => AddBuff(type, time, fromNetPvP);
 }

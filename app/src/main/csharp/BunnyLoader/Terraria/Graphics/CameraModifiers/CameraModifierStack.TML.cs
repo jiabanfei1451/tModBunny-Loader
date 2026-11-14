@@ -14,7 +14,7 @@ public interface IModCameraModifier
     void Update(ref CameraInfo cameraInfo);
 }
 
-public readonly partial struct CameraModifierStack
+public sealed partial class CameraModifierStack
 {
     static readonly EntityInstances<List<IModCameraModifier>> Managed = new();
 

@@ -1,0 +1,4 @@
+de-DE 3
+it-IT 12
+fr-FR 12
+pl-PL 1

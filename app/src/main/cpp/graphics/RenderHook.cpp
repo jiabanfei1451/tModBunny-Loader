@@ -21,13 +21,17 @@ using FireFn = void (*)(Il2CppObject* camera, const MethodInfo*);
 
 FireFn g_origFire = nullptr;
 
-FieldInfo* g_runnerInstance = nullptr;
+FieldInfo* g_runnerInstance = nullptr;   // XNAUnityRunner._instance
 int32_t g_worldSettingsOff = -1, g_uiSettingsOff = -1, g_worldCameraOff = -1, g_uiCameraOff = -1;
 const MethodInfo* g_getTargetTexture = nullptr;
 const MethodInfo* g_getClearFlags = nullptr;
 const MethodInfo* g_getDepth = nullptr;
 bool g_camerasLogged = false;
 
+// Os efeitos do quadro: o submit da thread do jogo vai para `g_pending`; o
+// FireOnPostRender da camera do mundo os passa para as filas da thread de
+// render (uma lista por marcador emitido, na mesma ordem; outra para o fim do
+// quadro). Sem consumidor (marcador perdido), as filas param em kMaxQueued.
 constexpr size_t kMaxQueued = 4;
 std::mutex g_queueMutex;
 EffectFrame g_pending;
@@ -37,13 +41,15 @@ std::deque<EffectFrame> g_worldQueue, g_screenQueue;
 std::mutex g_statsMutex;
 RenderStats g_stats;
 
+// O marcador (ver kMarkerWidth): objetos da Unity seguros por gchandle (o
+// coletor do IL2CPP nao move objetos: os ponteiros ficam validos).
 struct Marker {
     bool tried = false, ready = false;
     uint32_t handles[3] = {0, 0, 0};
     Il2CppObject* target = nullptr;
     Il2CppObject* source = nullptr;
     Il2CppObject* material = nullptr;
-    const MethodInfo* blit = nullptr;
+    const MethodInfo* blit = nullptr;   // Graphics.Internal_BlitMaterial5
 };
 Marker g_marker;
 
@@ -71,11 +77,14 @@ T unbox(Il2CppObject* boxed) {
 }
 
 void logCamera(const char* label, Il2CppObject* camera) {
-    BL_INFO("screen effects: camera %s %p: target %p, clearFlags %d, depth %.1f", label, camera,
+    BL_INFO("efeitos de tela: camera %s %p: alvo %p, clearFlags %d, depth %.1f", label, camera,
             invoke(g_getTargetTexture, camera), unbox<int32_t>(invoke(g_getClearFlags, camera)),
             unbox<float>(invoke(g_getDepth, camera)));
 }
 
+// O construtor pelo tipo de cada parametro ("System.Int32", "UnityEngine.Material"):
+// pela contagem so, o Material(Material) viraria o Material(Shader), o primeiro
+// de um parametro, e o jogo congelava.
 const MethodInfo* findCtor(Il2CppClass* cls, std::initializer_list<const char*> types) {
     auto& a = il2cpp::api();
     void* iter = nullptr;
@@ -104,6 +113,10 @@ Il2CppObject* construct(Il2CppClass* cls, std::initializer_list<const char*> typ
     return exc ? nullptr : obj;
 }
 
+// Uma RenderTexture 17x3, a textura branca da Unity como origem e uma COPIA
+// de um material do jogo (o Blit troca a _MainTex do material; no original,
+// estragaria os sprites dele). Na thread do jogo, FORA do desenho das cameras:
+// montado dentro do FireOnPostRender, o jogo congelou (render multithread).
 void setupMarker() {
     g_marker.tried = true;
     auto& a = il2cpp::api();
@@ -135,8 +148,8 @@ void setupMarker() {
 
     g_marker.blit = a.class_get_method_from_name(graphics, "Internal_BlitMaterial5", 5);
     if (!target || !source || !copy || !g_marker.blit) {
-        BL_ERROR("screen effects: marker not set up (target %p, source %p, material %p, blit %p); "
-                 "the effect goes at the end of the frame", target, source, copy, g_marker.blit);
+        BL_ERROR("efeitos de tela: marcador nao montado (alvo %p, origem %p, material %p, blit %p); "
+                 "o efeito vai no fim do quadro", target, source, copy, g_marker.blit);
         return;
     }
     g_marker.handles[0] = a.gchandle_new(target, false);
@@ -146,17 +159,21 @@ void setupMarker() {
     g_marker.source = source;
     g_marker.material = copy;
     g_marker.ready = true;
-    BL_INFO("screen effects: marker set up");
+    BL_INFO("efeitos de tela: marcador montado");
 }
 
+// Chamada direta (o runtime_invoke custava ~0,1 ms por quadro no celular),
+// guardada: uma excecao do Blit nao pode atravessar a libbunny.
 bool issueMarker() {
     using BlitFn = void (*)(Il2CppObject*, Il2CppObject*, Il2CppObject*, int32_t, bool, const MethodInfo*);
     const auto blit = reinterpret_cast<BlitFn>(il2cpp::methodPointer(g_marker.blit));
+    // setRT = true: com false a Unity nao liga o destino e desenha no alvo que
+    // estiver ativo (o do jogo), sem trocar framebuffer nem viewport.
     auto call = [blit] {
         blit(g_marker.source, g_marker.target, g_marker.material, 0, true, g_marker.blit);
     };
     if (il2cpp::guarded(call)) return true;
-    BL_ERROR("screen effects: the marker Blit threw; marker disabled");
+    BL_ERROR("efeitos de tela: o Blit do marcador lancou; marcador desligado");
     g_marker.ready = false;
     return false;
 }
@@ -166,6 +183,9 @@ void push(std::deque<EffectFrame>& queue, EffectFrame&& frame) {
     queue.push_back(std::move(frame));
 }
 
+// O que o submit deixou para este quadro, separado por camada (os alvos vao
+// para as duas; o quadro anterior e o do mundo). Consumido: sem submit no
+// proximo quadro, nada desenha.
 void splitPending(EffectFrame& world, EffectFrame& screen) {
     EffectFrame pending;
     {
@@ -190,8 +210,8 @@ void hkFireOnPostRender(Il2CppObject* camera, const MethodInfo* method) {
     Il2CppObject* ui = readRef(readRef(r, g_uiSettingsOff), g_uiCameraOff);
     if (!g_camerasLogged && world && ui) {
         g_camerasLogged = true;
-        logCamera("world", world);
-        logCamera("interface", ui);
+        logCamera("do mundo", world);
+        logCamera("da interface", ui);
     }
 
     bool issued = false;
@@ -205,6 +225,7 @@ void hkFireOnPostRender(Il2CppObject* camera, const MethodInfo* method) {
             markerNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now() - started).count();
         }
+        // Sem marcador, os do mundo vao no fim do quadro (por cima da interface).
         if (!issued) {
             for (EffectDraw& e : worldList.draws) screenList.draws.push_back(std::move(e));
             screenList.history = screenList.history || worldList.history;
@@ -239,12 +260,12 @@ bool resolveCameras() {
         && g_worldCameraOff >= 0 && g_uiCameraOff >= 0;
 }
 
-}
+} // namespace
 
 void installRenderHook() {
     auto& a = il2cpp::api();
     if (!resolveCameras()) {
-        BL_ERROR("screen effects: XNAUnityRunner cameras not found");
+        BL_ERROR("efeitos de tela: cameras do XNAUnityRunner nao encontradas");
         return;
     }
 
@@ -256,11 +277,13 @@ void installRenderHook() {
         g_getDepth = a.class_get_method_from_name(camera, "get_depth", 0);
     }
     const bool hooked = fire && hook::install(fire, hkFireOnPostRender, &g_origFire);
-    if (!hooked) BL_ERROR("screen effects: Camera.FireOnPostRender not hooked");
+    if (!hooked) BL_ERROR("efeitos de tela: Camera.FireOnPostRender nao hookado");
     {
         std::lock_guard<std::mutex> lock(g_statsMutex);
         g_stats.hookInstalled = hooked;
     }
+    // Os hooks GL so entram no primeiro efeito (submitEffects): sem mod
+    // desenhando efeito, o GL da Unity fica como no jogo.
 }
 
 void noteMarkerHit() {
@@ -269,6 +292,8 @@ void noteMarkerHit() {
 }
 
 void submitEffects(EffectFrame&& frame) {
+    // O marcador e os hooks GL entram na thread do jogo, fora do desenho das
+    // cameras, no primeiro quadro com efeito.
     if (!frame.empty()) {
         installGlHooks();
         if (!g_marker.tried) setupMarker();
@@ -307,4 +332,4 @@ RenderStats renderStats() {
     return copy;
 }
 
-}
+} // namespace bl::graphics

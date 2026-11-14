@@ -3,7 +3,7 @@ using Terraria.Localization;
 
 namespace Terraria;
 
-public readonly partial struct Item
+public sealed partial class Item
 {
     public bool StopAnimationOnHurt
     {

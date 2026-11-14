@@ -209,7 +209,15 @@ internal static partial class TileHooks
 
     static bool Explode(On_Projectile.orig_CanExplodeTile orig, Projectile projectile, int i, int j, bool ores)
     {
-        return orig(projectile, i, j, ores) && TileLoader.CanExplode(i, j);
+        if (!orig(projectile, i, j, ores))
+            return false;
+        int type = Main.tile[i, j].type;
+        if (TileLoader.GetTile(type)?.CanExplode(i, j) == false)
+            return false;
+        foreach (GlobalTile g in TileLoader.Hooks.CanExplode)
+            if (!g.CanExplode(i, j, type))
+                return false;
+        return true;
     }
 
     static bool CanKill(On_WorldGen.orig_CanKillTile_int_int_outbool orig, int i, int j, out bool damaged)
@@ -702,7 +710,7 @@ internal static partial class TileHooks
         mod?.MouseOver(i, j);
         foreach (GlobalTile g in TileLoader.Hooks.MouseOver)
             g.MouseOver(i, j, type);
-        if (mod != null && TileLoader.Has(mod, 14) && !player.cursorItemIconEnabled && !(Main.tileSign[type] && Sign.ReadSign(i, j, false) != -1))
+        if (mod != null && TileLoader.Has(mod, 14) && !player.cursorItemIconEnabled)
         {
             player.noThrow = 2;
             player.cursorItemIconEnabled = true;

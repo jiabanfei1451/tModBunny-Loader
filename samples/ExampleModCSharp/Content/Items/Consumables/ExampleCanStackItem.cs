@@ -84,10 +84,6 @@ namespace ExampleMod.Content.Items.Consumables
         }
 
         public override void ModifyTooltips(List<TooltipLine> tooltips) {
-            if (!CanRightClick()) {
-                tooltips.RemoveAll(line => line.Mod == "Terraria" && line.Name == "Tooltip0");
-            }
-
             if (craftedPlayerName != string.Empty) {
                 if (Main.LocalPlayer.name == craftedPlayerName) {
                     tooltips.Add(new TooltipLine(Mod, "CraftedPlayerNameCannotOpen", CraftedPlayerNameCannotOpenText.Value));

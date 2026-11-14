@@ -5,7 +5,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct NPC
+public sealed partial class NPC
 {
     public int GetPartyHatGore() => GetPartyHatColor() switch
     {

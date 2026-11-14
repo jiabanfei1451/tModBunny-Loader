@@ -386,7 +386,7 @@ internal static unsafe class ConfigMenu
         for (int i = 0; i < items.Length; i++)
             if (items[i].Pointer == ours.Pointer)
                 return;
-        var grown = GameArray<TransactionButton_Layout>.New(TransactionButton_Layout.Class, items.Length + 1);
+        var grown = GameRefArray<TransactionButton_Layout>.New(TransactionButton_Layout.Class, items.Length + 1);
         for (int i = 0; i < items.Length; i++)
             grown[i] = items[i];
         grown[items.Length] = ours;
@@ -1143,12 +1143,12 @@ internal static unsafe class ConfigMenu
     static float Measure(SpriteFont font, string text) =>
         font.IsNull ? 0 : font.MeasureString(HasColorTag(text) ? ColorTag.Replace(text, "$1") : text).X;
 
-    static GameArray<TextSnippet> SnippetsOf(string text, Color color)
+    static GameRefArray<TextSnippet> SnippetsOf(string text, Color color)
     {
         var key = (text, color.R, color.G, color.B, color.A);
         if (!snippets.TryGetValue(key, out GameHandle? kept))
             snippets[key] = kept = new GameHandle(ChatManager.ParseMessage(text, color, -1).Pointer);
-        return new GameArray<TextSnippet>(kept.Target);
+        return new GameRefArray<TextSnippet>(kept.Target);
     }
 
     static void DrawTagged(String_Layout label, string text, Color color)

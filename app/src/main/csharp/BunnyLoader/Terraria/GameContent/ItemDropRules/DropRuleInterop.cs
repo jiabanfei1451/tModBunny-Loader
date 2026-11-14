@@ -63,16 +63,16 @@ internal static unsafe class DropRuleInterop
 
     internal static int[] ToManaged(GameArray<int> values) => values.IsNull ? Array.Empty<int>() : values.AsSpan().ToArray();
 
-    internal static GameArray<N.IItemDropRule> ToNative(IItemDropRule[] values)
+    internal static GameRefArray<N.IItemDropRule> ToNative(IItemDropRule[] values)
     {
         ArgumentNullException.ThrowIfNull(values);
-        var array = GameArray<N.IItemDropRule>.New(N.IItemDropRule.Class, values.Length);
+        var array = GameRefArray<N.IItemDropRule>.New(N.IItemDropRule.Class, values.Length);
         using var pin = new GameHandle(array.Pointer);
         for (int i = 0; i < values.Length; i++) array[i] = ToNative(values[i]);
         return array;
     }
 
-    internal static IItemDropRule[] ToManaged(GameArray<N.IItemDropRule> values)
+    internal static IItemDropRule[] ToManaged(GameRefArray<N.IItemDropRule> values)
     {
         if (values.IsNull) return Array.Empty<IItemDropRule>();
         var result = new IItemDropRule[values.Length];

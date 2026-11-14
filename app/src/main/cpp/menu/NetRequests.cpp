@@ -17,14 +17,16 @@ namespace bl::runtime {
 
 namespace {
 
+// "/bunny npc 697": com a barra, um servidor sem Bunny Loader trata como
+// comando desconhecido e mostra o texto; legivel para quem ve.
 constexpr char kPrefix[] = "/bunny ";
 
 FieldInfo* g_netMode = nullptr;
 const MethodInfo* g_sendData = nullptr;
 Il2CppClass* g_chatMessage = nullptr;
-const MethodInfo* g_chatMessageCtor = nullptr;
-const MethodInfo* g_sendFromClient = nullptr;
-int32_t g_textOffset = -1;
+const MethodInfo* g_chatMessageCtor = nullptr;   // ChatMessage(string)
+const MethodInfo* g_sendFromClient = nullptr;    // ChatHelper.SendChatMessageFromClient
+int32_t g_textOffset = -1;                       // ChatMessage.<Text>k__BackingField
 
 using ProcessFn = void (*)(Il2CppObject*, Il2CppObject*, int32_t, const MethodInfo*);
 ProcessFn g_origProcess = nullptr;
@@ -47,12 +49,17 @@ std::string asciiOf(Il2CppString* s) {
     return out;
 }
 
+/**
+ * Chat que chega ao servidor, com o indice de quem mandou. So o prefixo nosso
+ * e engolido; o resto segue para o jogo como sempre.
+ */
 void hkProcessIncomingMessage(Il2CppObject* self, Il2CppObject* message, int32_t clientId,
                               const MethodInfo* m) {
     if (message && g_textOffset >= 0 && isNetHost()) {
         const std::string text = asciiOf(field<Il2CppString*>(message, g_textOffset));
         if (text.rfind(kPrefix, 0) == 0) {
             std::lock_guard<std::mutex> l(g_mx);
+            // Teto: um cliente mandando sem parar nao enche a memoria.
             if (g_queue.size() < 64) g_queue.push_back({clientId, text.substr(sizeof(kPrefix) - 1)});
             return;
         }
@@ -60,40 +67,46 @@ void hkProcessIncomingMessage(Il2CppObject* self, Il2CppObject* message, int32_t
     g_origProcess(self, message, clientId, m);
 }
 
+/**
+ * Executa um pedido. O tipo vem da rede, e este IL2CPP nao confere limite de
+ * array: tipo fora da tabela leria e escreveria alem do fim. Entao tudo e
+ * conferido contra a contagem real (jogo + mods) antes de chegar ao jogo.
+ */
 void run(const Request& r) {
     int type = 0, amount = 0;
     char verb[16] = {};
     if (std::sscanf(r.command.c_str(), "%15s %d %d", verb, &type, &amount) < 2) {
-        BL_WARN("network: malformed request from player %d: '%s'", r.client, r.command.c_str());
+        BL_WARN("rede: pedido mal formado do jogador %d: '%s'", r.client, r.command.c_str());
         return;
     }
     const std::string v = verb;
     if (v == "npc") {
         if (type <= 0 || type >= npcTypeCount()) {
-            BL_WARN("network: player %d asked for NPC %d, outside the table", r.client, type);
+            BL_WARN("rede: jogador %d pediu NPC %d, fora da tabela", r.client, type);
             return;
         }
-        spawnNpcs(type, amount, r.client);
+        spawnNpcs(type, amount, r.client);   // a contagem vai ao teto do menu la
     } else if (v == "item") {
         if (type <= 0 || type >= itemTypeCount()) {
-            BL_WARN("network: player %d asked for item %d, outside the table", r.client, type);
+            BL_WARN("rede: jogador %d pediu item %d, fora da tabela", r.client, type);
             return;
         }
         giveItem(type, amount < 1 ? 1 : amount, r.client);
     } else if (v == "power") {
+        // "power <id> <nivel>": so os de mundo (setWorldPowerFromNet confere).
         if (!setWorldPowerFromNet(type, amount)) {
-            BL_WARN("network: player %d asked for power %d, which is not a world power", r.client, type);
+            BL_WARN("rede: jogador %d pediu poder %d, que nao e de mundo", r.client, type);
         }
     } else if (v == "time") {
-        setTimeOfDay(type);
+        setTimeOfDay(type);   // "time <0..3 | 100+minuto>": confere a faixa sozinho
     } else if (v == "reveal") {
-        revealMapForClient(r.client);
+        revealMapForClient(r.client);   // "reveal 0": o mundo inteiro, para o Revelar mapa
     } else {
-        BL_WARN("network: unknown request from player %d: '%s'", r.client, r.command.c_str());
+        BL_WARN("rede: pedido desconhecido do jogador %d: '%s'", r.client, r.command.c_str());
     }
 }
 
-}
+} // namespace
 
 int netMode() {
     int32_t mode = 0;
@@ -117,7 +130,7 @@ void sendData(int msgType, int number, float number2, float number3) {
 
 bool sendToServer(const std::string& command) {
     if (!g_chatMessageCtor || !g_sendFromClient) {
-        BL_ERROR("network: no chat references; request '%s' lost", command.c_str());
+        BL_ERROR("rede: sem refs do chat; pedido '%s' perdido", command.c_str());
         return false;
     }
     auto& a = il2cpp::api();
@@ -130,7 +143,7 @@ bool sendToServer(const std::string& command) {
     void* args[1] = { msg };
     a.runtime_invoke(g_sendFromClient, nullptr, args, &exc);
     if (exc) { BL_ERROR("rede: SendChatMessageFromClient lancou excecao"); return false; }
-    BL_INFO("network: request to the server: %s", command.c_str());
+    BL_INFO("rede: pedido ao servidor: %s", command.c_str());
     return true;
 }
 
@@ -141,7 +154,7 @@ void tickNetRequests() {
         batch.swap(g_queue);
     }
     for (const Request& r : batch) {
-        BL_INFO("network: request from player %d: %s", r.client, r.command.c_str());
+        BL_INFO("rede: pedido do jogador %d: %s", r.client, r.command.c_str());
         run(r);
     }
 }
@@ -173,9 +186,9 @@ void installNetRequests() {
     }
     const bool hooked = process && g_textOffset >= 0 &&
                         hook::install(process, hkProcessIncomingMessage, &g_origProcess);
-    BL_DEBUG("network: netMode=%p SendData=%p chat(ctor=%p send=%p text=%d) server=%s",
+    BL_DEBUG("rede: netMode=%p SendData=%p chat(ctor=%p envio=%p texto=%d) servidor=%s",
              (void*)g_netMode, (const void*)g_sendData, (const void*)g_chatMessageCtor,
-             (const void*)g_sendFromClient, g_textOffset, hooked ? "ok" : "NO HOOK");
+             (const void*)g_sendFromClient, g_textOffset, hooked ? "ok" : "SEM GANCHO");
 }
 
-}
+} // namespace bl::runtime

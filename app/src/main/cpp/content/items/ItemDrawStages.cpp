@@ -1,4 +1,5 @@
 #include "content/items/ItemDrawStages.h"
+#include "content/npcs/CodeMatch.h"
 
 #if defined(__aarch64__)
 #include "core/Log.h"
@@ -144,7 +145,7 @@ bool installStages(Pair& pair) {
     auto* method = cls ? findMethodBySignature(cls, parseSignature(pair.signature)) : nullptr;
     auto* entry = method ? static_cast<uint8_t*>(methodPointer(method)) : nullptr;
     for (Stage* stage : {&pair.pre, &pair.post}) {
-        if (!entry || std::memcmp(entry + stage->offset, stage->expected, sizeof(stage->expected))) {
+        if (!entry || !bl::npccode::sameBlock(entry, stage->offset, stage->expected, 4)) {
             BL_ERROR("ItemDraw.%s: the game's method body is not the expected one", pair.name);
             return false;
         }

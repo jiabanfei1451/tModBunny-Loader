@@ -2,6 +2,15 @@
 # aninhados. Os que aparecem nas assinaturas destes entram sozinhos, so com o
 # ponteiro (classes), o layout (structs) ou os valores (enums).
 Terraria.Main
+# screenWidth/screenHeight: propriedades estaticas cujo getter nativo dereferencia
+# Main.instance (nulo durante o Load()). Escritas a mao em Terraria/Main.TML.cs
+# lendo o campo de instancia por tras do instance, com fallback 1152x648.
+!Terraria.Main.screenWidth
+!Terraria.Main.screenHeight
+# npcFrameCount: escrito a mao em Terraria/Main.TML.cs. O getter cresce o array
+# sob demanda ate NPCCount, porque o SetStaticDefaults dos itens roda antes do
+# tick que aumenta as tabelas de NPC (v41, log 2026-11-12-device-v40.txt).
+!Terraria.Main.npcFrameCount
 Terraria.Entity
 Terraria.Player
 Terraria.Item
@@ -22,6 +31,11 @@ Terraria.ID.DustID
 Terraria.ID.ItemUseStyleID
 Terraria.ID.ItemHoldStyleID
 !Terraria.Recipe.AddCustomShimmerResult
+# CountTileTypesInArea: o contrato do 1.4.4.9 usa `int[]`; o array do jogo no
+# dump só existe como GameArray<int> (ponteiro Il2CppArray). A dupla é escrita
+# à mão em Terraria/On.WorldGen.TML.cs, com cópia de ida e volta. `!!` também
+# suprime os delegates orig_/hook_ gerados (o `!` simples só reserva o nome).
+!!Terraria.WorldGen.CountTileTypesInArea
 Terraria.ID.SoundID
 Terraria.ID.SetFactory
 Terraria.GameContent.Items.UniqueTagEffect
@@ -48,7 +62,6 @@ ControlAnchor
 GUIBossBar
 GUIBuffs
 GUIClothesWindow
-GUICraftGuide
 GUICraftGuidePopup
 GUIHearts
 GUIHousingMenu
@@ -85,8 +98,6 @@ GUIReforge
 GUIReforgePopup
 GUIPulldownSetting
 ItemGrid_Layout
-DraggableItemGrid_Layout
-Emotes_Layout
 VirtualControlsProfile_Layout
 VirtualControlsBinding_Layout
 VirtualControlsHardwareConfiguration_Layout
@@ -100,12 +111,10 @@ KeyboardInput
 KeyboardMappings_Layout
 LayoutCalculator
 Microsoft.Xna.Framework.Graphics.SpriteBatch
-Microsoft.Xna.Framework.Input.Mouse
 MultiplayerHost_Layout
 MaxPlayersSlider_Layout
 NPCDialogue_Layout
 QuickActionButton_Layout
-VirtualInputController_Layout
 SettingsOverlay_Layout
 SettingsPauseMenu_Layout
 Terraria.Achievements.Achievement
@@ -217,6 +226,14 @@ Terraria.ID.BiomeConversionID
 Terraria.GameContent.DoorOpeningHelper
 !Terraria.GameContent.Drawing.TileDrawing.IsVisible
 !Terraria.Main.SceneMetrics
+# tML patch faz `const int maxX = N` virar `static readonly int` (Main.cs.patch),
+# então o mod lê `ldsfld Main::maxNPCs`. O gerado saía `const` (o dump é const),
+# e const não tem armazenamento em runtime -> `ldsfld` quebra (MissingField).
+# Viram campos `static readonly int` em Main.TML.cs.
+!Terraria.Main.maxChests
+!Terraria.Main.maxItems
+!Terraria.Main.maxProjectiles
+!Terraria.Main.maxNPCs
 Terraria.DataStructures.TileDrawInfo
 Terraria.Enums.AnchorType
 Terraria.Player.Hooks
@@ -245,7 +262,6 @@ XNAUnityRunner
 Terraria.ID.PrefixID
 Terraria.GameContent.Prefixes.PrefixLegacy
 Terraria.Utilities.UnifiedRandom
-Terraria.Utilities.FileUtilities
 !Terraria.GameContent.TextureAssets.Tile
 Terraria.ID.TileID
 Terraria.ID.RecipeGroups
@@ -502,15 +518,6 @@ Terraria.ChestItem
 Terraria.GameContent.PlayerEyeHelper
 GUIBuilderAccToggles
 GUIAccessoryInfo
-GUIAccessoryInfoToggles
-AccessoryInfo_Layout
-Equipment_Layout
-GUIEquipment
-GUIEquipmentLoadout
-GUIScrollControl
-GUIItemGrid
-GUIDraggableItemGrid
-GUIMouseItem
 Terraria.Graphics.Shaders.GameShaders
 Terraria.DataStructures.SettingsForCharacterPreview
 !Terraria.ID.BuffID+Sets.BuffTextHandlers
@@ -522,44 +529,97 @@ Terraria.GameContent.ItemTrader
 !Terraria.ID.NPCID+Sets.NPCPortraitsCloseUpOffsets
 !Terraria.ID.NPCID+Sets.NPCPortraitsFullBodyRetroOffsets
 !Terraria.ID.NPCID+Sets.BasicPortrait
+
+# Proxies que precisam ser `record class` (o mod usa `with`).
+# Ver RecordTypes em Program.cs.
+@record Terraria.Audio.SoundStyle
+
+# Gerenciados à mão: o tML os declara como `record struct` e o dump
+# deste jogo como classe; um proxy gerado daria "value type mismatch".
+- Terraria.Audio.SoundStyle
+
+# Struct no tML, classe no dump: `ref` na assinatura tem de bater.
+% Terraria.DataStructures.PlayerDrawSet
+!Terraria.GameContent.Creative.CreativeItemSacrificesCatalog.SacrificeCountNeededByItemId
+
+# Usados por Terraria.Condition (porte do tML 1.4.5). Sem eles o
+# `Condition.BirthdayParty` / `MechdusaSeedFeature` nao compila.
+Terraria.GameContent.Events.BirthdayParty
+Terraria.GameContent.SpecialSeedFeatures
+
+# Sem gerar o corpo, o proxy saia VAZIO (so o cabecalho) e os campos
+# TriggerPack.Current / CreativeUnlocksTracker.ItemSacrifices ficavam
+# sem traducao no IlPatcher.
+Terraria.GameInput.TriggersPack
+Terraria.GameContent.Creative.CreativeUnlocksTracker
+Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
+
+# `Width`/`Height` da textura sao PROPRIEDADES no FNA; o ProxyGen emite
+# campos como `ref int`, e a assinatura nao casa com o `get_Width()` do mod.
+!Microsoft.Xna.Framework.Graphics.Texture2D.Width
+!Microsoft.Xna.Framework.Graphics.Texture2D.Height
+
+# `SoundID.Item1` etc. no dump são `LegacySoundStyle` (classe), mas no tML são
+# `SoundStyle` (struct): Program.cs mapeia SÓ esses campos para SoundStyle.
+# O tipo LegacySoundStyle em si continua gerado — o shim usa o proxy dele para
+# falar com o objeto nativo (SoundStyle.cs / SoundHooks.cs / hooks de áudio).
+# `UseSound` no tML é `SoundStyle?` — escrito à mão em Item.TML.cs.
+!Terraria.Item.UseSound
+
+# `NPC.HitSound`/`DeathSound` também são `SoundStyle?` no tML (1.4.4.9
+# NPC.cs.patch:460/468); o dump os declara como referência `LegacySoundStyle`.
+# Gerado como propriedade, o `SetDefaults` de todo NPC não JITava
+# (`newobj Nullable<SoundStyle>` na pilha contra um setter que pedia
+# `LegacySoundStyle`). Escritos à mão em NPC.TML.cs.
+!Terraria.NPC.HitSound
+!Terraria.NPC.DeathSound
+
+# `SoundID`: o tML expõe TODOS os sons como `SoundStyle` e o mod pode tomar o
+# ENDEREÇO do campo (`ldsflda`, para `SoundEngine.PlaySound(in SoundStyle, …)`).
+# Const (`Roar = 15`) e propriedade não têm endereço — o JIT recusa os dois.
+# Estes viram campos `static readonly SoundStyle` em ID/SoundID.TML.cs.
+!Terraria.ID.SoundID.Roar
+!Terraria.ID.SoundID.Item14
+!Terraria.ID.SoundID.Item15
+!Terraria.ID.SoundID.Shatter
+!Terraria.ID.SoundID.MenuClose
+!Terraria.ID.SoundID.MenuOpen
+
+# tML patch faz `ItemID.Count`/`NPCID.Count` virarem `static readonly short`
+# (ItemLoader.ItemCount / NPCLoader.NPCCount). O gerado saía `const short`, que
+# não tem armazenamento em runtime -> `ldsfld` quebra. Viram `static readonly
+# short` em ID/ItemID.TML.cs e ID/NPCID.TML.cs.
+!Terraria.ID.ItemID.Count
+!Terraria.ID.NPCID.Count
+
+# tML 1.4.5 patches/Terraria/Localization/Language.cs.patch:56 declara
+# `LocalizedText[] FindAll(LanguageSearchFilter)`. O ProxyGen devolve
+# GameRefArray<T> (tipo IL diferente) -> o mod nao acha o metodo.
+# `!` faz o gerado virar FindAll_ e o手写 em Language.cs converte para T[].
+!Terraria.Localization.Language.FindAll
+
+# `ItemID.Sets.BannerStrength` no contrato (1.4.4.9 ItemID.cs.patch) é
+# `BannerEffect[]`; o dump devolve `GameArray<BannerEffect>` (struct). O
+# Fargowiltas faz `Sets.BannerStrength = Factory.CreateCustomSet<BannerEffect>(...)`
+# em Load(): o `stsfld` era reescrito para `__set_BannerStrength(GameArray<T>)`
+# e recebia um array gerenciado -> InvalidProgram no método INTEIRO.
+# Escrito à mão como campo real em ID/ItemID.Sets.TML.cs.
+!Terraria.ID.ItemID+Sets.BannerStrength
+
+# ---- 上游 0.5.4 合并：饰品槽 / 顶栏 / 子世界用到的 UI 类型（dump 里是全局命名空间，故用裸名） ----
+GUIEquipment
+GUIEquipment+EquipmentItemType
+GUIEquipmentLoadout
+GUIAccessoryInfo
+GUIAccessoryInfoToggles
+GUIBuilderAccToggles
+GUIScrollControl
+GUIItemGrid
+GUIDraggableItemGrid
+GUIMouseItem
+Equipment_Layout
+AccessoryInfo_Layout
 Reforge_Layout
 InventorySplitStack_Layout
 GUIInventorySplitStack
-Microsoft.Xna.Framework.Game
-DeviceVPPICalculator
-XNAWorldCameraSettings
-GUIZoom
-Terraria.GameContent.Creative.CreativePowerManager
-Terraria.GameContent.Creative.CreativePowers
-Terraria.GameContent.Creative.CreativePowers+ASharedTogglePower
-Terraria.GameContent.Creative.CreativePowers+ASharedSliderPower
-Terraria.GameContent.Creative.CreativePowers+ModifyTimeRate
-Terraria.GameContent.Creative.CreativePowers+FreezeTime
-Terraria.GameContent.Creative.CreativeUnlocksTracker
-Terraria.Graphics.FinalFractalHelper
-Terraria.Graphics.FinalFractalHelper+FinalFractalProfile
-Terraria.WorldBuilding.StructureMap
-Terraria.GameContent.Tile_Entities.TEFoodPlatter
-Terraria.GameContent.Events.BirthdayParty
-Terraria.ID.TorchID
-Terraria.GameContent.SmartCursorHelper
-Terraria.RemoteConnection
-Terraria.Map.WorldMap
-Terraria.Map.WorldMapChunk
-Terraria.Map.MapTile
-WorldCreateMenu_Layout
-WorldSelectMenu_Layout
-WorldGenerateMenu_Layout
-GUIWorldGenerateMenu
 GUIStatusMenu
-StatusMenu_Layout
-Microsoft.Xna.Framework.Graphics.SpriteBatcher
-GUIConfigureTouchControlsPopup
-MPSessionManager
-PlatformUser
-ProgressBar_Layout
-GUIProgressBar
-Terraria.GameContent.Bestiary.IBestiaryUICollectionInfoProvider
-Terraria.HitTile
-Terraria.Liquid
-!Terraria.Lang.LocalizedDuration

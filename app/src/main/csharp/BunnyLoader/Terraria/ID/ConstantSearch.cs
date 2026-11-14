@@ -41,17 +41,17 @@ internal static class ConstantSearch
     }
 }
 
-public readonly partial struct ItemUseStyleID
+public sealed partial class ItemUseStyleID
 {
     public static readonly IdDictionary Search = ConstantSearch.Build(typeof(ItemUseStyleID), typeof(int));
 }
 
-public readonly partial struct ItemHoldStyleID
+public sealed partial class ItemHoldStyleID
 {
     public static readonly IdDictionary Search = ConstantSearch.Build(typeof(ItemHoldStyleID), typeof(int));
 }
 
-public readonly partial struct PrefixID
+public sealed partial class PrefixID
 {
     public static readonly IdDictionary Search = ConstantSearch.Build(typeof(PrefixID), typeof(int));
 }

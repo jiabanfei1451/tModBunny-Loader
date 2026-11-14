@@ -120,14 +120,22 @@ public static unsafe class BuffLoader
     [System.Runtime.InteropServices.UnmanagedCallersOnly]
     static void BuffsInstalled(int first, int last)
     {
+        // Este callback e uma das poucas entradas do nucleo para o C# na
+        // primeira volta do jogo. Se o processo morre aqui dentro, sem uma
+        // linha de erro, o log tem de dizer em qual buff e em qual passo.
+        Log.Info($"buffs instalados: {first}..{last} ({last - first + 1})");
         for (int type = first; type <= last; type++)
         {
             ModBuff? buff = GetBuff(type);
             if (buff == null) continue;
+            Log.Info($"buff {type} {buff.FullName}: textos");
             try { ApplyOverriddenTexts(buff); }
             catch (Exception e) { Log.Error($"buff {buff.FullName}: DisplayName or Description threw: {e}"); }
+            Log.Info($"buff {type} {buff.FullName}: SetupContent");
             try { buff.SetupContent(); }
             catch (Exception e) { Log.Error($"buff {buff.FullName}: SetStaticDefaults threw: {e}"); }
+            Log.Info($"buff {type} {buff.FullName}: ok");
         }
+        Log.Info("buffs instalados: fim");
     }
 }

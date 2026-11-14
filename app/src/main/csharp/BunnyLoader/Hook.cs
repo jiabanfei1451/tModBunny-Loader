@@ -13,11 +13,42 @@ public sealed unsafe class Hook
 
     public IntPtr* OriginalSlot => original;
 
+    /// <summary>
+    /// Instalação desligada (harness de PC).
+    ///
+    /// O `InstallHook` do aparelho patcheia o código nativo do il2cpp; no
+    /// Windows não existe jogo nenhum para patchear. Mais grave: o
+    /// HookGen gera os corpos de gancho como `[UnmanagedCallersOnly]`, e o CLR
+    /// do PC derruba o processo (FailFast "attempted to call a
+    /// UnmanagedCallersOnly method from managed code") assim que um desses
+    /// corpos é compilado. O Mono do aparelho aceita.
+    ///
+    /// Com <c>BL_NO_HOOKS=1</c> nenhum gancho é instalado e o resto do
+    /// fluxo (IL, Load, SetupContent, AddRecipes, SetDefaults) roda inteiro —
+    /// é o que o harness precisa para testar a carga sem aparelho.
+    /// </summary>
+    static readonly bool skip = Environment.GetEnvironmentVariable("BL_NO_HOOKS") == "1";
+
+    internal static bool Skipped => skip;
+
     public static Hook Install(IntPtr method, IntPtr replacement)
     {
+        if (skip) return new Hook(DeadSlot());
         IntPtr* slot = Host.Native()->InstallHook(method, replacement);
         if (slot == null) throw new InvalidOperationException("hook install failed");
         return new Hook(slot);
+    }
+
+    static IntPtr* deadSlot;
+
+    static IntPtr* DeadSlot()
+    {
+        if (deadSlot == null)
+        {
+            deadSlot = (IntPtr*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint)sizeof(IntPtr));
+            *deadSlot = IntPtr.Zero;
+        }
+        return deadSlot;
     }
 
     public static Hook Install(string ns, string cls, string signature, IntPtr replacement) =>
@@ -26,17 +57,13 @@ public sealed unsafe class Hook
     public static Hook Install(GameClass gameClass, string signature, IntPtr replacement)
     {
         MethodRef method = default;
+        // Marca o passo antes de resolver: se o processo morrer nesta resolucao,
+        // esta e a ultima linha util do log (o "hook instalado" ainda nao existe).
+        Log.Info($"hook: procurando {gameClass.FullName} :: {signature}");
         GameInterop.Method(ref method, gameClass, signature, LayoutUnchecked(signature));
-        return Install(method.Info, replacement);
-    }
-
-    internal static Hook InstallGated(GameClass gameClass, string signature, IntPtr replacement, int arg, int pointerOffset, int fieldOffset, int fieldSize)
-    {
-        MethodRef method = default;
-        GameInterop.Method(ref method, gameClass, signature, LayoutUnchecked(signature));
-        IntPtr* slot = Host.Native()->InstallGatedHook(method.Info, replacement, arg, pointerOffset, fieldOffset, fieldSize);
-        if (slot == null) throw new InvalidOperationException("hook install failed");
-        return new Hook(slot);
+        Hook hook = Install(method.Info, replacement);
+        Log.Info($"hook: instalado {gameClass.FullName} :: {signature} (original=0x{hook.Original:X})");
+        return hook;
     }
 
     static int[] LayoutUnchecked(string signature)

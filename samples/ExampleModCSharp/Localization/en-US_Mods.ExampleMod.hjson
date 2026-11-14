@@ -16,21 +16,6 @@ Invasions: {
 	}
 }
 
-Subworlds: {
-	ExampleSubworld: {
-		DisplayName: Example Plains
-	}
-
-	ExampleWorldFileSubworld: {
-		DisplayName: Example Arena
-	}
-
-	ExampleAdvancedSubworld: {
-		DisplayName: Example Night Hills
-		Welcome: The night never ends here.
-	}
-}
-
 Items: {
 	ExampleSandBlock: {
 		DisplayName: Example Sand Block
@@ -427,11 +412,6 @@ Items: {
 	ExampleSword: {
 		DisplayName: Example Sword
 		Tooltip: This is a modded sword.
-	}
-
-	ExampleDualUseWeapon: {
-		DisplayName: Example Dual Use Weapon
-		Tooltip: This weapon does something special with {InputTrigger_InteractWithTile}.
 	}
 
 	ExampleMagicWeapon: {
@@ -949,8 +929,6 @@ Tiles: {
 	}
 
 	ExampleDresser.MapEntry: Example Dresser
-	ExampleOre.MapEntry: Example Ore
-	ExampleWorkbench.MapEntry: Example Workbench
 	ExamplePylonTile.MapEntry: "{$Mods.ExampleMod.Items.ExamplePylonItem.DisplayName}"
 }
 
@@ -1018,11 +996,6 @@ ExampleKeybindPlayer: {
 	RandomBuff: ExampleMod's ModKeybind was just pressed. The {0} buff was given to the player.
 	LearningExampleHeld: LearningExampleKeybind held for half a second
 	LearningExampleDoubleTap: LearningExampleKeybind double tapped within a quarter of a second
-}
-
-ExampleModWingSlot: {
-	Wings: Wings
-	WingsDye: Wings Dye
 }
 
 Keybinds: {

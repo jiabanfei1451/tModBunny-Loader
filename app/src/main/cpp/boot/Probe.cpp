@@ -34,7 +34,12 @@ namespace {
 
 using DomainGetFn = Il2CppDomain* (*)();
 
-constexpr int kSettleMs = 10000;
+// IMPORTANTE: chamar il2cpp_domain_get() durante a janela de inicializacao do
+// il2cpp crasha (SIGSEGV) — o caminho do hook so tocaria a API DEPOIS do
+// il2cpp_init. Sem poder hookar (houdini), a sonda espera o jogo assentar por
+// um tempo fixo antes de tocar em qualquer coisa do il2cpp, e nunca faz poll
+// apertado.
+constexpr int kSettleMs = 10000;  // tempo ate o jogo chegar ao menu
 constexpr int kRetries = 12;
 constexpr int kRetryGapMs = 2500;
 
@@ -48,11 +53,22 @@ bool il2cppReady() {
 constexpr int kLoadPollMs = 100;
 constexpr int kLoadWaitMaxMs = 180000;
 
+/**
+ * Espera a carga do proprio jogo acabar (Main._isAsyncLoadComplete) antes de
+ * carregar os mods.
+ *
+ * O prazo fixo de kSettleMs supunha o jogo pronto em 10 s. Com a CPU ocupada
+ * a carga dele passa disso, e a dos mods corria junto: o LoadContent_Deferred
+ * do jogo (no DrawSplash, thread do jogo) percorre o dicionario de textos no
+ * SetLanguage enquanto o registro dos itens do mod acrescenta chaves nele.
+ * O "Collection was modified" mata a carga do jogo, o splash nunca acaba e a
+ * tela fica preta (24/10, com o Thorium; reproduzido sob carga de CPU).
+ */
 void waitGameContentLoaded() {
     Il2CppClass* main = il2cpp::findClass({"Terraria", "Main", {}});
     FieldInfo* done = main ? il2cpp::findField(main, "_isAsyncLoadComplete") : nullptr;
     if (!done) {
-        BL_WARN("probe: Main._isAsyncLoadComplete not found; not waiting for the game to load");
+        BL_WARN("sonda: Main._isAsyncLoadComplete nao encontrado; segue sem esperar a carga do jogo");
         return;
     }
     auto& a = il2cpp::api();
@@ -60,11 +76,11 @@ void waitGameContentLoaded() {
         uint8_t loaded = 0;
         a.field_static_get_value(done, &loaded);
         if (loaded) {
-            if (waited) BL_DEBUG("probe: game loaded (+%d ms of waiting)", waited);
+            if (waited) BL_DEBUG("sonda: carga do jogo concluida (+%d ms de espera)", waited);
             return;
         }
         if (waited >= kLoadWaitMaxMs) {
-            BL_ERROR("probe: the game did not finish loading in %d s; loading the mods anyway", kLoadWaitMaxMs / 1000);
+            BL_ERROR("sonda: a carga do jogo nao terminou em %d s; mods carregam assim mesmo", kLoadWaitMaxMs / 1000);
             return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kLoadPollMs));
@@ -75,17 +91,24 @@ void probeThread() {
     struct Finished {
         ~Finished() { markProbeFinished(); }
     } finished;
-    BL_DEBUG("probe: waiting for the game to settle (at most %d ms)...", kSettleMs);
+    // O prazo fixo, com uma saida: o hook do splash avisa quando o jogo termina
+    // de carregar (Main._isAsyncLoadComplete). Nesse ponto a thread do jogo so
+    // desenha o splash; e a janela mais calma para carregar os mods.
+    BL_DEBUG("sonda: aguardando o jogo assentar (no maximo %d ms)...", kSettleMs);
     waitForGameLoaded(std::chrono::milliseconds(kSettleMs));
 
     for (int i = 0; i < kRetries; ++i) {
         if (il2cppReady()) {
-            BL_DEBUG("probe: il2cpp ready; loading the API");
+            BL_DEBUG("sonda: il2cpp pronto; carregando API");
             auto& a = il2cpp::api();
             if (!a.load()) {
-                BL_ERROR("probe: Api::load() failed");
+                BL_ERROR("sonda: Api::load() falhou");
                 return;
             }
+            // Esta thread termina no fim do bloco: sai do registro do il2cpp em
+            // qualquer saida. Registrada e morta, ela deixava o coletor (e com
+            // ele a thread do jogo) esperando a resposta dela para sempre: a
+            // tela preta intermitente da abertura com mod, sob carga de CPU.
             struct Attached {
                 Il2CppThread* thread;
                 ~Attached() {
@@ -94,24 +117,26 @@ void probeThread() {
                 }
             } attached{a.thread_attach(a.domain_get())};
             if (!resolveGameRefs()) {
-                BL_ERROR("probe: resolveGameRefs failed");
+                BL_ERROR("sonda: resolveGameRefs falhou");
                 return;
             }
-            BL_DEBUG("probe: references resolved");
+            BL_DEBUG("sonda: RESOLUCAO OK");
             installSplashHook();
             waitGameContentLoaded();
 
             script::installConsoleLog();
 
             runtime::registerGameTexts();
-            mods::loadAll(config().modsDir, config().enabledMods);
+            mods::loadAll(config().modsDir, config().tmlDir, config().enabledMods);
             dotnet::host().finishLoading();
             runtime::installNetGuard();
-            BL_INFO("probe: %zu mod(s) loaded", mods::loadedCount());
+            BL_INFO("sonda: %zu mod(s) carregado(s)", mods::loadedCount());
+            // Depois dos mods: os ids deles ficam os mesmos de sempre.
             registerUnloadedPool();
             registerUnloadedWall();
             prepareModNpcs();
 
+            // Menu de cheats (acoes nativas) + botao flutuante na Activity.
             installCheats();
             installDevTools();
             installFramePacing();
@@ -126,13 +151,13 @@ void probeThread() {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(kRetryGapMs));
     }
-    BL_ERROR("probe: il2cpp was not ready in time");
+    BL_ERROR("sonda: il2cpp nao ficou pronto a tempo");
 }
 
-}
+} // namespace
 
 void startResolutionProbe() {
     std::thread(probeThread).detach();
 }
 
-}
+} // namespace bl::runtime

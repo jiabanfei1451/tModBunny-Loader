@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Xna.Framework;
 using Terraria.DataStructures;
-using Color = Microsoft.Xna.Framework.Graphics.Color;
+using Color = Microsoft.Xna.Framework.Color;
 
 namespace Terraria.ModLoader.Core;
 

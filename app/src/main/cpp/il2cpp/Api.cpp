@@ -14,17 +14,20 @@ namespace {
 bool bind(void* lib, const char* name, void* slot) {
     void* sym = dlsym(lib, name);
     if (!sym) {
-        BL_ERROR("Missing symbol: %s", name);
+        BL_ERROR("Simbolo ausente: %s", name);
         return false;
     }
     *reinterpret_cast<void**>(slot) = sym;
     return true;
 }
 
+// Simbolo que NAO derruba a carga se faltar. Quem usa checa o ponteiro e cai
+// num caminho pior porem correto. Um simbolo novo no `ok &=` faria o jogo
+// inteiro rodar sem mods por causa de um recurso acessorio.
 void bindSoft(void* lib, const char* name, void* slot) {
     void* sym = dlsym(lib, name);
     if (!sym) {
-        BL_WARN("Missing optional symbol: %s", name);
+        BL_WARN("Simbolo opcional ausente: %s", name);
         return;
     }
     *reinterpret_cast<void**>(slot) = sym;
@@ -34,7 +37,7 @@ void bindSoft(void* lib, const char* name, void* slot) {
 bool Api::load() {
     void* lib = dlopen("libil2cpp.so", RTLD_NOW | RTLD_NOLOAD);
     if (!lib) {
-        BL_ERROR("libil2cpp.so is not loaded");
+        BL_ERROR("libil2cpp.so nao esta carregada");
         return false;
     }
 
@@ -121,4 +124,4 @@ bool Api::load() {
     return gameImage && corlibImage;
 }
 
-}
+} // namespace bl::il2cpp

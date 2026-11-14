@@ -13,7 +13,7 @@ public interface IModParticle
     void Draw(ref ParticleRendererSettings settings, SpriteBatch spriteBatch);
 }
 
-public readonly partial struct ParticleRenderer
+public sealed partial class ParticleRenderer
 {
     static readonly EntityInstances<List<IModParticle>> Managed = new();
 

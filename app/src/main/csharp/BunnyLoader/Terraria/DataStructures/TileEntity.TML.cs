@@ -4,7 +4,7 @@ using Terraria.ObjectData;
 
 namespace Terraria.DataStructures;
 
-public readonly partial struct TileEntity
+public sealed partial class TileEntity
 {
     public static bool TryGet<T>(int i, int j, out T tileEntity) where T : ModTileEntity
     {

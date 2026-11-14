@@ -1,8 +1,8 @@
 namespace Terraria.UI;
 
-public readonly unsafe partial struct ItemSlot
+public unsafe sealed partial class ItemSlot
 {
-    public readonly unsafe partial struct Context
+    public unsafe sealed partial class Context
     {
         public const int ModdedAccessorySlot = -10;
         public const int ModdedVanityAccessorySlot = -11;

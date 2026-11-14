@@ -141,7 +141,7 @@ public static unsafe class PrefixLoader
         var names = Lang.prefix;
         if (names.Length < total)
         {
-            var grown = GameArray<LocalizedText>.New(new GameClass("Terraria.Localization", "LocalizedText"), total);
+            var grown = GameRefArray<LocalizedText>.New(new GameClass("Terraria.Localization", "LocalizedText"), total);
             for (int i = 0; i < names.Length; i++) grown[i] = names[i];
             Lang.prefix = grown;
             names = grown;

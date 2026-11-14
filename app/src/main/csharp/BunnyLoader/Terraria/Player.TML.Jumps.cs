@@ -4,7 +4,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public ref ExtraJumpState GetJumpState<T>(T baseInstance) where T : ExtraJump => ref ExtraJumpLoader.StateOf(this, baseInstance);
 

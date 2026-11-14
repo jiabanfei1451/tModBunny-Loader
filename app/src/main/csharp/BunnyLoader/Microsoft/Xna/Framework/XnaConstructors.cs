@@ -97,8 +97,14 @@ namespace Microsoft.Xna.Framework
     }
 }
 
-namespace Microsoft.Xna.Framework.Graphics
+namespace Microsoft.Xna.Framework
 {
+    /// <summary>
+    /// No dump deste port o tipo mora em <c>Microsoft.Xna.Framework.Graphics</c>
+    /// (o ProxyGen reescreve o namespace do proxy para o nome do PC, veja
+    /// <c>TypeMap.ProxyNamespace</c>) — a declaração parcial tem de morar no
+    /// MESMO namespace do arquivo gerado, senão viram dois tipos.
+    /// </summary>
     public partial struct Color
     {
         public Color(int r, int g, int b) : this(r, g, b, 255) { }
@@ -130,5 +136,24 @@ namespace Microsoft.Xna.Framework.Graphics
             : this((int)(r * 255f + 0.5f), (int)(g * 255f + 0.5f), (int)(b * 255f + 0.5f), (int)(a * 255f + 0.5f)) { }
 
         public override readonly string ToString() => $"{{R:{R} G:{G} B:{B} A:{A}}}";
+    }
+}
+
+namespace Microsoft.Xna.Framework
+{
+    /// <summary>
+    /// O <c>GameTime</c> da FNA tem construtores de verdade; aqui o proxy só
+    /// nasce de um ponteiro nativo. Sem eles o código do mod não compila:
+    /// <c>exampleCoinUserInterface.Draw(Main.spriteBatch, new GameTime())</c>.
+    /// </summary>
+    public partial class GameTime
+    {
+        public GameTime() : this(BunnyLoader.Interop.GameInterop.NewObject(Class)) { }
+
+        public GameTime(TimeSpan totalGameTime, TimeSpan elapsedGameTime)
+            : this() { }
+
+        public GameTime(TimeSpan totalGameTime, TimeSpan elapsedGameTime, bool isRunning)
+            : this() { }
     }
 }

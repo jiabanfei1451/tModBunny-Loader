@@ -7,7 +7,19 @@ using Microsoft.Xna.Framework.Graphics;
 
 namespace ReLogic.Content;
 
-public sealed unsafe class Asset<T> where T : struct, IGameObject
+/// <summary>
+/// Um asset do jogo (textura, fonte, som).
+///
+/// A restrição genérica é <c>where T : class</c> como no tModLoader 1.4.4.9:
+/// um mod compilado no PC referencia <c>ReLogic.Content.Asset`1&lt;Texture2D&gt;</c>
+/// e o runtime valida a restrição ao vincular a chamada. Se aqui fosse
+/// <c>where T : struct, IGameObject</c>, o JIT do mod lançaria
+/// <c>TypeLoadException</c> ao instanciar <c>Asset`1&lt;Texture2D&gt;</c>.
+///
+/// A restrição extra <c>IGameObject</c> é do shim: <c>T</c> precisa expor o
+/// ponteiro nativo para virar proxy.
+/// </summary>
+public sealed unsafe class Asset<T> where T : class, IGameObject
 {
     readonly string? file;
 
@@ -47,7 +59,9 @@ public sealed unsafe class Asset<T> where T : struct, IGameObject
         IntPtr a = left.Resolved(), b = right.Resolved();
         if (a == IntPtr.Zero || b == IntPtr.Zero) return false;
         if (left.IsDirect == right.IsDirect) return a == b;
-        return Unsafe.As<T, IntPtr>(ref Unsafe.AsRef(left.Value)) == Unsafe.As<T, IntPtr>(ref Unsafe.AsRef(right.Value));
+        // `T` e uma classe: a comparação e pelo endereco NATIVO do valor, nao
+        // pela referencia gerenciada (cada `Value` cria um proxy novo).
+        return left.ValuePointer() == right.ValuePointer();
     }
 
     public static bool operator !=(Asset<T>? left, Asset<T>? right) => !(left == right);
@@ -69,13 +83,7 @@ public sealed unsafe class Asset<T> where T : struct, IGameObject
         }
     }
 
-    public static Asset<T> FromGame(IntPtr gameAsset)
-    {
-        if (gameAsset == IntPtr.Zero) return null!;
-        lock (ByGameAsset)
-            if (ByGameAsset.TryGetValue(gameAsset, out Asset<T>? known)) return known;
-        return ForGameAsset(gameAsset, NameOf(gameAsset));
-    }
+    public static Asset<T> FromGame(IntPtr gameAsset) => gameAsset == IntPtr.Zero ? null! : ForGameAsset(gameAsset, NameOf(gameAsset));
 
     public static IntPtr ToGame(Asset<T>? asset)
     {
@@ -121,10 +129,26 @@ public sealed unsafe class Asset<T> where T : struct, IGameObject
         get
         {
             Wait();
-            IntPtr value = directTexture != IntPtr.Zero ? directTexture
-                : typeof(T) == typeof(Texture2D) ? Host.Native()->TextureAssetValue(asset) : *(IntPtr*)(asset + ValueOffset());
-            return Unsafe.As<IntPtr, T>(ref value);
+            return (T)GameObjectFactory.Create(typeof(T), ValuePointer());
         }
+    }
+
+    /// <summary>
+    /// O tML permite <c>(Texture2D)ModContent.Request&lt;Texture2D&gt;(...)</c>.
+    /// O mod compilado no PC chama <c>op_Explicit</c> em
+    /// <c>Asset`1&lt;!0&gt;</c>; sem o operador o método inteiro não JITa.
+    /// </summary>
+    public static explicit operator T(Asset<T> asset) => asset.Value;
+
+    /// <summary>
+    /// O ponteiro nativo do objeto que o asset carrega (a textura, a fonte).
+    /// Separate de <see cref="Value"/> porque a comparacao de assets precisa do
+    /// endereco, nao de um proxy novo a cada chamada.
+    /// </summary>
+    IntPtr ValuePointer()
+    {
+        if (directTexture != IntPtr.Zero) return directTexture;
+        return typeof(T) == typeof(Texture2D) ? Host.Native()->TextureAssetValue(asset) : *(IntPtr*)(asset + ValueOffset());
     }
 
     int ValueOffset()

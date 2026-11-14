@@ -9,7 +9,7 @@ using Terraria.ModLoader;
 
 namespace Terraria.ID;
 
-public readonly partial struct SetFactory
+public sealed partial class SetFactory
 {
     public sealed class NamedSetKey
     {
@@ -91,6 +91,11 @@ public readonly partial struct SetFactory
         BuffID.Sets.Factory._size = BuffLoader.BuffCount;
         TileID.Sets.Factory._size = TileLoader.TileCount;
         WallID.Sets.Factory._size = WallLoader.WallCount;
+        // As duas tabelas escritas à mão (SortingPriorityBossSpawns /
+        // BannerStrength) não são geradas pelo ProxyGen, então o
+        // ReinitializeSets não as reconstrói. Precisa crescer aqui, ANTES
+        // dos SetStaticDefaults, senão `array[Type]` de item de mod estoura.
+        ItemID.Sets.GrowForModContent();
         grown = true;
     }
 
@@ -127,6 +132,59 @@ public readonly partial struct SetFactory
         return set;
     }
 
+    /// <summary>
+    /// API pública do contrato 1.4.4.9 (<c>SetFactory.cs.patch</c>): conjuntos
+    /// de ID para tipos que as variantes tipadas não cobrem (string, List&lt;T&gt;,
+    /// bool?, structs). O Fargowiltas chama isto em <c>Load()</c> para
+    /// <c>ItemID.Sets.BannerStrength</c>. Como o shim só tinha o equivalente em
+    /// <c>NamedSetKey.RegisterCustomSet</c>, o IlPatcher classificava o `call`
+    /// como "método apagado na 1.4.5" e esvaziava o `Load()` INTEIRO — todos
+    /// os singletons/config/keybinds do mod ficavam nulos.
+    ///
+    /// `inputs` vem em pares (índice, valor); índices além do tamanho atual
+    /// são ignorados, como no patch do tML (o mod pode registrar conjuntos
+    /// antes de todos os IDs de mod existirem).
+    /// </summary>
+    /// <summary>
+    /// O ProxyGen gera `CreateBoolSet` com `GameArray&lt;int&gt;` (array nativo),
+    /// mas um `.tmod` compilado no PC chama a assinatura do contrato
+    /// <c>bool[] CreateBoolSet(bool, int[])</c>. Sem o overload com `int[]` o
+    /// Mono não liga o `call` e `FargoPlayer.Initialize`, `LoadData` e
+    /// `FargoSets.PostSetupContent` falham — três inicializações a menos.
+    /// </summary>
+    public bool[] CreateBoolSet(bool defaultState, params int[] types)
+    {
+        var set = NewSet(defaultState);
+        if (types == null) return set;
+        foreach (int type in types)
+            if ((uint)type < (uint)set.Length) set[type] = !defaultState;
+        return set;
+    }
+
+    public bool[] CreateBoolSet(params int[] types) => CreateBoolSet(false, types);
+
+    public T[] CreateCustomSet<T>(T defaultState, params object[] inputs)
+    {
+        if (inputs.Length % 2 != 0)
+            throw new ArgumentException("Inputs must be a list of pairs: id, value, id, value...");
+        T[] set = NewSet(defaultState);
+        if (inputs == null) return set;
+        for (int i = 0; i + 1 < inputs.Length; i += 2)
+        {
+            int index = Convert.ToInt32(inputs[i]);
+            if ((uint)index >= (uint)set.Length) continue;
+            object? raw = inputs[i + 1];
+            if (raw is null)
+            {
+                set[index] = default!;
+                continue;
+            }
+            if (typeof(T).IsInstanceOfType(raw)) set[index] = (T)raw;
+            else set[index] = (T)Convert.ChangeType(raw, typeof(T));
+        }
+        return set;
+    }
+
     T[] RegisterNamed<T>(NamedSetKey key, T defaultState, T[] input)
     {
         if (!grown)
@@ -151,10 +209,24 @@ public readonly partial struct SetFactory
 
     public NamedSetKey CreateNamedSet(Mod mod, string key) => new(this, $"{mod.Name}/{key}");
 
-    public GameArray<int> CreateIntSet(int defaultState, params int[] inputs)
+    /// <summary>
+    /// Contrato 1.4.4.9 (<c>SetFactory.cs.patch:47/:50</c>): devolve
+    /// <c>int[]</c> GERENCIADO, com pares (índice, valor). A versão gerada
+    /// pelo ProxyGen devolve <c>GameArray&lt;int&gt;</c> (struct nativo) e
+    /// recebe <c>GameArray&lt;int&gt;</c>; o <c>call</c> do
+    /// <c>FargoSets.PostSetupContent</c> espera <c>int[] CreateIntSet(int, int[])</c>
+    /// e virava <c>MissingMethodException</c>. Não há sobrecarga por tipo de
+    /// retorno em C#, então este overload com <c>int[]</c> é obrigatório.
+    /// </summary>
+    public int[] CreateIntSet(int defaultState, params int[] inputs)
     {
-        var values = GameArrayBuilder.Create<int>(inputs);
-        using var pin = new GameHandle(values.Pointer);
-        return CreateIntSet(defaultState, values);
+        if (inputs.Length % 2 != 0)
+            throw new ArgumentException("Inputs must be a list of pairs: id, value, id, value...");
+        int[] set = NewSet(defaultState);
+        for (int i = 0; i + 1 < inputs.Length; i += 2)
+            if ((uint)inputs[i] < (uint)set.Length) set[inputs[i]] = inputs[i + 1];
+        return set;
     }
+
+    public int[] CreateIntSet(params int[] types) => CreateIntSet(-1, types);
 }

@@ -25,6 +25,7 @@ internal static class BestiaryHooks
             }
             catch (Exception e) { ItemHooks.Report($"{own.FullName} bestiary entry", e); }
         }
+        NPCID.Sets.NPCBestiaryDrawOffset.Flush();
         bool globals = NPCLoader.AnyGlobal(NPCMethod.SetBestiary);
         bool loot = NPCLoader.AnyGlobal(NPCMethod.ModifyNPCLoot) || NPCLoader.AnyGlobal(NPCMethod.ModifyGlobalLoot);
         if (globals || loot)
@@ -101,9 +102,24 @@ internal static class BestiaryHooks
         if (entry.IsNull) return;
         NPC sample = Sample(type);
         if (sample.IsNull) return;
-        if (globals) NPCLoader.SetBestiary(sample, null, database, entry);
+        if (globals)
+        {
+            try { NPCLoader.SetBestiary(sample, null, database, entry); }
+            catch (Exception e) { ItemHooks.Report($"bestiary entry of NPC {type} (SetBestiary)", e); }
+        }
         if (!loot) return;
-        entry.Info.RemoveAll(static element => ItemDropBestiaryInfoElement.Is(element));
-        database.ExtractDropsForNPC(Main.ItemDropsDB, type);
+        // `entry.Info` devolve um RETRATO gerenciado: um RemoveAll nele não
+        // tira nada da lista nativa (era código morto) e ainda passava um
+        // proxy nulo para `IsInstance`. Aqui vai o wrapper ao vivo.
+        try { entry.InfoList.RemoveAll(static element => IsItemDrop(element)); }
+        catch (Exception e) { ItemHooks.Report($"bestiary entry of NPC {type} (info)", e); }
+        try
+        {
+            if (Main.ItemDropsDB is { IsNull: false } drops) database.ExtractDropsForNPC(drops, type);
+        }
+        catch (Exception e) { ItemHooks.Report($"bestiary entry of NPC {type} (drops)", e); }
     }
+
+    static bool IsItemDrop(IBestiaryInfoElement element) =>
+        element is { IsNull: false } && ItemDropBestiaryInfoElement.Is(element);
 }

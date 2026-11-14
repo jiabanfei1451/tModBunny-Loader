@@ -9,7 +9,7 @@ namespace Terraria.GameContent.UI.Elements;
 
 public class UIImageButton : UIElement
 {
-    Asset<Texture2D> texture;
+    Asset<Texture2D>? texture;
     protected float _visibilityActive = 1f;
     protected float _visibilityInactive = 0.4f;
     Asset<Texture2D>? borderTexture;
@@ -18,6 +18,15 @@ public class UIImageButton : UIElement
     bool measured;
     public Color Color = new(255, 255, 255, 255);
     public Color BorderColor = new(255, 255, 255, 255);
+
+    // O tML 1.4.4.9 (contra o qual os mods compilam) tem o ctor de UM
+    // parametro. Aqui o `frame` e opcional, entao o C# gera so a assinatura de
+    // DOIS parametros — e o `newobj UIImageButton(asset)` do mod vira
+    // MissingMethodException. O IlPatcher entao stubava o ctor INTEIRO do
+    // subclasse, o que apaga tambem o `base..ctor()` e o inicializador de
+    // campo do UIElement: `Elements` ficava null e o Load estourava em
+    // `UIElement.RecalculateChildren()`.
+    public UIImageButton(Asset<Texture2D> texture) : this(texture, null) { }
 
     public UIImageButton(Asset<Texture2D> texture, Rectangle? frame = null)
     {
@@ -36,17 +45,20 @@ public class UIImageButton : UIElement
             measured = true;
             return true;
         }
+        if (texture is null) return false;
         try
         {
             Width.Set(texture.Width(), 0f);
             Height.Set(texture.Height(), 0f);
-            measured = true;
-            return true;
         }
         catch (InvalidOperationException)
         {
+            // Fora da thread do jogo / textura ainda nao carregada: isso e
+            // layout, nao pode derrubar o Load do mod.
             return false;
         }
+        measured = true;
+        return true;
     }
 
     public void SetHoverImage(Asset<Texture2D> texture, Rectangle? frame = null)
@@ -65,6 +77,7 @@ public class UIImageButton : UIElement
     protected override void DrawSelf(SpriteBatch spriteBatch)
     {
         if (Measure()) Recalculate();
+        if (texture is null || texture.Value is null) return;
         CalculatedStyle d = GetDimensions();
         spriteBatch.Draw(texture.Value, d.Position(), frame, Color * (IsMouseHovering ? _visibilityActive : _visibilityInactive));
         if (borderTexture != null && IsMouseHovering) spriteBatch.Draw(borderTexture.Value, d.Position(), borderFrame, BorderColor);

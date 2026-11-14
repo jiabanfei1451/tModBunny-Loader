@@ -24,13 +24,14 @@ struct Entry {
 
 std::mutex g_mx;
 std::vector<Entry> g_regs;
+std::atomic<WallsInstalledHook> g_installedHook{nullptr};
 std::atomic<WallsInstalledHook> g_managedInstalledHook{nullptr};
 std::atomic<int> g_total{0};
 std::atomic<int> g_installed{0};
 std::atomic<int> g_unloadedType{-1};
 bool g_failed = false;
 
-TypeTables g_tables("mod walls", kVanillaWallCount, {
+TypeTables g_tables("paredes de mod", kVanillaWallCount, {
     {"Terraria", "Main", ""},
     {"Terraria.ID", "WallID", "Sets"},
     {"Terraria.ID", "WallID", "Sets", "Conversion"},
@@ -60,7 +61,7 @@ Refs& refs() {
     r.count = wallId ? findField(wallId, "Count") : nullptr;
     r.ok = r.textures && r.house && r.blend && r.count;
     if (!r.ok) {
-        BL_ERROR("mod walls: references missing (TextureAssets.Wall=%p Main.wallHouse=%p Main.wallBlend=%p "
+        BL_ERROR("paredes de mod: refs faltando (TextureAssets.Wall=%p Main.wallHouse=%p Main.wallBlend=%p "
                  "WallID.Count=%p)", (void*)r.textures, (void*)r.house, (void*)r.blend, (void*)r.count);
     }
     return r;
@@ -116,7 +117,7 @@ bool gameReady(int size) {
            house->length == static_cast<uintptr_t>(size);
 }
 
-}
+} // namespace
 
 int registerModWall(ModWallDef def) {
     std::lock_guard<std::mutex> l(g_mx);
@@ -153,13 +154,13 @@ void tickModWalls() {
     }
     if (!gameReady(from)) return;
     if (installed > 0) {
-        BL_ERROR("mod walls: %d registered after installation; they get no table", total - installed);
+        BL_ERROR("paredes de mod: %d registrada(s) depois da instalacao; ficam sem tabela", total - installed);
         g_failed = true;
         return;
     }
     const int vanilla = readWallCount();
     if (vanilla != kVanillaWallCount) {
-        BL_ERROR("mod walls: the game's WallID.Count is %d, expected %d; mod walls disabled",
+        BL_ERROR("paredes de mod: WallID.Count do jogo e %d, esperado %d; paredes de mod desligadas",
                  vanilla, kVanillaWallCount);
         g_failed = true;
         return;
@@ -168,7 +169,7 @@ void tickModWalls() {
     const int to = kVanillaWallCount + total;
     const int grown = g_tables.grow(from, to);
     if (grown < 0) {
-        BL_ERROR("mod walls: no wall table found; mod walls disabled");
+        BL_ERROR("paredes de mod: nenhuma tabela de parede achada; paredes de mod desligadas");
         g_failed = true;
         return;
     }
@@ -186,20 +187,38 @@ void tickModWalls() {
             Il2CppObject* asset = content::loadTextureAsset(e.def.texture, e.def.textureData, e.def.textureSize,
                                                             e.def.mod + "/" + e.def.name, &w, &h);
             if (asset) e.asset = il2cpp::api().gchandle_new(asset, false);
-            else BL_ERROR("mod walls: %s/%s has no texture (%s)", e.def.mod.c_str(), e.def.name.c_str(),
+            else BL_ERROR("paredes de mod: %s/%s sem textura (%s)", e.def.mod.c_str(), e.def.name.c_str(),
                           e.def.texture.c_str());
             applyTexture(type, e);
         }
     }
-    BL_INFO("mod walls: %d installed (ids %d..%d), %d table(s) grown from %d to %d; "
+    BL_INFO("paredes de mod: %d instalada(s) (ids %d..%d), %d tabela(s) aumentadas de %d para %d; "
             "WallID.Count = %d", total - installed, from, to - 1, grown, from, to, readWallCount());
-    if (WallsInstalledHook hook = g_managedInstalledHook.load(std::memory_order_acquire)) {
+    // Marcos para o caso de o processo morrer dentro de um dos ganchos: a
+    // ultima linha do log passa a dizer QUAL dos dois (e se foi o gancho que
+    // entrou em C#), em vez de "morreu depois de instalar as paredes".
+    if (WallsInstalledHook hook = g_installedHook.load(std::memory_order_acquire)) {
+        BL_INFO("paredes de mod: passo 1 - gancho nativo (%d..%d)", from, to - 1);
         hook(from, to - 1);
+        BL_INFO("paredes de mod: passo 2 - gancho nativo devolveu");
+    } else {
+        BL_INFO("paredes de mod: passo 1 - sem gancho nativo");
+    }
+    if (WallsInstalledHook hook = g_managedInstalledHook.load(std::memory_order_acquire)) {
+        BL_INFO("paredes de mod: passo 3 - gancho gerenciado (%d..%d)", from, to - 1);
+        hook(from, to - 1);
+        BL_INFO("paredes de mod: passo 4 - gancho gerenciado devolveu");
+    } else {
+        BL_INFO("paredes de mod: passo 3 - sem gancho gerenciado");
     }
 }
 
 bool modWallsSettled() {
     return g_failed || g_installed.load(std::memory_order_relaxed) == g_total.load(std::memory_order_acquire);
+}
+
+void setWallsInstalledHook(WallsInstalledHook hook) {
+    g_installedHook.store(hook, std::memory_order_release);
 }
 
 void setManagedWallsInstalledHook(WallsInstalledHook hook) {
@@ -238,7 +257,7 @@ void registerUnloadedWall() {
     d.textureSize = bl_unloaded_wall_png_len;
     const int type = registerModWall(std::move(d));
     g_unloadedType.store(type);
-    BL_DEBUG("mod walls: unloaded wall at id %d", type);
+    BL_DEBUG("paredes de mod: parede nao carregada no id %d", type);
 }
 
 int unloadedWallType() {
@@ -246,4 +265,14 @@ int unloadedWallType() {
     return type >= 0 && !g_failed && type < wallTypeCount() ? type : -1;
 }
 
+std::vector<ModWallInfo> modWalls() {
+    std::lock_guard<std::mutex> l(g_mx);
+    std::vector<ModWallInfo> out;
+    for (size_t i = 0; i < g_regs.size(); ++i) {
+        const ModWallDef& d = g_regs[i].def;
+        out.push_back({kVanillaWallCount + static_cast<int>(i), d.mod, d.name, d.texture});
+    }
+    return out;
 }
+
+} // namespace bl::runtime

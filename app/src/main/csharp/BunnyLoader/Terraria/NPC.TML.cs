@@ -5,8 +5,24 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly partial struct NPC : IEntityWithGlobals<GlobalNPC>
+public sealed partial class NPC : IEntityWithGlobals<GlobalNPC>
 {
+    /// <summary>
+    /// <c>new NPC()</c> do PC (o Fargowiltas usa em <c>AncientSeal.Shoot</c> para
+    /// ler nome/efeitos do chefe antes de invocar).
+    ///
+    /// No aparelho nao existe construtor sem parametro exposto — os NPCs vem do
+    /// pool do jogo. Alocamos o objeto nativo zerado e repetimos o unico efeito
+    /// do construtor original que importa aqui: <c>whoAmI = -1</c> ("nao estou
+    /// no pool"). Quem chama logo em seguida chama <c>SetDefaults</c>, que
+    /// preenche o resto.
+    /// </summary>
+    public NPC()
+    {
+        Pointer = BunnyLoader.Interop.GameInterop.NewObject(Class);
+        whoAmI = -1;
+    }
+
     public bool CanBeChasedBy(object? attacker = null, bool ignoreDontTakeDamage = false) =>
         CanBeChasedBy(new BunnyLoader.Interop.GameObject(attacker switch
         {
@@ -91,4 +107,50 @@ public readonly partial struct NPC : IEntityWithGlobals<GlobalNPC>
     public NPCHappiness Happiness => NPCHappiness.Get(type);
 
     public string TownNPCName { get => GivenName ?? ""; set => GivenName = value; }
+
+    /// <summary>
+    /// O jogo só tem a versão estática <c>getNewNPCName(int)</c>; o tML expõe
+    /// também a de instância (sem parâmetro), que é a que o mod chama.
+    /// </summary>
+    public string getNewNPCName() => getNewNPCName(type) ?? "";
+
+    static int __hitSoundOffset = -1, __deathSoundOffset = -1;
+
+    /// <summary>
+    /// No tML <c>NPC.HitSound</c> e <c>DeathSound</c> são <c>SoundStyle?</c>
+    /// (1.4.4.9 <c>NPC.cs.patch:460/468</c>), e é assim que o mod escreve:
+    /// <c>NPC.HitSound = SoundID.NPCHit1</c> vira
+    /// <c>newobj Nullable&lt;SoundStyle&gt;</c> + <c>stfld</c>. O dump declara
+    /// uma REFERÊNCIA <c>LegacySoundStyle</c> (8 bytes); ler/escrever o
+    /// ponteiro mantém o layout e dá a assinatura que o mod espera.
+    ///
+    /// Sem isto o <c>SetDefaults</c> de TODO NPC do mod não JITava
+    /// (<c>InvalidProgramException</c>: <c>Nullable&lt;SoundStyle&gt;</c> na
+    /// pilha contra um setter que pedia <c>LegacySoundStyle</c>).
+    /// </summary>
+    public unsafe Audio.SoundStyle? HitSound
+    {
+        get => ReadSound(ref __hitSoundOffset, "HitSound");
+        set => WriteSound(ref __hitSoundOffset, "HitSound", value);
+    }
+
+    /// <inheritdoc cref="HitSound"/>
+    public unsafe Audio.SoundStyle? DeathSound
+    {
+        get => ReadSound(ref __deathSoundOffset, "DeathSound");
+        set => WriteSound(ref __deathSoundOffset, "DeathSound", value);
+    }
+
+    unsafe Audio.SoundStyle? ReadSound(ref int offset, string field)
+    {
+        if (Pointer == 0) return null;
+        nint pointer = *(nint*)(Pointer + BunnyLoader.Interop.GameInterop.Offset(ref offset, Class, field));
+        return pointer == 0 ? null : new Audio.SoundStyle(pointer);
+    }
+
+    unsafe void WriteSound(ref int offset, string field, Audio.SoundStyle? value)
+    {
+        if (Pointer == 0) return;
+        *(nint*)(Pointer + BunnyLoader.Interop.GameInterop.Offset(ref offset, Class, field)) = value?.Pointer ?? 0;
+    }
 }

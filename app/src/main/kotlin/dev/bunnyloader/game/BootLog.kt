@@ -96,8 +96,14 @@ object BootLog {
                         line.contains("Error") || line.contains("error") ||
                         line.contains("JNI") || line.contains("dlopen") ||
                         line.contains("art")
-                    // Limite de tamanho: interessa a causa, não o histórico todo.
-                    if (keep && out.length() < 60_000) out.appendText(line + "\n")
+                    // Ruído do Unity: a mesma linha de layout serializado se
+                    // repete centenas de vezes no boot e enchia a cota antes do
+                    // tombstone (que é o que interessa) ser escrito.
+                    val noise = line.contains("has a different serialization layout") ||
+                        line.contains("Did you #ifdef UNITY_EDITOR")
+                    // Limite de tamanho: interessa o fim, não o histórico todo.
+                    // O recorte é feito na leitura (lastLogcat usa a cauda).
+                    if (keep && !noise && out.length() < 1_000_000) out.appendText(line + "\n")
                 }
             }
         }.apply { isDaemon = true }.start()
@@ -116,14 +122,22 @@ object BootLog {
             "\n--- por que o jogo fechou (últimas vezes) ---\n" + exitReasons(ctx) +
             "\n--- última partida: erros e avisos ---\n" + sessionProblems(ctx) +
             "\n--- última partida: linhas dos mods ---\n" + sessionModLines(ctx) +
+            "\n--- última partida: bloco do crash nativo ---\n" + crashBlock(ctx) +
+            "\n--- última partida: linhas antes do crash ---\n" + sessionTail(ctx, 60) +
             "\n--- boot do jogo ---\n" +
             (runCatching { file(ctx).readText() }.getOrDefault("").ifBlank { "(sem registro ainda)" }) +
             "\n--- logcat do processo do jogo ---\n" + lastLogcat(ctx)
 
+    /** O nome do app como o launcher o mostra (vem do rótulo do manifesto). */
+    private fun appLabel(ctx: Context): String = runCatching {
+        val pm = ctx.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(ctx.packageName, 0)).toString()
+    }.getOrDefault("Bunny Loader")
+
     /** Versões, aparelho, data e os mods ligados: sem isso ninguém reproduz nada. */
     private fun header(ctx: Context): String = buildString {
-        append("=== Bunny Loader: relatório ===\n")
-        append("Bunny Loader v").append(dev.bunnyloader.BuildConfig.VERSION_NAME)
+        append("=== ").append(appLabel(ctx)).append(": relatório ===\n")
+        append(appLabel(ctx)).append(" v").append(dev.bunnyloader.BuildConfig.VERSION_NAME)
         append(" · Terraria ").append(BundledRuntime.VERSION_NAME)
         append(" (").append(BundledRuntime.VERSION_CODE).append(")\n")
         append("Aparelho: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
@@ -137,7 +151,15 @@ object BootLog {
             repo.list().filter { repo.isEnabled(it.uid) }
                 .joinToString(", ") { "${it.name} ${it.version} (${it.id})" }
         }.getOrDefault("(não deu para ler)")
-        append("Mods ligados: ").append(mods.ifBlank { "nenhum" }).append('\n')
+        // As duas listas sao INDEPENDENTES: os .bl vivem em enabled.json do
+        // ModRepository, os .tmod em TML/enabled.json (e mode.txt para o lado
+        // nativo). Mostrar so a primeira fazia "Mods ligados: nenhum" parecer
+        // que o jogo estava limpo, enquanto um .tmod continuava carregando.
+        append("Mods ligados (.bl): ").append(mods.ifBlank { "nenhum" }).append('\n')
+        val tml = runCatching {
+            dev.bunnyloader.mods.TmlMods.enabled(ctx).sorted().joinToString(", ")
+        }.getOrDefault("(não deu para ler)")
+        append("TML ligados (.tmod): ").append(tml.ifBlank { "nenhum" }).append('\n')
     }
 
     /**
@@ -159,6 +181,51 @@ object BootLog {
         val last = lastSessionLog(ctx) ?: return@runCatching "(nenhum log de sessão)\n"
         val lines = last.readLines().filter { "[mod]" in it }.takeLast(MOD_LINES)
         if (lines.isEmpty()) "(nenhuma)\n" else lines.joinToString("\n", postfix = "\n")
+    }.getOrElse { "(erro lendo: ${it.javaClass.simpleName})\n" }
+
+    /**
+     * As linhas do log de sessao IMEDIATAMENTE antes do crash.
+     *
+     * E a parte que responde "onde o jogo estava quando morreu". O bloco do
+     * sinal e gravado no FIM do arquivo, entao `takeLast` pegava o comeco dele
+     * (o historico mais velho) — o recorte tem de parar antes do bloco.
+     */
+    private fun sessionTail(ctx: Context, count: Int): String = runCatching {
+        val last = lastSessionLog(ctx) ?: return@runCatching "(nenhum log de sessão)\n"
+        val all = last.readLines()
+        val crashAt = all.indexOfLast { it.contains("=== CRASH NATIVO") }
+        val lines = (if (crashAt > 0) all.subList(0, crashAt) else all).takeLast(count)
+        if (lines.isEmpty()) "(vazio)\n" else lines.joinToString("\n", postfix = "\n")
+    }.getOrElse { "(erro lendo: ${it.javaClass.simpleName})\n" }
+
+    /**
+     * O cabecalho do bloco que o manipulador de sinal nativo gravou no fim do
+     * log: o sinal, o PC (com nome de simbolo) e o endereco que faltou.
+     *
+     * A cauda de 40 linhas NAO alcanca essas tres: o bloco tem 40 linhas de
+     * historico antes do rodape, entao o PC ficava logo acima do recorte. Sem
+     * ele nao da para dizer se o SIGSEGV foi no jogo, na Unity ou no nucleo.
+     */
+    /**
+     * O bloco do crash INTEIRO: registradores, `PC mapa`, `PC metodo`, a pilha
+     * do C# (`JIT: ...`) e as ultimas linhas do nucleo, em ordem cronologica.
+     *
+     * Antes daqui saiam 4 linhas (so o cabecalho), e a cauda de 40 linhas do
+     * log pegava o COMECO do bloco — justamente o historico mais velho. Foi por
+     * isso que varias rodadas culparam um passo que nem era o ultimo.
+     */
+    private fun crashBlock(ctx: Context): String = runCatching {
+        val last = lastSessionLog(ctx) ?: return@runCatching "(nenhum log de sessão)\n"
+        val lines = last.readLines()
+        val start = lines.indexOfLast { it.contains("=== CRASH NATIVO") }
+        if (start < 0) return@runCatching "(sem bloco de crash nativo no log)\n"
+        val rest = lines.subList(start, lines.size)
+        val stop = rest.indexOfFirst { it.contains("=== fim do crash ===") }
+        val block = if (stop < 0) rest else rest.subList(0, stop + 1)
+        // 260 = cabecalho + registradores + mapa/metodo + pilha do C# + as 192
+        // linhas do nucleo + rodape. Cortar em menos escondia justamente o fim,
+        // que e onde o processo morreu.
+        block.take(260).joinToString("\n", postfix = "\n")
     }.getOrElse { "(erro lendo: ${it.javaClass.simpleName})\n" }
 
     private fun sessionProblems(ctx: Context): String = runCatching {
@@ -200,8 +267,13 @@ object BootLog {
                 append(">>> resto:\n")
             }
             // Sem os quadros de stack repetidos, que não acrescentam nada.
-            lines.filterNot { it.contains("native: #") || it.contains("runtime.cc:") }
-                .takeLast(25).forEach { append(it).append("\n") }
+            val clean = lines.filterNot { it.contains("native: #") || it.contains("runtime.cc:") }
+            // Da linha do crash em diante vem o dump do manipulador de sinal,
+            // que já sai inteiro acima. Aqui interessa o que o núcleo escreveu
+            // ANTES dele: o logcat guarda também as linhas de DEBUG, em ordem.
+            val crashAt = clean.indexOfLast { it.contains("=== CRASH NATIVO") }
+            val before = if (crashAt > 0) clean.subList(0, crashAt) else clean
+            before.takeLast(45).forEach { append(it).append("\n") }
         }
     }.getOrElse { "(sem captura)" }
 
@@ -219,6 +291,11 @@ object BootLog {
             buildString {
                 append(info.processName).append(": ").append(reasonName(info.reason))
                 append(" status=").append(info.status)
+                // SIGKILL nao e abort: e o sistema (LMK / economia de bateria
+                // da OEM) ou o usuario forcando a parada. Diferenciar evita
+                // confundir "fechei o jogo" com "o jogo caiu".
+                if (info.reason == ApplicationExitInfo.REASON_SIGNALED && info.status == 9)
+                    append(" (SIGKILL: sistema/force-stop, nao crash)")
                 info.description?.let { append("\n   ").append(it) }
                 append(tombstone(info))
             }
@@ -233,18 +310,39 @@ object BootLog {
     private fun tombstone(info: ApplicationExitInfo): String {
         if (info.reason != ApplicationExitInfo.REASON_CRASH_NATIVE) return ""
         return runCatching {
-            val text = info.traceInputStream?.bufferedReader()?.use { it.readText() }
+            val bytes = info.traceInputStream?.use { it.readBytes() }
                 ?: return "\n   (sem tombstone)"
-            val frame = Regex("""^\s+#\d\d """)
-            val useful = text.lineSequence()
-                .filter {
-                    it.contains("signal") || it.contains("Abort message") ||
-                        it.contains("Cause:") || frame.containsMatchIn(it)
-                }
-                .take(18)
-                .joinToString("\n") { "   " + it.trim() }
-            if (useful.isBlank()) "\n   (tombstone sem linhas úteis)" else "\n$useful"
+            // O trace chega em texto OU em binário, conforme o aparelho. Decodificar
+            // tudo como texto vira lixo (foi o que aconteceu: o relatório veio com
+            // uma parede de caracteres estranhos). Então extraímos só os trechos
+            // imprimíveis, e de preferência os que carregam a mensagem do abort.
+            val strings = printableStrings(bytes, 6)
+            val interesting = strings.filter { s ->
+                s.contains("signal", true) || s.contains("abort", true) ||
+                    s.contains("Cause", true) || s.contains("backtrace", true) ||
+                    s.startsWith("#") || s.contains("libbunny") || s.contains("libmono") ||
+                    s.contains("assert", true) || s.contains("Fatal", true)
+            }
+            val picked = (if (interesting.isEmpty()) strings else interesting).take(24)
+            if (picked.isEmpty()) "\n   (tombstone sem trechos legíveis)"
+            else "\n" + picked.joinToString("\n") { "   " + it }
         }.getOrElse { "\n   (tombstone ilegível: ${it.javaClass.simpleName})" }
+    }
+
+    /** Trechos imprimíveis de um buffer (o `strings` do Unix, em Java). */
+    private fun printableStrings(bytes: ByteArray, minLength: Int): List<String> {
+        val out = ArrayList<String>()
+        val current = StringBuilder()
+        for (raw in bytes) {
+            val c = raw.toInt() and 0xFF
+            if (c in 0x20..0x7E) current.append(c.toChar())
+            else {
+                if (current.length >= minLength) out.add(current.toString())
+                current.setLength(0)
+            }
+        }
+        if (current.length >= minLength) out.add(current.toString())
+        return out
     }
 
     private fun reasonName(r: Int): String = when (r) {

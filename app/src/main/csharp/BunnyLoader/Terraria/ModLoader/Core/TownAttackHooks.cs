@@ -25,16 +25,32 @@ internal static unsafe class TownAttackHooks
         public Vector2 Offset;
     }
 
+    /// <summary>
+    /// Já falhou uma vez: o binário deste jogo não tem o ponto de gancho.
+    /// Repetir a cada NPC só geraria log; e lançar derrubava o mod INTEIRO
+    /// (Fargowiltas parava no town NPC 697). Um hook a menos é degradável.
+    /// </summary>
+    static bool unavailable;
+
     internal static void Install(int type, NPCMethod flags, bool chat)
     {
         uint wanted = ((flags & NPCMethod.TownAttack) != 0 ? 1u : 0u) | ((flags & NPCMethod.TownAttackDraw) != 0 ? 2u : 0u) | (chat ? 4u : 0u);
-        if (wanted != 0 && Host.Native()->InstallTownNPCHooks(type, wanted, &Event) == 0)
-            throw new InvalidOperationException($"Town NPC hooks could not be installed for type {type}");
+        if (wanted == 0 || unavailable) return;
+        if (Host.Native()->InstallTownNPCHooks(type, wanted, &Event) == 0)
+        {
+            unavailable = true;
+            Log.Warn($"Town NPC hooks: sem ponto de gancho neste binário (tipo {type}); seguindo sem eles");
+        }
     }
 
     internal static void InstallAll()
     {
-        if (Host.Native()->InstallTownNPCHooks(-1, 1, &Event) == 0) throw new InvalidOperationException("Town NPC attack hooks could not be installed for every NPC");
+        if (unavailable) return;
+        if (Host.Native()->InstallTownNPCHooks(-1, 1, &Event) == 0)
+        {
+            unavailable = true;
+            Log.Warn("Town NPC hooks: sem ponto de gancho neste binário; seguindo sem eles");
+        }
     }
 
     [UnmanagedCallersOnly]

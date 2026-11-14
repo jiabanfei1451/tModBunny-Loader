@@ -1,0 +1,607 @@
+# Os tipos do jogo que ganham proxy completa (membros + On_<Tipo>), com os
+# aninhados. Os que aparecem nas assinaturas destes entram sozinhos, so com o
+# ponteiro (classes), o layout (structs) ou os valores (enums).
+Terraria.Main
+# screenWidth/screenHeight: propriedades estaticas cujo getter nativo dereferencia
+# Main.instance (nulo durante o Load()). Escritas a mao em Terraria/Main.TML.cs
+# lendo o campo de instancia por tras do instance, com fallback 1152x648.
+!Terraria.Main.screenWidth
+!Terraria.Main.screenHeight
+# npcFrameCount: escrito a mao em Terraria/Main.TML.cs. O getter cresce o array
+# sob demanda ate NPCCount, porque o SetStaticDefaults dos itens roda antes do
+# tick que aumenta as tabelas de NPC (v41, log 2026-11-12-device-v40.txt).
+!Terraria.Main.npcFrameCount
+Terraria.Entity
+Terraria.Player
+Terraria.Item
+Terraria.Item+NewItemModifier
+Terraria.NPC
+Terraria.Projectile
+Terraria.WorldGen
+Terraria.WorldItem
+Terraria.Dust
+Terraria.Collision
+Terraria.Utils
+Terraria.Lang
+Terraria.ID.ItemID
+Terraria.ID.NPCID
+Terraria.ID.ProjectileID
+Terraria.ID.BuffID
+Terraria.ID.DustID
+Terraria.ID.ItemUseStyleID
+Terraria.ID.ItemHoldStyleID
+!Terraria.Recipe.AddCustomShimmerResult
+# CountTileTypesInArea: o contrato do 1.4.4.9 usa `int[]`; o array do jogo no
+# dump só existe como GameArray<int> (ponteiro Il2CppArray). A dupla é escrita
+# à mão em Terraria/On.WorldGen.TML.cs, com cópia de ida e volta. `!!` também
+# suprime os delegates orig_/hook_ gerados (o `!` simples só reserva o nome).
+!!Terraria.WorldGen.CountTileTypesInArea
+Terraria.ID.SoundID
+Terraria.ID.SetFactory
+Terraria.GameContent.Items.UniqueTagEffect
+Terraria.GameInput.PlayerInput
+Terraria.ID.AmmoID
+Terraria.ID.AmmoID.Sets
+Microsoft.Xna.Framework.Graphics.Texture2D
+Terraria.Localization.Language
+Terraria.Localization.LocalizedText
+Microsoft.Xna.Framework.Vector2
+Microsoft.Xna.Framework.Vector3
+Microsoft.Xna.Framework.Vector4
+Microsoft.Xna.Framework.Rectangle
+Microsoft.Xna.Framework.Point
+Microsoft.Xna.Framework.Graphics.Color
+Microsoft.Xna.Framework.Matrix
+Microsoft.Xna.Framework.Quaternion
+Microsoft.Xna.Framework.Plane
+Microsoft.Xna.Framework.MathHelper
+Achievements_Layout
+LocalUser
+GUIAchievementsMenu
+ControlAnchor
+GUIBossBar
+GUIBuffs
+GUIClothesWindow
+GUICraftGuidePopup
+GUIHearts
+GUIHousingMenu
+GUIInputRegionManager
+GUIInstance
+GUIMana
+GUIMultiplayerHost
+GUINPCDialogue
+GUINetPlayStatusMenu
+GUIOpenUIButtonSetting
+GUIPageIcons
+GUIPanel
+GUIPlayerCreateMenu
+GUISettingsOverlay
+GUISettingsPauseMenu
+GUISettings
+GUISlider
+GUIString
+GUIStringButton
+GUITransactionButton
+GUIVirtualInputController
+GUIVirtualInputControllerEdit
+GUIVirtualInputControllerEdit_ControlPanel+ControlPanelActionSetting
+Terraria.RemoteClient
+GUIEvents
+Terraria.GameContent.PressurePlateHelper
+!Terraria.GameContent.PressurePlateHelper.PressurePlatesPressed
+Terraria.Graphics.Shaders.ArmorShaderData
+Terraria.Graphics.Shaders.HairShaderDataSet
+Terraria.Graphics.Shaders.HairShaderData
+Terraria.GameContent.Dyes.LegacyHairShaderData
+GUIQuickActionButton
+GUIReforge
+GUIReforgePopup
+GUIPulldownSetting
+ItemGrid_Layout
+VirtualControlsProfile_Layout
+VirtualControlsBinding_Layout
+VirtualControlsHardwareConfiguration_Layout
+VirtualControlsSlotTypeMapping_Layout
+VirtualControlsAxisConfiguration_Layout
+GUIAxis
+Cursor
+Axis_Layout
+GUIWorldSelectMenu
+KeyboardInput
+KeyboardMappings_Layout
+LayoutCalculator
+Microsoft.Xna.Framework.Graphics.SpriteBatch
+MultiplayerHost_Layout
+MaxPlayersSlider_Layout
+NPCDialogue_Layout
+QuickActionButton_Layout
+SettingsOverlay_Layout
+SettingsPauseMenu_Layout
+Terraria.Achievements.Achievement
+Terraria.Achievements.AchievementManager
+Terraria.Achievements.AchievementCondition
+Terraria.Audio.LegacySoundPlayer
+Terraria.Audio.ActiveSound
+Terraria.Audio.ProjectileAudioTracker
+Terraria.Audio.LegacySoundStyle
+Terraria.Audio.SoundEngine
+Terraria.Chat.ChatHelper
+Terraria.Chat.ChatCommandProcessor
+Terraria.Chat.Commands.HelpCommand
+Terraria.Chat.ChatMessage
+Terraria.UI.Chat.ChatManager
+Terraria.CombatText
+Terraria.DataStructures.ArmorSetBonuses.Benefits
+Terraria.DataStructures.DrawAnimationVertical
+Terraria.DataStructures.DrawData
+Terraria.DataStructures.EntitySource_ItemUse
+Terraria.DataStructures.EntitySource_ItemUse_WithAmmo
+Terraria.DataStructures.PlacementHook
+Terraria.DataStructures.PlayerDeathReason
+Terraria.DataStructures.PlayerDrawLayers
+Terraria.DataStructures.PlayerDrawSet
+Terraria.DataStructures.SpriteFrame
+Terraria.DataStructures.TileEntity
+Terraria.GameContent.Achievements.CustomFlagCondition
+Terraria.GameContent.Achievements.CustomFloatCondition
+Terraria.GameContent.Achievements.CustomIntCondition
+Terraria.GameContent.Achievements.ItemCraftCondition
+Terraria.GameContent.Achievements.ItemPickupCondition
+Terraria.GameContent.Achievements.NPCKilledCondition
+Terraria.GameContent.Achievements.TileDestroyedCondition
+Terraria.GameContent.Achievements.AchievementsHelper
+!Terraria.GameContent.Achievements.AchievementsHelper.OnItemPickup
+!Terraria.GameContent.Achievements.AchievementsHelper.OnItemCraft
+!Terraria.GameContent.Achievements.AchievementsHelper.OnTileDestroyed
+!Terraria.GameContent.Achievements.AchievementsHelper.OnNPCKilled
+!Terraria.GameContent.Achievements.AchievementsHelper.OnProgressionEvent
+Terraria.GameContent.BannerSystem
+Terraria.GameContent.UI.BigProgressBar.BigProgressBarSystem
+Terraria.GameContent.UI.BigProgressBar.BigProgressBarInfo
+Terraria.GameContent.UI.BigProgressBar.BigProgressBarHelper
+Terraria.GameContent.UI.BigProgressBar.IBigProgressBar
+Terraria.GameContent.Bestiary.BestiaryDatabase
+Terraria.GameContent.Bestiary.BestiaryEntry
+Terraria.GameContent.Bestiary.BestiaryDatabaseNPCsPopulator
+Terraria.GameContent.Bestiary.FlavorTextBestiaryInfoElement
+Terraria.GameContent.Bestiary.UnlockableNPCEntryIcon
+Terraria.GameContent.Bestiary.ItemDropBestiaryInfoElement
+Terraria.GameContent.UI.EmoteBubble
+Terraria.GameContent.UI.WorldUIAnchor
+GUIEmotesWindow
+Terraria.ID.NPCID.Sets.NPCBestiaryDrawModifiers
+Terraria.GameContent.BannerSystem.NetBannersModule
+Terraria.GameContent.CraftingRequests
+Terraria.GameContent.Creative.CreativeItemSacrificesCatalog
+Terraria.GameContent.Golf.GolfHelper
+Terraria.GameContent.Golf.GolfHelper+ClubProperties
+Terraria.GameContent.Tile_Entities.TEDisplayDoll
+Terraria.GameContent.DestinationInventory
+Terraria.GameContent.Events.LanternNight
+Terraria.GameContent.Generation.PassLegacy
+Terraria.GameContent.ItemDropRules.CommonCode
+Terraria.GameContent.ItemDropRules.DropAttemptInfo
+Terraria.GameContent.NetModules.NetTeleportPylonModule
+Terraria.GameContent.Personalities.AllPersonalitiesModifier
+Terraria.GameContent.Personalities.NPCPreferenceTrait
+Terraria.GameContent.TeleportPylonInfo
+Terraria.GameContent.TeleportPylonsSystem
+Terraria.GameContent.UI.Elements.UIPanel
+Terraria.GameContent.UI.Elements.UIText
+Terraria.GameInput.TriggersSet
+Terraria.Graphics.Light.LegacyLighting
+Terraria.Graphics.Light.LightingEngine
+Terraria.Graphics.Renderers.LegacyPlayerRenderer
+Terraria.Graphics.SpriteViewMatrix
+Terraria.ID.ContentSamples
+Terraria.ID.ItemID.BannerEffect
+Terraria.ID.PlayerItemSlotID.SlotReference
+Terraria.IO.FileData
+Terraria.IO.PlayerFileData
+Terraria.IO.WorldFile
+Terraria.Initializers.DyeInitializer
+Terraria.InventoryStorage
+Terraria.Lighting
+Terraria.Localization.LanguageManager
+Terraria.Localization.NetworkText
+!Terraria.Localization.NetworkText.ToString
+!Terraria.Localization.LocalizedText.ToString
+Terraria.Map.TeleportPylonsMapLayer
+Terraria.MessageBuffer
+Terraria.NPC.Spawner
+Terraria.NPCSpawnParams
+Terraria.Net.NetManager
+Terraria.Net.NetPacket
+Terraria.NetMessage
+Terraria.Netplay
+Terraria.ObjectData.TileObjectData
+!Terraria.ObjectData.TileObjectData.CoordinateHeights
+Terraria.GameContent.Drawing.TileDrawing
+Terraria.GameContent.Drawing.WallDrawing
+Terraria.GameContent.ExtractinatorHelper
+Terraria.Animation
+Terraria.DataStructures.EntitySource_ShakeTree
+Terraria.GameContent.FlexibleTileWand
+Terraria.ID.BiomeConversionID
+Terraria.GameContent.DoorOpeningHelper
+!Terraria.GameContent.Drawing.TileDrawing.IsVisible
+!Terraria.Main.SceneMetrics
+# tML patch faz `const int maxX = N` virar `static readonly int` (Main.cs.patch),
+# então o mod lê `ldsfld Main::maxNPCs`. O gerado saía `const` (o dump é const),
+# e const não tem armazenamento em runtime -> `ldsfld` quebra (MissingField).
+# Viram campos `static readonly int` em Main.TML.cs.
+!Terraria.Main.maxChests
+!Terraria.Main.maxItems
+!Terraria.Main.maxProjectiles
+!Terraria.Main.maxNPCs
+Terraria.DataStructures.TileDrawInfo
+Terraria.Enums.AnchorType
+Terraria.Player.Hooks
+Terraria.Recipe
+Terraria.RecipeGroup
+Terraria.SceneMetrics
+Terraria.SceneMetricsScanSettings
+Terraria.TileObject
+Terraria.UI.GameInterfaceLayer
+Terraria.UI.InGamePopups+AchievementUnlockedPopup
+Terraria.UI.ItemSlot
+Terraria.UI.ItemTooltip
+Terraria.Wiring
+Terraria.WorldBuilding.WorldGenerator
+TextureMask
+TextureMaskManager
+Texture_Layout
+TransactionButton_Layout
+VirtualControllerInputState
+VirtualControlsButtonConfiguration_Layout
+VirtualControlsHardwareConfigurationMapping_Layout
+VirtualControlsStyles_Layout
+VirtualInputControllerControlConfiguration_Layout
+XNAUIInputLayer
+XNAUnityRunner
+Terraria.ID.PrefixID
+Terraria.GameContent.Prefixes.PrefixLegacy
+Terraria.Utilities.UnifiedRandom
+!Terraria.GameContent.TextureAssets.Tile
+Terraria.ID.TileID
+Terraria.ID.RecipeGroups
+Terraria.GameContent.ShimmerTransforms
+Terraria.ID.ArmorIDs
+Terraria.ID.ArmorIDs.Head
+Terraria.ID.ArmorIDs.Head.Sets
+Terraria.ID.ArmorIDs.Body
+Terraria.ID.ArmorIDs.Body.Sets
+Terraria.ID.ArmorIDs.Legs
+Terraria.ID.ArmorIDs.Legs.Sets
+Terraria.ID.ArmorIDs.HandOn
+Terraria.ID.ArmorIDs.HandOn.Sets
+Terraria.ID.ArmorIDs.HandOff
+Terraria.ID.ArmorIDs.HandOff.Sets
+Terraria.ID.ArmorIDs.Back
+Terraria.ID.ArmorIDs.Back.Sets
+Terraria.ID.ArmorIDs.Front
+Terraria.ID.ArmorIDs.Front.Sets
+Terraria.ID.ArmorIDs.Shoe
+Terraria.ID.ArmorIDs.Shoe.Sets
+Terraria.ID.ArmorIDs.Waist
+Terraria.ID.ArmorIDs.Waist.Sets
+Terraria.ID.ArmorIDs.Wing
+Terraria.ID.ArmorIDs.Wing.Sets
+Terraria.ID.ArmorIDs.Neck
+Terraria.ID.ArmorIDs.Neck.Sets
+Terraria.ID.ArmorIDs.Face
+Terraria.ID.ArmorIDs.Face.Sets
+Terraria.ID.ArmorIDs.Balloon
+Terraria.ID.ArmorIDs.Balloon.Sets
+Terraria.ID.ArmorIDs.Beard
+Terraria.ID.ArmorIDs.Beard.Sets
+Terraria.ID.ArmorIDs.Shield
+Terraria.GameContent.TextureAssets
+Terraria.Initializers.WingStatsInitializer
+Terraria.PopupText
+Terraria.AdvancedPopupRequest
+Terraria.GetItemSettings
+Terraria.Mount
+Terraria.Gore
+Terraria.DataStructures.EntitySource_Parent
+!Terraria.DataStructures.PlayerDrawSet.DrawDataCache
+!Terraria.GameContent.TextureAssets.Item
+Microsoft.Xna.Framework.Graphics.SpriteFont
+Terraria.GameContent.FontAssets
+!Terraria.GameContent.TextureAssets.PlayerHair
+!Terraria.GameContent.TextureAssets.PlayerHairAlt
+Terraria.GameContent.HairstyleUnlocksHelper
+Terraria.GameContent.UI.ResourceSets.PlayerStatsSnapshot
+!Terraria.GameContent.TextureAssets.NpcHead
+!Terraria.GameContent.Bestiary.BestiaryEntry.Info
+!Terraria.ID.NPCID+Sets.NPCBestiaryDrawOffset
+!Terraria.ID.ContentSamples.NpcBestiaryRarityStars
+!Terraria.ID.ContentSamples.ItemsByType
+Terraria.ID.MountID
+Terraria.ID.MountID.Sets
+!Terraria.Mount._mountSpecificData
+!Terraria.Mount+MountData.playerYOffsets
+!Terraria.GameContent.TextureAssets.Projectile
+!Terraria.GameContent.TextureAssets.Npc
+Terraria.DataStructures.GameDifficultyLevel
+ReLogic.Reflection.IdDictionary
+Terraria.Tile
+Terraria.TileData
+Terraria.DataStructures.NPCDebuffImmunityData
+!Terraria.NPC.HitEffect
+Microsoft.Xna.Framework.Graphics.BlendState
+Microsoft.Xna.Framework.Graphics.SamplerState
+Microsoft.Xna.Framework.Graphics.DepthStencilState
+Microsoft.Xna.Framework.Graphics.RasterizerState
+!Terraria.GameContent.TextureAssets.Gore
+Terraria.ID.GoreID
+Terraria.ID.GoreID.Sets
+Terraria.GameContent.ChildSafety
+Terraria.GameContent.ItemDropRules.Chains
+Terraria.GameContent.ItemDropRules.CommonDrop
+Terraria.GameContent.ItemDropRules.CommonDropNotScalingWithLuck
+Terraria.GameContent.ItemDropRules.CommonDropScalingWithOnlyBadLuck
+Terraria.GameContent.ItemDropRules.CommonDropWithRerolls
+Terraria.GameContent.ItemDropRules.Conditions
+Terraria.GameContent.ItemDropRules.DropBasedOnExpertMode
+Terraria.GameContent.ItemDropRules.DropBasedOnExtraGel
+Terraria.GameContent.ItemDropRules.DropBasedOnMasterAndExpertMode
+Terraria.GameContent.ItemDropRules.DropBasedOnMasterMode
+Terraria.GameContent.ItemDropRules.DropLocalPerClientAndResetsNPCMoneyTo0
+Terraria.GameContent.ItemDropRules.DropNothing
+Terraria.GameContent.ItemDropRules.DropOneByOne
+Terraria.GameContent.ItemDropRules.DropPerPlayerOnThePlayer
+Terraria.GameContent.ItemDropRules.DropRateInfo
+Terraria.GameContent.ItemDropRules.DropRateInfoChainFeed
+Terraria.GameContent.ItemDropRules.FromOptionsWithoutRepeatsDropRule
+Terraria.GameContent.ItemDropRules.IItemDropRule
+Terraria.GameContent.ItemDropRules.IItemDropRuleChainAttempt
+Terraria.GameContent.ItemDropRules.IItemDropRuleCondition
+Terraria.GameContent.ItemDropRules.INestedItemDropRule
+Terraria.GameContent.ItemDropRules.IProvideItemConditionDescription
+Terraria.GameContent.ItemDropRules.ItemDropAttemptResult
+Terraria.GameContent.ItemDropRules.ItemDropAttemptResultState
+Terraria.GameContent.ItemDropRules.ItemDropDatabase
+Terraria.GameContent.ItemDropRules.ItemDropResolver
+Terraria.GameContent.ItemDropRules.ItemDropRule
+Terraria.GameContent.ItemDropRules.ItemDropWithConditionRule
+Terraria.GameContent.ItemDropRules.LeadingConditionRule
+Terraria.GameContent.ItemDropRules.MechBossSpawnersDropRule
+Terraria.GameContent.ItemDropRules.OneFromOptionsDropRule
+Terraria.GameContent.ItemDropRules.OneFromOptionsNotScaledWithLuckDropRule
+Terraria.GameContent.ItemDropRules.OneFromRulesRule
+Terraria.GameContent.ItemDropRules.SlimeBodyItemDropRule
+Terraria.GameContent.ItemDropRules.StatueMimicItemDropRule
+!Terraria.GameContent.ItemDropRules.ItemDropDatabase.GetRulesForNPCID
+
+Terraria.GameContent.Events.DD2Event
+Terraria.GameContent.Events.Sandstorm
+Terraria.ID.WallID
+Terraria.Framing
+=Terraria.Enums.TreeTypes.Custom 13
+Terraria.GameContent.TreePaintingSettings
+Terraria.DataStructures.TileReachCheckSettings
+XNAUICameraSettings
+Terraria.UI.Alignment
+Terraria.GameContent.PlayerSittingHelper
+Terraria.GameContent.PlayerSleepingHelper
+Terraria.GameContent.ObjectInteractions.TileSmartInteractCandidateProvider
+Terraria.GameContent.ObjectInteractions.SmartInteractScanSettings
+Terraria.Sign
+Terraria.DataStructures.DrawAnimation
+SettingsOverlayCategories_Layout
+SettingsOverlayLink_Layout
+SettingsOverlaySlider_Layout
+SettingsOverlayToggle_Layout
+SettingsOverlayPulldown_Layout
+Slider_Layout
+StringButton_Layout
+GUIContollerTransactionButtonList
+GUIKeyboardMappings
+SettingsOverlayOptionCategories_Layout
+GUISettingEntry
+Microsoft.Xna.Framework.Graphics.SpriteBatchItem
+!Terraria.Item.DefaultToPlaceableWall
+
+Terraria.GameContent.ShopHelper
+Terraria.GameContent.Personalities.PersonalityDatabase
+Terraria.GameContent.Personalities.PersonalityProfile
+Terraria.GameContent.Personalities.BiomePreferenceListTrait
+Terraria.GameContent.Personalities.AShoppingBiome
+Terraria.GameContent.Personalities.ForestBiome
+Terraria.GameContent.Personalities.SnowBiome
+Terraria.GameContent.Personalities.DesertBiome
+Terraria.GameContent.Personalities.JungleBiome
+Terraria.GameContent.Personalities.OceanBiome
+Terraria.GameContent.Personalities.HallowBiome
+Terraria.GameContent.Personalities.UndergroundBiome
+Terraria.GameContent.Personalities.MushroomBiome
+Terraria.GameContent.Personalities.CorruptionBiome
+Terraria.GameContent.Personalities.CrimsonBiome
+Terraria.GameContent.Personalities.DungeonBiome
+
+Terraria.IO.WorldFileData
+Terraria.Map.MapHelper
+GUIMap
+Terraria.Map.MapIconOverlay
+Terraria.Map.IMapLayer
+Terraria.Map.DigtoiseMapLayer
+Terraria.Map.BossBagMapLayer
+Terraria.Map.SpawnMapLayer
+Terraria.Map.TeamBasedSpawnMapLayer
+Terraria.Map.MapOverlayDrawContext
+
+Terraria.WorldBuilding.GenPass
+Terraria.WorldBuilding.GenerationProgress
+Terraria.WorldBuilding.WorldGenConfiguration
+Terraria.WorldBuilding.GenVars
+Terraria.IO.GameConfiguration
+GUIWorldCreateMenu
+
+Terraria.Chest
+
+Terraria.WorldBuilding.GenPassResult
+Terraria.ID.MusicID
+Terraria.GameContent.Events.CreditsRollEvent
+
+Terraria.WaterfallManager
+Terraria.Rain
+Terraria.GameContent.Liquid.LiquidRenderer
+Terraria.ID.SurfaceBackgroundID
+Terraria.ID.SurfaceBackgroundID.Sets
+Terraria.Graphics.Effects.SkyManager
+Terraria.Graphics.Effects.Filters
+Terraria.Graphics.Effects.Filter
+Terraria.Graphics.Effects.FilterManager
+Terraria.Graphics.Effects.GameEffect
+Terraria.Graphics.Effects.CustomSky
+Terraria.Graphics.Effects.Overlays
+Terraria.Graphics.Effects.Overlay
+Terraria.Graphics.Effects.OverlayManager
+Terraria.Graphics.Shaders.ShaderData
+Terraria.Graphics.Shaders.ScreenShaderData
+Terraria.Graphics.Light.LightMap
+!Terraria.GameContent.TextureAssets.Background
+Terraria.Cloud
+Terraria.ID.CloudID
+Terraria.GameContent.Drawing.NextHorizonRenderer
+!Terraria.GameContent.TextureAssets.Cloud
+Microsoft.Xna.Framework.Graphics.SpriteBatch_Cloud
+Terraria.GameContent.Bestiary.FilterProviderInfoElement
+Terraria.GameContent.Bestiary.SpawnConditionBestiaryInfoElement
+Terraria.GameContent.Bestiary.Filters.ByInfoElement
+GUIBestiary
+TextureAtlasDB
+Bestiary_Layout
+Panel_Layout
+Terraria.Graphics.Capture.CaptureBiome
+GUILogo
+Terraria.Localization.GameCulture
+SettingsOverlayListOption_Layout
+TransactionButton_Layout
+String_Layout
+Terraria.ID.MessageID
+Terraria.DataStructures.TrackedProjectileReference
+Terraria.DataStructures.EntitySource_TileBreak 
+Terraria.ID.ProjectileDrawLayerID
+Terraria.ID.ExtrasID
+Terraria.GameContent.Items.TagDamageChanges
+Terraria.GameContent.Items.TagEffectStack
+Terraria.GameContent.Items.WhipTagEffect
+Terraria.DelegateMethods
+Terraria.GameContent.Drawing.ParticleOrchestrator
+!Terraria.ID.AmmoID+Sets.SpecificLauncherAmmoProjectileMatches
+!Terraria.Mount+MountDelegatesData.MinecartDust
+!Terraria.Mount+MountDelegatesData.MinecartJumpingSound
+!Terraria.Mount+MountDelegatesData.MinecartLandingSound
+!Terraria.Mount+MountDelegatesData.MinecartBumperSound
+Terraria.DataStructures.CachedProjectileCounterBuffTextHandler
+Terraria.Graphics.CameraModifiers.CameraModifierStack
+Terraria.Graphics.CameraModifiers.CameraInfo
+Terraria.Graphics.Renderers.ParticleRenderer
+Terraria.Graphics.Renderers.ParticleRendererSettings
+Terraria.Achievements.ConditionFloatTracker
+Terraria.ID.CustomCurrencyID
+Terraria.ID.LiquidID
+Terraria.DataStructures.EntitySource_SpawnNPC
+Terraria.Graphics.CameraModifiers.PunchCameraModifier
+Terraria.GameContent.Bestiary.CommonEnemyUICollectionInfoProvider
+Terraria.GameContent.Bestiary.BestiaryPortraitBackgroundProviderPreferenceInfoElement
+Terraria.GameContent.Bestiary.MoonLordPortraitBackgroundProviderBestiaryInfoElement
+Terraria.DataStructures.EntitySource_DebugCommand
+Terraria.GameContent.UI.CustomCurrencySingleCoin
+Terraria.GameContent.UI.CustomCurrencyManager
+Terraria.GameContent.UI.CustomCurrencySystem
+Terraria.GameContent.UI.GameTipsDisplay
+Terraria.FocusHelper
+Terraria.ChestItem
+Terraria.GameContent.PlayerEyeHelper
+GUIBuilderAccToggles
+GUIAccessoryInfo
+Terraria.Graphics.Shaders.GameShaders
+Terraria.DataStructures.SettingsForCharacterPreview
+!Terraria.ID.BuffID+Sets.BuffTextHandlers
+Terraria.DataStructures.IBuffTextHandler
+Terraria.Graphics.Shaders.ArmorShaderDataSet
+Terraria.ID.Colors
+Terraria.GameContent.ItemTrader
+!Terraria.ID.NPCID+Sets.NPCPortraits
+!Terraria.ID.NPCID+Sets.NPCPortraitsCloseUpOffsets
+!Terraria.ID.NPCID+Sets.NPCPortraitsFullBodyRetroOffsets
+!Terraria.ID.NPCID+Sets.BasicPortrait
+
+# Proxies que precisam ser `record class` (o mod usa `with`).
+# Ver RecordTypes em Program.cs.
+@record Terraria.Audio.SoundStyle
+
+# Gerenciados à mão: o tML os declara como `record struct` e o dump
+# deste jogo como classe; um proxy gerado daria "value type mismatch".
+- Terraria.Audio.SoundStyle
+
+# Struct no tML, classe no dump: `ref` na assinatura tem de bater.
+% Terraria.DataStructures.PlayerDrawSet
+!Terraria.GameContent.Creative.CreativeItemSacrificesCatalog.SacrificeCountNeededByItemId
+
+# Usados por Terraria.Condition (porte do tML 1.4.5). Sem eles o
+# `Condition.BirthdayParty` / `MechdusaSeedFeature` nao compila.
+Terraria.GameContent.Events.BirthdayParty
+Terraria.GameContent.SpecialSeedFeatures
+
+# Sem gerar o corpo, o proxy saia VAZIO (so o cabecalho) e os campos
+# TriggerPack.Current / CreativeUnlocksTracker.ItemSacrifices ficavam
+# sem traducao no IlPatcher.
+Terraria.GameInput.TriggersPack
+Terraria.GameContent.Creative.CreativeUnlocksTracker
+Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
+
+# `Width`/`Height` da textura sao PROPRIEDADES no FNA; o ProxyGen emite
+# campos como `ref int`, e a assinatura nao casa com o `get_Width()` do mod.
+!Microsoft.Xna.Framework.Graphics.Texture2D.Width
+!Microsoft.Xna.Framework.Graphics.Texture2D.Height
+
+# `SoundID.Item1` etc. no dump são `LegacySoundStyle` (classe), mas no tML são
+# `SoundStyle` (struct): Program.cs mapeia SÓ esses campos para SoundStyle.
+# O tipo LegacySoundStyle em si continua gerado — o shim usa o proxy dele para
+# falar com o objeto nativo (SoundStyle.cs / SoundHooks.cs / hooks de áudio).
+# `UseSound` no tML é `SoundStyle?` — escrito à mão em Item.TML.cs.
+!Terraria.Item.UseSound
+
+# `NPC.HitSound`/`DeathSound` também são `SoundStyle?` no tML (1.4.4.9
+# NPC.cs.patch:460/468); o dump os declara como referência `LegacySoundStyle`.
+# Gerado como propriedade, o `SetDefaults` de todo NPC não JITava
+# (`newobj Nullable<SoundStyle>` na pilha contra um setter que pedia
+# `LegacySoundStyle`). Escritos à mão em NPC.TML.cs.
+!Terraria.NPC.HitSound
+!Terraria.NPC.DeathSound
+
+# `SoundID`: o tML expõe TODOS os sons como `SoundStyle` e o mod pode tomar o
+# ENDEREÇO do campo (`ldsflda`, para `SoundEngine.PlaySound(in SoundStyle, …)`).
+# Const (`Roar = 15`) e propriedade não têm endereço — o JIT recusa os dois.
+# Estes viram campos `static readonly SoundStyle` em ID/SoundID.TML.cs.
+!Terraria.ID.SoundID.Roar
+!Terraria.ID.SoundID.Item14
+!Terraria.ID.SoundID.Item15
+!Terraria.ID.SoundID.Shatter
+!Terraria.ID.SoundID.MenuClose
+!Terraria.ID.SoundID.MenuOpen
+
+# tML patch faz `ItemID.Count`/`NPCID.Count` virarem `static readonly short`
+# (ItemLoader.ItemCount / NPCLoader.NPCCount). O gerado saía `const short`, que
+# não tem armazenamento em runtime -> `ldsfld` quebra. Viram `static readonly
+# short` em ID/ItemID.TML.cs e ID/NPCID.TML.cs.
+!Terraria.ID.ItemID.Count
+!Terraria.ID.NPCID.Count
+
+# tML 1.4.5 patches/Terraria/Localization/Language.cs.patch:56 declara
+# `LocalizedText[] FindAll(LanguageSearchFilter)`. O ProxyGen devolve
+# GameRefArray<T> (tipo IL diferente) -> o mod nao acha o metodo.
+# `!` faz o gerado virar FindAll_ e o手写 em Language.cs converte para T[].
+!Terraria.Localization.Language.FindAll
+
+# `ItemID.Sets.BannerStrength` no contrato (1.4.4.9 ItemID.cs.patch) é
+# `BannerEffect[]`; o dump devolve `GameArray<BannerEffect>` (struct). O
+# Fargowiltas faz `Sets.BannerStrength = Factory.CreateCustomSet<BannerEffect>(...)`
+# em Load(): o `stsfld` era reescrito para `__set_BannerStrength(GameArray<T>)`
+# e recebia um array gerenciado -> InvalidProgram no método INTEIRO.
+# Escrito à mão como campo real em ID/ItemID.Sets.TML.cs.
+!Terraria.ID.ItemID+Sets.BannerStrength

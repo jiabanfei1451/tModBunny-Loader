@@ -3,9 +3,9 @@ using BunnyLoader.Interop;
 
 namespace Terraria;
 
-public readonly partial struct Item
+public sealed partial class Item
 {
-    public readonly partial struct NewItemModifier
+    public sealed partial class NewItemModifier
     {
         static MethodRef invokeMethod;
         static readonly int[] InvokeLayout = { -1, -1 };

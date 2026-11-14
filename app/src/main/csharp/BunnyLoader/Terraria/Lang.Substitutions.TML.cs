@@ -8,7 +8,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly unsafe partial struct Lang
+public unsafe sealed partial class Lang
 {
     static readonly Dictionary<string, Func<object>> ModSubstitutions = new(StringComparer.Ordinal);
     static readonly Regex ModTokens = new(@"{(\?!?)?([^{}]+/[^{}]+)}", RegexOptions.CultureInvariant);

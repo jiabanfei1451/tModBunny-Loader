@@ -6,6 +6,16 @@ namespace bl::il2cpp {
 
 namespace {
 
+/**
+ * Procura em TODOS os assemblies carregados, nao so no do jogo e no corlib.
+ *
+ * `UnityEngine.Texture2D` mora na CoreModule e `ImageConversion` na
+ * ImageConversionModule: nenhuma das duas aparecia, e por tabela nada de
+ * UnityEngine era alcancavel — nem pelo nucleo, nem por um mod.
+ *
+ * O jogo e o corlib vem primeiro porque sao a esmagadora maioria das buscas; o
+ * resto e varredura, so quando os dois primeiros falham.
+ */
 Il2CppClass* procurar(const char* ns, const char* name) {
     auto& a = api();
     if (!a.gameImage) return nullptr;
@@ -26,7 +36,7 @@ Il2CppClass* procurar(const char* ns, const char* name) {
     return nullptr;
 }
 
-}
+} // namespace
 
 Il2CppClass* findNested(Il2CppClass* outer, std::string_view name) {
     auto& a = api();
@@ -46,12 +56,12 @@ Il2CppClass* findClass(const TypeRef& ref) {
     if (cls && !ref.nested.empty()) {
         Il2CppClass* inner = findNested(cls, ref.nested);
         if (!inner) {
-            BL_ERROR("nested class not found: %s.%s.%.*s", ns.c_str(), name.c_str(),
+            BL_ERROR("classe aninhada nao encontrada: %s.%s.%.*s", ns.c_str(), name.c_str(),
                      static_cast<int>(ref.nested.size()), ref.nested.data());
         }
         return inner;
     }
-    if (!cls) BL_ERROR("class not found: %s.%s", ns.c_str(), name.c_str());
+    if (!cls) BL_ERROR("classe nao encontrada: %s.%s", ns.c_str(), name.c_str());
     return cls;
 }
 
@@ -72,10 +82,10 @@ FieldInfo* findField(Il2CppClass* cls, std::string_view name) {
 int32_t fieldOffset(Il2CppClass* cls, std::string_view name) {
     FieldInfo* f = findField(cls, name);
     if (!f) {
-        BL_ERROR("field not found: %.*s", (int)name.size(), name.data());
+        BL_ERROR("campo nao encontrado: %.*s", (int)name.size(), name.data());
         return -1;
     }
     return static_cast<int32_t>(api().field_get_offset(f));
 }
 
-}
+} // namespace bl::il2cpp

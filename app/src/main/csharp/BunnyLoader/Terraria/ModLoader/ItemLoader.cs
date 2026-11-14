@@ -24,11 +24,9 @@ public static unsafe partial class ItemLoader
 
     static ModItem?[] items = Array.Empty<ModItem?>();
 
-    static int itemCount = ItemID.Count, registeredItemCount = ItemID.Count;
+    static int itemCount = ItemID.Count;
 
     public static int ItemCount => Volatile.Read(ref itemCount);
-
-    internal static int RegisteredItemCount => Volatile.Read(ref registeredItemCount);
 
     static bool hooked;
 
@@ -51,18 +49,11 @@ public static unsafe partial class ItemLoader
             On_Item.SetDefaults += SetDefaults;
             On_Item.Clone += Clone;
             On_Item.DeepClone += DeepClone;
-            On_Item.DefaultToWhip += DefaultToWhip;
+            On_Item.clientClone += ClientClone;
             Host.Native()->OnItemsInstalled(&ItemsInstalled);
             Host.Native()->OnItemData(&SaveItemData, &LoadItemData);
-            Host.Native()->OnVisualItemCopy(&VisualItemCopied);
             hooked = true;
         }
-    }
-
-    static void DefaultToWhip(On_Item.orig_DefaultToWhip orig, Item self, int projectileId, int dmg, float kb, float shootspeed, int animationTotalTime)
-    {
-        orig(self, projectileId, dmg, kb, shootspeed, animationTotalTime);
-        if (self.type >= ItemID.Count) self.DamageType = DamageClass.SummonMeleeSpeed;
     }
 
     internal static ModItem? InstanceOf(Item item)
@@ -79,6 +70,10 @@ public static unsafe partial class ItemLoader
     {
         ModItem instance = template.NewInstance(item);
         instance.Type = template.Type;
+        // NewInstance já faz `Entity = item`; repetir aqui é barato e cobre o
+        // caminho `CloneNewInstances` (MemberwiseClone pode trazer o Entity do
+        // template, que é um rascunho nativo, não o item do jogo).
+        instance.Entity = item;
         Instances.Set(item.Pointer, instance);
         return instance;
     }
@@ -265,7 +260,6 @@ public static unsafe partial class ItemLoader
         if (type < 0) throw new InvalidOperationException($"{item.FullName}: registration failed ({type})");
         item.Type = type;
         if (type + 1 > Volatile.Read(ref itemCount)) Volatile.Write(ref itemCount, type + 1);
-        if (type + 1 > Volatile.Read(ref registeredItemCount)) Volatile.Write(ref registeredItemCount, type + 1);
 
         EnsureHooked();
         EquipLoader.Autoload(item);
@@ -274,6 +268,13 @@ public static unsafe partial class ItemLoader
         lock (Gate)
         {
             int index = type - ItemID.Count;
+            // Index negativo = o type veio antes do comeco dos ids de mod. No
+            // aparelho o native sempre numera a partir de ItemID.Count, mas
+            // o sandbox (e um RegisterItem com stub) pode devolver outro valor;
+            // antes isso dava um IndexOutOfRangeException sem dizer o que era.
+            if (index < 0)
+                throw new InvalidOperationException(
+                    $"{item.FullName}: item type {type} is below ItemID.Count ({ItemID.Count})");
             ModItem?[] all = items;
             if (index >= all.Length)
             {
@@ -283,17 +284,6 @@ public static unsafe partial class ItemLoader
             }
             all[index] = item;
             Volatile.Write(ref items, all);
-        }
-    }
-
-    internal static void RefreshTooltips(IReadOnlySet<string> changedKeys)
-    {
-        foreach (ModItem? item in Volatile.Read(ref items))
-        {
-            if (item == null || !changedKeys.Contains(item.GetLocalizationKey(nameof(ModItem.Tooltip)))) continue;
-            byte* tooltip = Host.Utf8(Tooltips(item));
-            try { Host.Native()->SetItemTooltip(item.Type, tooltip); }
-            finally { Host.FreeUtf8(tooltip); }
         }
     }
 
@@ -376,9 +366,13 @@ public static unsafe partial class ItemLoader
         }
         NativeApi* api = Host.Native();
         api->PrepareItem(self.Pointer, type);
+        // `Item.ResetStats` (o reset do tModLoader) nem sempre deixa os campos
+        // de uso preenchidos quando o tipo e de mod — e um mod que nao escreve
+        // `useTime` (caso do mod de teste) ficava com 0 e a arma NAO ATACAVA:
+        // useTime=0 zera o intervalo de uso. Estes sao os padroes do jogo.
+        if (self.useTime <= 0) self.useTime = 100;
+        if (self.useAnimation <= 0) self.useAnimation = 100;
         self.maxStack = 1;
-        var materials = ItemID.Sets.IsAMaterial;
-        self.material = (uint)type < (uint)materials.Length && materials[type];
         EquipLoader.Install();
         EquipLoader.Apply(self, type);
         ModItem instance = Bind(template, self);
@@ -397,12 +391,43 @@ public static unsafe partial class ItemLoader
             catch (Exception e)
             {
                 Log.Error($"item {template.FullName}: SetDefaults threw: {e}");
+                ExplainPcModMismatch(e, template);
             }
             Globals.Finish(self, slots);
             api->FinishItem(self.Pointer, type);
             GlobalSetDefaults(self);
+            // Autodiagnostico: sem isto, "a arma nao ataca / a classe esta
+            // errada" vira adivinhacao. Uma linha por item de mod no log.
+            Log.Info($"item {template.FullName}: useStyle={self.useStyle} useTime={self.useTime} useAnimation={self.useAnimation} damage={self.damage} knockBack={self.knockBack} crit={self.crit} rare={self.rare} value={self.value} shoot={self.shoot} mana={self.mana} autoReuse={self.autoReuse} noMelee={self.noMelee} maxStack={self.maxStack} class={DamageClassLoader.ItemClass(self).Name}");
         }
         finally { DamageClassLoader.Defaulting = outer; }
+    }
+
+    /**
+     * Um `.tmod` compilado no PC espera `Terraria.Item` como CLASSE: o IL do
+     * `SetDefaults` faz `callvirt get_Item()` e depois `ldfld/stfld` nessa
+     * referência. Aqui `Item` é um proxy struct (e `ModItem.Item` devolve
+     * `ref Item`), então o JIT do Mono recusa o corpo do método com
+     * "Expected reference type but got type kind 17" — os valores do
+     * SetDefaults simplesmente não são aplicados, embora o item seja
+     * registrado e o desenho apareça.
+     *
+     * Isto é uma incompatibilidade de ARQUITETURA entre as duas rotas, não um
+     * arquivo faltando. Dizer isso no relatório evita procurar a causa em
+     * texturas/manifesto e deixa claro por que as propriedades ficaram vazias.
+     */
+    static void ExplainPcModMismatch(Exception e, ModItem template)
+    {
+        if (e is not TypeLoadException) return;
+        string message = e.Message ?? "";
+        if (!message.Contains("reference type", StringComparison.OrdinalIgnoreCase) &&
+            !message.Contains("type kind", StringComparison.OrdinalIgnoreCase)) return;
+        Log.Error(
+            $"item {template.FullName}: PC .tmod incompatibility — the mod was compiled against " +
+            "tModLoader (1.4.4.9/1.4.5) where Terraria.Item is a class; here it is a struct proxy. " +
+            "Its SetDefaults IL cannot run, so damage/size/stack/etc. stay at shim defaults. " +
+            "This is not a missing texture or a bad manifest."
+        );
     }
 
     static void GlobalSetDefaults(Item item)
@@ -450,7 +475,7 @@ public static unsafe partial class ItemLoader
 
     static readonly Dictionary<int, int> Research = new();
 
-    static IntPtr Sacrifices() => CreativeItemSacrificesCatalog.Instance.SacrificeCountNeededByItemId.Pointer;
+    static IntPtr Sacrifices() => (IntPtr)CreativeItemSacrificesCatalog.Instance.SacrificeTablePointer();
 
     static IntPtr DictionaryMethod(IntPtr dictionary, string signature, out IntPtr info)
     {
@@ -512,12 +537,7 @@ public static unsafe partial class ItemLoader
 
     static Item DeepClone(On_Item.orig_DeepClone orig, Item self) => CopyInstances(self, orig(self));
 
-    [UnmanagedCallersOnly]
-    static void VisualItemCopied(IntPtr source, IntPtr destination)
-    {
-        try { CopyInstances(new Item(source), new Item(destination)); }
-        catch (Exception e) { Log.Error($"visual item copy threw: {e}"); }
-    }
+    static Item ClientClone(On_Item.orig_clientClone orig, Item self, Item cloneDestination) => CopyInstances(self, orig(self, cloneDestination));
 
     internal static void KeepInstances(Item original, Item copy) => CopyInstances(original, copy);
 
@@ -625,7 +645,6 @@ public static unsafe partial class ItemLoader
     [UnmanagedCallersOnly]
     static void ItemsInstalled(int first, int last)
     {
-        if (last + 1 > Volatile.Read(ref itemCount)) Volatile.Write(ref itemCount, last + 1);
         EquipLoader.Install();
         for (int type = first; type <= last; type++)
         {

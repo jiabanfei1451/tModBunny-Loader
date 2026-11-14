@@ -6,7 +6,7 @@ using ReLogic.Content;
 
 namespace Terraria;
 
-public readonly partial struct Mount
+public sealed partial class Mount
 {
     static readonly Dictionary<IntPtr, object?> SpecificData = new();
 
@@ -26,7 +26,7 @@ public readonly partial struct Mount
         }
     }
 
-    public readonly partial struct MountData
+    public sealed partial class MountData
     {
         public int[] playerYOffsets
         {

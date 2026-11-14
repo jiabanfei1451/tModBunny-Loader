@@ -3,6 +3,7 @@
 #include "content/npcs/ModNpcs.h"
 #include "core/Log.h"
 #include "hook/Arm64Frame.h"
+#include "content/npcs/CodeMatch.h"
 #include "hook/HookManager.h"
 #include "il2cpp/Resolver.h"
 #include "il2cpp/Signature.h"
@@ -165,10 +166,12 @@ __attribute__((naked)) void blNpcDeadBridge() {
 
 namespace {
 
+using bl::npccode::sameBlock;
+
 bool stage(const char* signature, size_t offset, std::array<uint32_t, 4> expected, void* bridge, void** original) {
     const MethodInfo* method = bl::il2cpp::findMethodBySignature(g_npc, bl::il2cpp::parseSignature(signature));
     auto* code = method ? static_cast<uint8_t*>(bl::il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + offset, expected.data(), 16) != 0 || !bl::hook::install(code + offset, bridge, original)) {
+    if (!code || !sameBlock(code, offset, expected) || !bl::hook::install(code + offset, bridge, original)) {
         BL_ERROR("NPC events: cannot hook %s at +0x%zx", signature, offset);
         return false;
     }
@@ -179,7 +182,7 @@ bool cancellingStage(const char* signature, size_t offset, std::array<uint32_t, 
     size_t returnOffset, std::array<uint32_t, 4> epilogue, void* bridge, void** original, void** returnAddress) {
     const MethodInfo* method = bl::il2cpp::findMethodBySignature(g_npc, bl::il2cpp::parseSignature(signature));
     auto* code = method ? static_cast<uint8_t*>(bl::il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + returnOffset, epilogue.data(), 16) != 0) {
+    if (!code || !sameBlock(code, returnOffset, epilogue)) {
         BL_ERROR("NPC events: unexpected return in %s", signature);
         return false;
     }

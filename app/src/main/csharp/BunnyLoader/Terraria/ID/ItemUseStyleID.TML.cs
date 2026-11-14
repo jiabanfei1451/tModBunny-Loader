@@ -1,6 +1,6 @@
 namespace Terraria.ID;
 
-public readonly partial struct ItemUseStyleID
+public sealed partial class ItemUseStyleID
 {
     public const int Count = PlaySound + 1;
 }

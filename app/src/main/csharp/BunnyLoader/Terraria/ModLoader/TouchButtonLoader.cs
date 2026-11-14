@@ -195,7 +195,7 @@ public static class TouchButtonLoader
         VirtualControlsProfile_Layout profile = styles.ActiveProfile;
         if (profile.IsNull) return false;
         int action = ActionOf(keybind);
-        GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+        GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
         for (int i = 0; !controls.IsNull && i < controls.Length; i++)
         {
             VirtualControlsBinding_Layout binding = controls[i];

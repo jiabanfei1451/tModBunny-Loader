@@ -3,7 +3,6 @@ using BunnyLoader;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
-using Terraria.GameContent.UI;
 using Terraria.Localization;
 
 namespace Terraria.ModLoader.Core;
@@ -25,33 +24,21 @@ internal static unsafe class SubworldScreens
         On_WorldGen.SaveAndQuit += SaveAndQuit;
     }
 
-    static string? LoadingText() =>
-        SubworldTravel.Busy ? SubworldTravel.LoadingText
-        : SubworldNet.Rejoining ? SubworldNet.RejoinText
-        : null;
+    static void Loading()
+    {
+        if (SubworldTravel.Busy) Main.statusText = SubworldTravel.LoadingText;
+        else if (SubworldNet.Rejoining) Main.statusText = SubworldNet.RejoinText;
+    }
 
     static void StatusDraw(On_GUIStatusMenu.orig_Draw orig, GUIStatusMenu self)
     {
-        string? text = LoadingText();
-        StatusMenu_Layout layout = StatusMenu_Layout.Instance;
-        if (text == null || layout.IsNull)
-        {
-            orig(self);
-            return;
-        }
-
-        Main.statusText = text;
-        Main.ClearVisualPostProcessEffects(true);
-        GUIStringButton.DrawButton(layout.Status, text, ref self.scale0);
-        GameTipsDisplay tips = Main.gameTips;
-        if (tips.IsNull) return;
-        tips.Update();
-        tips.Draw(layout.GameTip);
+        Loading();
+        orig(self);
     }
 
     static void NetStatusDraw(On_GUINetPlayStatusMenu.orig_Draw orig, GUINetPlayStatusMenu self)
     {
-        if (LoadingText() is { } text) Main.statusText = text;
+        Loading();
         orig(self);
     }
 
@@ -114,7 +101,9 @@ internal static unsafe class SubworldScreens
         {
             if (planet.IsNull)
             {
-                IntPtr asset = Host.Native()->PlanetTexture();
+                // v65: NativeApi.PlanetTexture ainda nao existe no libbunny.so (upstream 0.5.4).
+                // Sem o icone o botao do subworld cai no estado padrao.
+                IntPtr asset = IntPtr.Zero;
                 if (asset == IntPtr.Zero) return default;
                 Texture2D texture = Asset<Texture2D>.ForGameAsset(asset, "bunny:planet").Value;
                 Texture_Layout icon = Texture_Layout.New();

@@ -18,7 +18,12 @@ public abstract class Mod
 
     public string Uid { get; internal set; } = "";
 
-    public string Name => GetType().Assembly.GetName().Name ?? GetType().Name;
+    /// <summary>
+    /// Nome interno do mod. Normalmente é o nome do assembly que declara a
+    /// classe; o mod sintético (um `.tmod` sem classe `Mod`, permitido no
+    /// tML 1.4.5) sobrescreve para usar o nome do container.
+    /// </summary>
+    public virtual string Name => GetType().Assembly.GetName().Name ?? GetType().Name;
 
     public string DisplayName { get; internal set; } = "";
 
@@ -122,9 +127,12 @@ public abstract class Mod
     internal void Autoload(Assembly assembly)
     {
         if (!ContentAutoloadingEnabled) return;
-        foreach (Type type in assembly.GetTypes().Where(IsAutoloaded).OrderBy(t => t.FullName, StringComparer.Ordinal))
+        // Uma listagem só: `GetTypes()` é caro e o resultado tem de ser o mesmo
+        // nas duas passadas (a segunda, a dos ICustomAutoload).
+        List<Type> types = ModTypes.Of(assembly, Name);
+        foreach (Type type in types.Where(IsAutoloaded).OrderBy(t => t.FullName, StringComparer.Ordinal))
             AddContent((ILoadable)Activator.CreateInstance(type, true)!);
-        foreach (Type type in assembly.GetTypes().Where(IsCustomAutoloaded).OrderBy(t => t.FullName, StringComparer.Ordinal))
+        foreach (Type type in types.Where(IsCustomAutoloaded).OrderBy(t => t.FullName, StringComparer.Ordinal))
             type.GetMethod(nameof(ICustomAutoload.Autoload), BindingFlags.Public | BindingFlags.Static, new[] { typeof(Mod) })?.Invoke(null, new object[] { this });
         GoreLoader.AutoloadGores(this);
         if (BackgroundAutoloadingEnabled) BackgroundTextureLoader.AutoloadBackgrounds(this);

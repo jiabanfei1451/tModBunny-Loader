@@ -30,7 +30,7 @@ internal static unsafe class PageControllerLayout
     }
 }
 
-public readonly unsafe partial struct Reforge_Layout
+public unsafe sealed partial class Reforge_Layout
 {
     static MethodRef instance, rightPage;
 
@@ -39,7 +39,7 @@ public readonly unsafe partial struct Reforge_Layout
     public bool RightPageController => PageControllerLayout.RightPageController(ref rightPage, Class, Pointer);
 }
 
-public readonly unsafe partial struct InventorySplitStack_Layout
+public unsafe sealed partial class InventorySplitStack_Layout
 {
     static MethodRef instance, rightPage;
 
@@ -48,7 +48,7 @@ public readonly unsafe partial struct InventorySplitStack_Layout
     public bool RightPageController => PageControllerLayout.RightPageController(ref rightPage, Class, Pointer);
 }
 
-public readonly unsafe partial struct Equipment_Layout
+public unsafe sealed partial class Equipment_Layout
 {
     static MethodRef instance, rightPage;
 

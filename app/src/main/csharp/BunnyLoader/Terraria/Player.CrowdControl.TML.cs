@@ -2,7 +2,7 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public void SetCCed() => PlayerCrowdControlHooks.Set(this);
 }

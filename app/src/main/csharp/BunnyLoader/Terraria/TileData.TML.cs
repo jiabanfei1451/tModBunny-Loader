@@ -1,6 +1,6 @@
 namespace Terraria;
 
-public readonly unsafe partial struct TileData
+public unsafe sealed partial class TileData
 {
     static readonly Tile[] Slots = new Tile[32];
 

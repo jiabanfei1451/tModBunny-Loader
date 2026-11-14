@@ -5,9 +5,9 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.ID;
 
-public readonly partial struct BuffID
+public sealed partial class BuffID
 {
-    public readonly partial struct Sets
+    public sealed partial class Sets
     {
         internal static bool[] TagBuffs = Array.Empty<bool>();
         internal static List<int>[] ImmunityParents = Array.Empty<List<int>>();

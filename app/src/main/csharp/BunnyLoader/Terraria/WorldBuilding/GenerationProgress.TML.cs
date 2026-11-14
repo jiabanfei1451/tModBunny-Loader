@@ -1,6 +1,6 @@
 namespace Terraria.WorldBuilding;
 
-public readonly partial struct GenerationProgress
+public sealed partial class GenerationProgress
 {
     public GenerationProgress() => Pointer = New().Pointer;
 }

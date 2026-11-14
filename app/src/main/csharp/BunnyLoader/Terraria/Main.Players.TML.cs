@@ -2,18 +2,8 @@ using System.Collections.Generic;
 
 namespace Terraria;
 
-public readonly partial struct Main
+public sealed partial class Main
 {
-    [System.ThreadStatic] static Player currentPlayerOverride;
-
-    public static Player CurrentPlayer => currentPlayerOverride.IsNull ? LocalPlayer : currentPlayerOverride;
-
-    internal static Player CurrentPlayerOverride
-    {
-        get => currentPlayerOverride;
-        set => currentPlayerOverride = value;
-    }
-
     public static IEnumerable<WorldItem> ActiveItems
     {
         get
@@ -22,9 +12,7 @@ public readonly partial struct Main
             for (int i = 0; i < maxItems && i < items.Length; i++)
             {
                 WorldItem current = items[i];
-                if (current.IsNull) continue;
-                Item inner = current.inner;
-                if (!inner.IsNull && inner.type != 0) yield return current;
+                if (!current.IsNull && current.active) yield return current;
             }
         }
     }

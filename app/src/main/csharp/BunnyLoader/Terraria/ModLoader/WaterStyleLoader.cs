@@ -69,7 +69,7 @@ public static class WaterStylesLoader
         }
     }
 
-    internal static void Grow<T>(ref AssetArray<T> array, int total) where T : struct, IGameObject
+    internal static void Grow<T>(ref AssetArray<T> array, int total) where T : class, IGameObject
     {
         GameArray<GameObject> raw = array;
         Grow(ref raw, total);

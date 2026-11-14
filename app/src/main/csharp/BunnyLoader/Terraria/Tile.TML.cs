@@ -1,3 +1,5 @@
+using System;
+
 namespace Terraria;
 
 public enum SlopeType : byte
@@ -123,10 +125,13 @@ public unsafe partial struct Tile
         set => fullbrightWall(value);
     }
 
-    public byte LiquidAmount
+    public ref byte LiquidAmount
     {
-        get => liquid;
-        set => liquid = value;
+        get
+        {
+            __liquidAmount = liquid;
+            return ref __liquidAmount;
+        }
     }
 
     public int LiquidType
@@ -135,28 +140,67 @@ public unsafe partial struct Tile
         set => liquidType(value);
     }
 
-    public ushort TileType
+    // No tML estes três são `ref` (o Tile de lá é uma CLASSE com campos de
+    // verdade). Aqui o Tile é um handle de 4 bytes, então não existe endereço
+    // para devolver: o `ref` aponta para um buffer por thread, preenchido no
+    // getter. Leitura fica correta (o mod faz `ldind` logo depois), escrita
+    // continua sem efeito — o que já era o caso, porque o `tile` que o mod
+    // recebe é uma CÓPIA.
+    [ThreadStatic] static ushort __tileType;
+    [ThreadStatic] static short __tileFrameX;
+    [ThreadStatic] static short __tileFrameY;
+    [ThreadStatic] static ushort __tileWallType;
+    [ThreadStatic] static byte __liquidAmount;
+
+    // ---- tML 1.4.5 patches/Terraria/Tile.TML.cs:311-320 -------------------
+    // `Tile` virou `readonly struct` no tML; estes operadores existem para
+    // que `tile == null` continue COMPILANDO (o segundo argumento é um
+    // "espantalho" do tipo ArgumentException, sempre false/true). Copiados
+    // do源码 em vez de adivinhados pelo IL do mod.
+    public ushort TileId => type;
+
+    public static bool operator ==(Tile tile, Tile tile2) => tile.TileId == tile2.TileId;
+    public static bool operator !=(Tile tile, Tile tile2) => tile.TileId != tile2.TileId;
+    public static bool operator ==(Tile tile, ArgumentException justSoYouCanCompareWithNull) => false;
+    public static bool operator !=(Tile tile, ArgumentException justSoYouCanCompareWithNull) => true;
+
+    public override bool Equals(object? obj) => obj is Tile other && this == other;
+    public override int GetHashCode() => TileId;
+
+    public ref ushort TileType
     {
-        get => type;
-        set => type = value;
+        get
+        {
+            __tileType = type;
+            return ref __tileType;
+        }
     }
 
-    public short TileFrameX
+    public ref short TileFrameX
     {
-        get => frameX;
-        set => frameX = value;
+        get
+        {
+            __tileFrameX = frameX;
+            return ref __tileFrameX;
+        }
     }
 
-    public short TileFrameY
+    public ref short TileFrameY
     {
-        get => frameY;
-        set => frameY = value;
+        get
+        {
+            __tileFrameY = frameY;
+            return ref __tileFrameY;
+        }
     }
 
-    public ushort WallType
+    public ref ushort WallType
     {
-        get => wall;
-        set => wall = value;
+        get
+        {
+            __tileWallType = wall;
+            return ref __tileWallType;
+        }
     }
 
     public int WallFrameX

@@ -3,7 +3,7 @@ using Terraria.ModLoader;
 
 namespace Terraria.ID;
 
-public readonly partial struct TileID
+public sealed partial class TileID
 {
     public static partial class Sets
     {

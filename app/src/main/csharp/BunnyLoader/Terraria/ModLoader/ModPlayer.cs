@@ -12,7 +12,7 @@ public abstract class ModPlayer : ModType<Player, ModPlayer>
 
     public Player Player => Entity;
 
-    protected override Player CreateTemplateEntity() => default;
+    protected override Player CreateTemplateEntity() => TemplateEntity.Create<Player>(Player.Class);
 
     public override ModPlayer NewInstance(Player entity)
     {

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fachada `FNA.dll`: um .tmod compilado no PC referencia
+    `FNA, Version=23.10.0.0` (Libraries/ do tModLoader 1.4.5). Devolver o
+    shim por resolucao e recusado (ValidateAssemblyNameWithSimpleName) —
+    preciso de um assembly que REALMENTE se chame FNA com TypeForwardedTo
+    para o shim, onde os tipos Microsoft.Xna.Framework.* vivem como proxies.
+    Mesmo mecanismo do tModLoader.dll de fachada (ver TmlFacade.csproj).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>FNA</AssemblyName>
+    <AssemblyVersion>23.10.0.0</AssemblyVersion>
+    <Version>23.10.0.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0436</NoWarn>
+    <ShimPath Condition="'$(ShimPath)' == ''">$(MSBuildThisFileDirectory)../../../../build/csharp/BunnyLoader/BunnyLoader.dll</ShimPath>
+    <GeneratedForwarders Condition="'$(GeneratedForwarders)' == ''">$(MSBuildThisFileDirectory)../../../../build/generated/tmlFacade/Forwarders.g.cs</GeneratedForwarders>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(GeneratedForwarders)" />
+    <Reference Include="BunnyLoader">
+      <HintPath>$(ShimPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

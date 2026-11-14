@@ -4,7 +4,7 @@ using Terraria.DataStructures;
 
 namespace Terraria;
 
-public readonly partial struct Projectile
+public sealed partial class Projectile
 {
     public IEntitySource GetSource_DropAsItem(string? context = null) => GetItemSource_DropAsItem();
     public IEntitySource GetSource_Death(string? context = null) => GetItemSource_FromThis();

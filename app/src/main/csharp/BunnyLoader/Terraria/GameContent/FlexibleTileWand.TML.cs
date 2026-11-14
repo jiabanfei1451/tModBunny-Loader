@@ -1,6 +1,6 @@
 namespace Terraria.GameContent;
 
-public readonly unsafe partial struct FlexibleTileWand
+public unsafe sealed partial class FlexibleTileWand
 {
     public FlexibleTileWand AddVariations(int itemType, int tileIdToPlace, params int[] stylesToPlace)
     {

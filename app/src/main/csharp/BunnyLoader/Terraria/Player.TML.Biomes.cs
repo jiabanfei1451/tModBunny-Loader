@@ -2,7 +2,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public SceneEffectLoader.SceneEffectInstance CurrentSceneEffect => SceneEffectLoader.Of(this);
 

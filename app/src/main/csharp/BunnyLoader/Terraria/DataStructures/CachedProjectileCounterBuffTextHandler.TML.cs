@@ -4,7 +4,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.DataStructures;
 
-public readonly partial struct CachedProjectileCounterBuffTextHandler
+public sealed partial class CachedProjectileCounterBuffTextHandler
 {
     static readonly List<GameHandle> Kept = new();
 

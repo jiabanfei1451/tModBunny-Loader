@@ -35,7 +35,7 @@ const Refs& refs() {
         x.bestiary = main ? il2cpp::findField(main, "BestiaryDB") : nullptr;
         x.numRecipes = recipe ? il2cpp::findField(recipe, "numRecipes") : nullptr;
         x.ok = x.itemDrops && x.bestiary && x.numRecipes;
-        if (!x.ok) BL_ERROR("mod content: ItemDropsDB/BestiaryDB/numRecipes references missing");
+        if (!x.ok) BL_ERROR("conteudo de mod: refs de ItemDropsDB/BestiaryDB/numRecipes faltando");
         return x;
     }();
     return r;
@@ -48,7 +48,7 @@ T readStatic(FieldInfo* f) {
     return v;
 }
 
-}
+} // namespace
 
 void addContentReadyHook(ContentReadyHook hook) {
     if (!hook) return;
@@ -63,6 +63,8 @@ bool contentSettled() {
     if (!modItemsSettled() || !modProjectilesSettled() || !modNpcsSettled() || !modBuffsSettled() || !modDustsSettled() ||
         !modTilesSettled() || !modWallsSettled()) return false;
     const Refs& r = refs();
+    // Sem as refs nao ha como saber (o erro ja foi logado): quem espera por
+    // isto nao fica preso para sempre.
     if (!r.ok) return true;
     if (!readStatic<Il2CppObject*>(r.itemDrops) || !readStatic<Il2CppObject*>(r.bestiary)) return false;
     return readStatic<int32_t>(r.numRecipes) > 0;
@@ -79,7 +81,7 @@ void tickContentReady() {
             g_finished = true;
             return;
         }
-        BL_INFO("mod content: ready (game recipes: %d)", readStatic<int32_t>(r.numRecipes));
+        BL_INFO("conteudo de mod: pronto (receitas do jogo: %d)", readStatic<int32_t>(r.numRecipes));
     }
     bool more = false;
     for (const auto& slot : g_hooks) {
@@ -92,4 +94,4 @@ bool contentFinished() {
     return g_finished || !g_hooks[0].load(std::memory_order_acquire);
 }
 
-}
+} // namespace bl::runtime

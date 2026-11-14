@@ -10,25 +10,14 @@ internal static class ItemVisibilityHooks
     {
         internal Player Player;
         internal readonly Dictionary<int, Queue<Item>> Items = new();
-        readonly Stack<Queue<Item>> spare = new();
         internal void Add(Item item)
         {
             if (item.IsNull || item.IsAir) return;
-            if (!Items.TryGetValue(item.type, out var queue)) Items[item.type] = queue = spare.Count > 0 ? spare.Pop() : new();
+            if (!Items.TryGetValue(item.type, out var queue)) Items[item.type] = queue = new();
             queue.Enqueue(item);
         }
-        internal void Clear()
-        {
-            foreach (Queue<Item> queue in Items.Values)
-            {
-                queue.Clear();
-                spare.Push(queue);
-            }
-            Items.Clear();
-            Player = default;
-        }
     }
-    [ThreadStatic] static InfoScope? infoScope, spareScope;
+    [ThreadStatic] static InfoScope? infoScope;
 
     internal static void Install(Func<string, bool> has)
     {
@@ -80,9 +69,7 @@ internal static class ItemVisibilityHooks
     static void RefreshInfo(On_Player.orig_RefreshInfoAccs orig, Player player)
     {
         InfoScope? outer = infoScope;
-        InfoScope scope = spareScope ?? new InfoScope();
-        spareScope = null;
-        scope.Player = player;
+        var scope = new InfoScope { Player = player };
         bool voidBag = false;
         var inventory = player.inventory;
         for (int i = 0; i < 58 && i < inventory.Length; i++)
@@ -101,12 +88,7 @@ internal static class ItemVisibilityHooks
         }
         infoScope = scope;
         try { orig(player); }
-        finally
-        {
-            infoScope = outer;
-            scope.Clear();
-            spareScope = scope;
-        }
+        finally { infoScope = outer; }
     }
 
     static void Info(On_Player.orig_RefreshInfoAccsFromItemType orig, Player player, int type)

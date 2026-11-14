@@ -4,7 +4,7 @@ namespace Terraria;
 
 public static partial class UtilsExtensions
 {
-    public static Microsoft.Xna.Framework.Graphics.Color MultiplyRGBA(this Microsoft.Xna.Framework.Graphics.Color first, Microsoft.Xna.Framework.Graphics.Color second) => Utils.MultiplyRGBA(first, second);
+    public static Microsoft.Xna.Framework.Color MultiplyRGBA(this Microsoft.Xna.Framework.Color first, Microsoft.Xna.Framework.Color second) => Utils.MultiplyRGBA(first, second);
 
     public static Vector2 MoveTowards(this Vector2 value, Vector2 target, float amount) => Utils.MoveTowards(value, target, amount);
     public static Vector2 DirectionTo(this Vector2 value, Vector2 target) => Utils.DirectionTo(value, target);

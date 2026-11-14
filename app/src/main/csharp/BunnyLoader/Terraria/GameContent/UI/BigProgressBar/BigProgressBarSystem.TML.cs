@@ -1,6 +1,6 @@
 namespace Terraria.GameContent.UI.BigProgressBar;
 
-public readonly partial struct BigProgressBarSystem
+public sealed partial class BigProgressBarSystem
 {
     public NeverValidProgressBar NeverValid => _neverValid;
 }

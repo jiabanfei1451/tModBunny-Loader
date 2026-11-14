@@ -1,4 +1,5 @@
 #include "content/ui/EmoteMenuIcon.h"
+#include "content/npcs/CodeMatch.h"
 #include "core/Log.h"
 #include "hook/Arm64Frame.h"
 #include "hook/HookManager.h"
@@ -44,7 +45,7 @@ bool installEmoteMenuIcon() {
     auto* window = il2cpp::findClass({"", "GUIEmotesWindow", ""});
     const MethodInfo* method = window ? il2cpp::findMethodBySignature(window, il2cpp::parseSignature(kSignature)) : nullptr;
     auto* code = method ? static_cast<uint8_t*>(il2cpp::methodPointer(method)) : nullptr;
-    if (!code || std::memcmp(code + kOffset, kExpected.data(), sizeof(kExpected)) != 0 ||
+    if (!code || !bl::npccode::sameBlock(code, kOffset, kExpected) ||
         !hook::install(code + kOffset, reinterpret_cast<void*>(blEmoteMenuIconBridge), &g_blEmoteMenuIconOriginal)) {
         BL_ERROR("emote menu: cannot hook GUIEmotesWindow.EmoteDraw at +0x%zx", kOffset);
         return false;

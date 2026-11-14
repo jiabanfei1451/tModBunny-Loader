@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using ReLogic.Content;
 using Terraria.DataStructures;
 using Terraria.Localization;
 using Terraria.ModLoader.IO;
@@ -13,7 +12,13 @@ namespace Terraria.ModLoader;
 
 public abstract class ModItem : ModType<Item, ModItem>, ILocalizedModType
 {
-    public ref Item Item => ref entity;
+    // O tModLoader de verdade devolve `Item` POR VALOR (e nao `ref Item`):
+    //   public Item Item => Entity;
+    // O IL do mod faz `callvirt get_Item()` e espera um `Terraria.Item`
+    // (CLASSE). Com `ref Item` a assinatura do MemberRef nao bate e o JIT
+    // lanca MissingMethodException. Ver tModLoader-2026.09.3.1/
+    // patches/tModLoader/Terraria/ModLoader/ModItem.cs:30.
+    public Item Item => Entity;
 
     public int Type { get; internal set; }
 
@@ -27,7 +32,7 @@ public abstract class ModItem : ModType<Item, ModItem>, ILocalizedModType
 
     public virtual LocalizedText Tooltip => this.GetLocalization(nameof(Tooltip), () => "");
 
-    protected sealed override Item CreateTemplateEntity() => default;
+    protected sealed override Item CreateTemplateEntity() => TemplateEntity.Create<Item>(Item.Class);
 
     public sealed override void SetupContent() => SetStaticDefaults();
 
@@ -95,8 +100,6 @@ public abstract class ModItem : ModType<Item, ModItem>, ILocalizedModType
     public virtual void HoldItemFrame(Player player) { }
 
     public virtual bool AltFunctionUse(Player player) => false;
-
-    public virtual Asset<Texture2D>? AltFunctionIcon(Player player, bool alternative) => null;
 
     public virtual void HoldItem(Player player) { }
 
@@ -217,8 +220,6 @@ public abstract class ModItem : ModType<Item, ModItem>, ILocalizedModType
     public virtual void ModifyPotionDelay(Player player, ref int baseDelay) { }
 
     public virtual bool ApplyPotionDelay(Player player, int potionDelay) => true;
-
-    public virtual void Update(WorldItem item, ref float gravity, ref float maxFallSpeed) { }
 
     public virtual void PostUpdate(WorldItem item) { }
 

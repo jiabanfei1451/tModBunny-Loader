@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fachada `log4net.dll`: `Mod.Logger` no tModLoader é `log4net.ILog`, então
+    todo mod que loga (`Logger.Info(...)`) carrega um AssemblyRef para
+    `log4net, Version=2.0.8.0, PublicKeyToken=669e0ddf0bb1aa2a`.
+
+    O shim já tem a interface (`log4net/ILog.cs`) e um `Logger` que escreve no
+    log do loader, mas devolver o SHIM quando pedem `log4net` é recusado por
+    `ValidateAssemblyNameWithSimpleName`. Mesmo mecanismo das fachadas
+    tModLoader/FNA/ReLogic.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>log4net</AssemblyName>
+    <AssemblyVersion>2.0.8.0</AssemblyVersion>
+    <Version>2.0.8.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0436</NoWarn>
+    <ShimPath Condition="'$(ShimPath)' == ''">$(MSBuildThisFileDirectory)../../../../build/csharp/BunnyLoader/BunnyLoader.dll</ShimPath>
+    <GeneratedForwarders Condition="'$(GeneratedForwarders)' == ''">$(MSBuildThisFileDirectory)../../../../build/generated/tmlFacade/Forwarders.g.cs</GeneratedForwarders>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(GeneratedForwarders)" />
+    <Reference Include="BunnyLoader">
+      <HintPath>$(ShimPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

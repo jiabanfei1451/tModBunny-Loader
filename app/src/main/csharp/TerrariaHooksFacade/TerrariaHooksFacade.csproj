@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fachada `TerrariaHooks.dll`: o tModLoader gera os tipos `Terraria.On_*`
+    (HookGen) num assembly separado, e mods do PC referenciam esses tipos por
+    esse nome (`ldsfld Terraria.On_Main/hook_...`). No shim os mesmos tipos
+    vivem em BunnyLoader.dll, então o Mono recusa por identidade de assembly
+    ("Could not load file or assembly 'TerrariaHooks'") — a saída é um assembly
+    que SE CHAMA TerrariaHooks e encaminha os tipos com TypeForwardedTo.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>TerrariaHooks</AssemblyName>
+    <AssemblyVersion>0.0.0.0</AssemblyVersion>
+    <Version>0.0.0.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0436</NoWarn>
+    <ShimPath Condition="'$(ShimPath)' == ''">$(MSBuildThisFileDirectory)../../../../build/csharp/BunnyLoader/BunnyLoader.dll</ShimPath>
+    <GeneratedForwarders Condition="'$(GeneratedForwarders)' == ''">$(MSBuildThisFileDirectory)../../../../build/generated/tmlFacade/Forwarders.g.cs</GeneratedForwarders>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(GeneratedForwarders)" />
+    <Reference Include="BunnyLoader">
+      <HintPath>$(ShimPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

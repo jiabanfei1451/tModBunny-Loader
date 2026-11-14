@@ -14,16 +14,16 @@ namespace bl::runtime {
 
 namespace {
 
-constexpr uint32_t kFieldStatic = 0x0010;
+constexpr uint32_t kFieldStatic = 0x0010;  // FIELD_ATTRIBUTE_STATIC
 
 struct Refs {
     bool tried = false, ok = false;
-    Il2CppClass* layerCls = nullptr;
-    Il2CppClass* layersCls = nullptr;
+    Il2CppClass* layerCls = nullptr;     // ItemSorting.ItemSortingLayer
+    Il2CppClass* layersCls = nullptr;    // ItemSorting.ItemSortingLayers (as camadas, estaticas)
     Il2CppClass* itemCls = nullptr;
     Il2CppClass* stringCls = nullptr;
-    FieldInfo* whiteLists = nullptr;
-    FieldInfo* layerIndex = nullptr;
+    FieldInfo* whiteLists = nullptr;     // ItemSorting._layerWhiteLists (Dictionary<string, List<int>>)
+    FieldInfo* layerIndex = nullptr;     // ItemSorting._layerIndexForItemType (int[])
     const MethodInfo* setupWhiteLists = nullptr;
     const MethodInfo* itemCtor = nullptr;
     const MethodInfo* setDefaults = nullptr;
@@ -51,14 +51,15 @@ Refs& refs() {
     r.ok = r.layerCls && r.layersCls && r.itemCls && r.stringCls && r.whiteLists && r.layerIndex &&
            r.setupWhiteLists && r.itemCtor && r.setDefaults && r.offName >= 0 && r.offMethod >= 0;
     if (!r.ok) {
-        BL_ERROR("mod item sorting: references missing (ItemSortingLayer=%p ItemSortingLayers=%p "
-                 "_layerWhiteLists=%p _layerIndexForItemType=%p SetupWhiteLists=%p); sorting the "
-                 "inventory deletes mod items", (void*)r.layerCls, (void*)r.layersCls,
+        BL_ERROR("ordenacao de itens de mod: refs faltando (ItemSortingLayer=%p ItemSortingLayers=%p "
+                 "_layerWhiteLists=%p _layerIndexForItemType=%p SetupWhiteLists=%p); ordenar o "
+                 "inventario apaga item de mod", (void*)r.layerCls, (void*)r.layersCls,
                  (void*)r.whiteLists, (void*)r.layerIndex, (void*)r.setupWhiteLists);
     }
     return r;
 }
 
+/** Metodo pelo objeto (as classes genericas sao as dele). Nulo se lancou. */
 Il2CppObject* call(Il2CppObject* self, const char* name, int argc, void** args, const char* what,
                    bool* failed) {
     auto& a = il2cpp::api();
@@ -66,7 +67,7 @@ Il2CppObject* call(Il2CppObject* self, const char* name, int argc, void** args, 
     Il2CppObject* exc = nullptr;
     Il2CppObject* r = m ? a.runtime_invoke(m, self, args, &exc) : nullptr;
     if (!m || exc) {
-        BL_ERROR("mod item sorting: %s.%s %s", what, name, m ? "lancou excecao" : "not found");
+        BL_ERROR("ordenacao de itens de mod: %s.%s %s", what, name, m ? "lancou excecao" : "nao achado");
         *failed = true;
         return nullptr;
     }
@@ -83,6 +84,7 @@ bool sameString(Il2CppString* x, Il2CppString* y) {
            std::memcmp(x->chars, y->chars, sizeof(char16_t) * static_cast<size_t>(x->length)) == 0;
 }
 
+/** A camada (estatica de ItemSortingLayers) com esse Name. As chaves do dicionario sao o proprio Name. */
 Il2CppObject* layerNamed(Il2CppString* name) {
     auto& a = il2cpp::api();
     const Refs& r = refs();
@@ -97,6 +99,7 @@ Il2CppObject* layerNamed(Il2CppString* name) {
     return nullptr;
 }
 
+/** Garante `_layerIndexForItemType` com `size` posicoes (o SetupWhiteLists o refaz com ItemID.Count). */
 Il2CppArray* layerIndexTable(int size) {
     auto& a = il2cpp::api();
     Il2CppArray* table = nullptr;
@@ -107,6 +110,14 @@ Il2CppArray* layerIndexTable(int size) {
     return bigger;
 }
 
+/**
+ * O miolo do SetupWhiteLists para os tipos [from, to): um item de cada, as
+ * camadas NA ORDEM do dicionario (cada uma tira da lista o que pegou, e a
+ * ultima, "Last - Trash", pega o resto), e o tipo entra na lista branca da
+ * camada que o pegou. O Validate das camadas filtra pela propria lista
+ * branca; com o dicionario trocado por um vazio durante a conta, ele nao
+ * filtra — como no SetupWhiteLists, que limpa o dicionario antes.
+ */
 void classify(int from, int to) {
     const Refs& r = refs();
     if (!r.ok || to <= from) return;
@@ -115,7 +126,7 @@ void classify(int from, int to) {
     a.field_static_get_value(r.whiteLists, &dict);
     bool failed = false;
     const int layers = dict ? unboxInt(call(dict, "get_Count", 0, nullptr, "_layerWhiteLists", &failed)) : 0;
-    if (failed || layers <= 0) return;
+    if (failed || layers <= 0) return;   // SetupWhiteLists ainda nao rodou: o hook faz quando rodar
 
     Il2CppArray* keys = a.array_new(r.stringCls, static_cast<uintptr_t>(layers));
     Il2CppObject* keyCollection = call(dict, "get_Keys", 0, nullptr, "_layerWhiteLists", &failed);
@@ -125,6 +136,7 @@ void classify(int from, int to) {
     if (failed || !keys) return;
     Il2CppString** names = static_cast<Il2CppString**>(arrayData(keys));
 
+    // Os itens, e a lista de indices que as camadas vao consumindo.
     const int n = to - from;
     Il2CppArray* items = a.array_new(r.itemCls, static_cast<uintptr_t>(n));
     if (!items) return;
@@ -135,14 +147,14 @@ void classify(int from, int to) {
         int type = from + i;
         void* sd[2] = {&type, nullptr};
         if (!exc) a.runtime_invoke(r.setDefaults, item, sd, &exc);
-        if (exc) BL_ERROR("mod item sorting: SetDefaults(%d) threw an exception", type);
+        if (exc) BL_ERROR("ordenacao de itens de mod: SetDefaults(%d) lancou excecao", type);
         a.gc_wbarrier_set_field(reinterpret_cast<Il2CppObject*>(items),
                                 reinterpret_cast<void**>(static_cast<Il2CppObject**>(arrayData(items)) + i), item);
     }
     void* firstKey[1] = {names[0]};
     Il2CppObject* sample = call(dict, "get_Item", 1, firstKey, "_layerWhiteLists", &failed);
     if (failed || !sample) return;
-    Il2CppObject* indices = a.object_new(a.object_get_class(sample));
+    Il2CppObject* indices = a.object_new(a.object_get_class(sample));   // List<int>
     call(indices, ".ctor", 0, nullptr, "List<int>", &failed);
     for (int i = 0; i < n && !failed; ++i) {
         void* add[1] = {&i};
@@ -152,7 +164,7 @@ void classify(int from, int to) {
 
     Il2CppArray* layerIndex = layerIndexTable(to);
     if (!layerIndex) {
-        BL_ERROR("mod item sorting: no _layerIndexForItemType");
+        BL_ERROR("ordenacao de itens de mod: sem _layerIndexForItemType");
         return;
     }
     int32_t* layerOf = static_cast<int32_t*>(arrayData(layerIndex));
@@ -170,7 +182,7 @@ void classify(int from, int to) {
         Il2CppObject* whiteList = call(dict, "get_Item", 1, key, "_layerWhiteLists", &listFailed);
         Il2CppObject* method = layer ? field<Il2CppObject*>(layer, r.offMethod) : nullptr;
         if (!method || !whiteList) {
-            BL_ERROR("mod item sorting: layer %d has no object or no list", j);
+            BL_ERROR("ordenacao de itens de mod: camada %d sem objeto ou sem lista", j);
             continue;
         }
         void* args[3] = {layer, items, indices};
@@ -192,10 +204,10 @@ void classify(int from, int to) {
     a.field_static_set_value(r.whiteLists, dict);
 
     if (placed < n) {
-        BL_ERROR("mod item sorting: %d of %d type(s) without a layer; sorting the inventory deletes them",
+        BL_ERROR("ordenacao de itens de mod: %d de %d tipo(s) sem camada; ordenar o inventario os apaga",
                  n - placed, n);
     } else {
-        BL_DEBUG("mod item sorting: %d type(s) (%d..%d) in the sorting layers", n, from, to - 1);
+        BL_DEBUG("ordenacao de itens de mod: %d tipo(s) (%d..%d) nas camadas de ordenacao", n, from, to - 1);
     }
 }
 
@@ -207,17 +219,17 @@ void hkSetupWhiteLists(const MethodInfo* m) {
     classify(kVanillaItemCount, itemTypeCount());
 }
 
-}
+} // namespace
 
 void installModItemSorting(int from, int to) {
     const Refs& r = refs();
     if (!r.ok) return;
     if (!g_origSetupWhiteLists &&
         !hook::install(r.setupWhiteLists, hkSetupWhiteLists, &g_origSetupWhiteLists)) {
-        BL_ERROR("mod item sorting: no hook on ItemSorting.SetupWhiteLists; if the game "
-                 "rebuilds the lists, sorting the inventory deletes mod items");
+        BL_ERROR("ordenacao de itens de mod: sem hook em ItemSorting.SetupWhiteLists; se o jogo "
+                 "refizer as listas, ordenar o inventario apaga item de mod");
     }
     classify(from, to);
 }
 
-}
+} // namespace bl::runtime

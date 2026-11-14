@@ -15,7 +15,7 @@ public sealed class ModAssets
 
     internal ModAssets(Mod mod) => this.mod = mod;
 
-    public Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : struct, IGameObject
+    public Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
     {
         Asset<T>.CheckSupported();
         string relative = Relative(assetName);
@@ -31,7 +31,7 @@ public sealed class ModAssets
         }
     }
 
-    public bool HasAsset<T>(string assetName) where T : struct, IGameObject =>
+    public bool HasAsset<T>(string assetName) where T : class, IGameObject =>
         (typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont)) &&
         Find(Relative(assetName), Extension<T>()) != null;
 
@@ -48,6 +48,17 @@ public sealed class ModAssets
     string? Find(string relative, string extension)
     {
         string? path = mod.ResolveFile(relative + extension);
-        return path != null && File.Exists(path) ? path : null;
+        if (path != null && File.Exists(path)) return path;
+        // No tModLoader 1.4.5 "NomeDoMod/Item" e "Item" apontam para o mesmo
+        // recurso (o nome do mod é só um prefixo lógico do asset). Um `.tmod`
+        // pede quase sempre a forma completa; o arquivo extraído fica na raiz
+        // da pasta do mod. Tentar as duas formas evita o "asset not found".
+        string prefix = mod.Name + "/";
+        if (relative.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            path = mod.ResolveFile(relative.Substring(prefix.Length) + extension);
+            if (path != null && File.Exists(path)) return path;
+        }
+        return null;
     }
 }

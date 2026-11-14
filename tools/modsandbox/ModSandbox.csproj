@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Diagnostico de carregamento SEM o corpo do jogo.
+
+    Roda no PC (.NET 10), sem Android / Unity / libil2cpp. Carrega o .dll de
+    um mod num AssemblyLoadContext isolado, resolvendo `tModLoader` pela
+    fachada e `BunnyLoader` pelo shim que o gradle gerou, e JITA cada metodo
+    SEM executa-lo. E onde aparecem MissingMethod / TypeLoad / tipos faltando:
+    exatamente o que o relatorio do aparelho so mostra depois de instalar
+    um APK de 237 MB.
+
+    Uso: dotnet run a partir de tools/modsandbox, passando um ou mais
+    arquivos e, opcionalmente, uma pasta de saida para o relatorio.
+
+    Aceita .tmod (container TMOD ou zip antigo), .bl (zip) e .dll solto.
+    Codigo de saida: 0 = tudo JITou, 2 = algum metodo falhou, 1 = erro fatal.
+    Nao referencia BunnyLoader.dll em tempo de compilacao: tudo e resolvido
+    pelo ALC em tempo de execucao.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>ModSandbox</AssemblyName>
+    <RootNamespace>BunnyLoader.Sandbox</RootNamespace>
+    <!-- Roda com `dotnet ModSandbox.dll`; nao precisa de apphost.exe. -->
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+</Project>

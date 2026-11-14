@@ -11,6 +11,14 @@ package dev.bunnyloader.mods
  */
 enum class PackType(val label: String) {
     MOD("Mods"),
+    /**
+     * Mods do tModLoader, os `.tmod` que o autor publica.
+     *
+     * Não sai de manifesto nenhum: não existe `.bl` com este tipo. A lista é
+     * montada lendo `bunny_packs/tml`, e por isso o rótulo é próprio em vez de
+     * vir do campo `type` de um pacote.
+     */
+    TML("TmlMods"),
     TEXTURE("Textures"),
     FONT("Fonts");
 

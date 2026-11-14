@@ -10,8 +10,9 @@ import android.net.Uri
  * GameActivity perguntam aqui, e qualquer [Status] diferente de [Status.OK]
  * bloqueia o jogo.
  *
- * Exige o Terraria instalado (o pacote da Play Store); quem chama já mostra
- * título e texto de qualquer status.
+ * Hoje só exige o Terraria instalado (o pacote da Play Store). Conferir se a
+ * cópia é original entra em [check], devolvendo um status novo com as chaves
+ * de tradução dele; quem chama já mostra título e texto de qualquer status.
  */
 object Eligibility {
     /** [titleKey] e [messageKey]: chaves de assets/localization/<cultura>.json. */
@@ -20,11 +21,25 @@ object Eligibility {
         NOT_INSTALLED("TerrariaRequiredTitle", "TerrariaRequiredDescription"),
     }
 
-    fun check(ctx: Context): Status = if (isInstalled(ctx)) Status.OK else Status.NOT_INSTALLED
+    /**
+     * O runtime do jogo vem DENTRO deste APK (BundledRuntime): ter o app da
+     * loja instalado nao e mais obrigatorio. Ainda aceitamos qualquer pacote
+     * Terraria conhecido, para nao barrar quem tem o original no aparelho.
+     * Sem isso, um pacote com nome diferente fazia o JOGAR fechar na hora
+     * (parecia um crash).
+     */
+    fun check(ctx: Context): Status =
+        if (BundledRuntime.isPresent(ctx) || isInstalled(ctx)) Status.OK else Status.NOT_INSTALLED
 
-    private fun isInstalled(ctx: Context): Boolean = runCatching {
-        ctx.packageManager.getPackageInfo(GameInstall.PACKAGE, 0)
-    }.isSuccess
+    /** Pacote do binario integrado + o pacote da Play; qualquer um serve. */
+    private val KNOWN_PACKAGES = listOf(
+        GameInstall.PACKAGE,
+        "com.and.games505.TerrariaPaid",
+    )
+
+    private fun isInstalled(ctx: Context): Boolean = KNOWN_PACKAGES.any { pkg ->
+        runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess
+    }
 
     /** A página do Terraria na Play Store; sem o app da loja, no navegador. */
     fun openStore(ctx: Context) {

@@ -234,6 +234,8 @@ class ModSources(val root: File, private val basicSwordImage: (() -> InputStream
         when (manifest.packType) {
             PackType.TEXTURE -> check(TexturePackFiles.hasImages(directory), "O pacote de textura não tem PNGs em Images/")
             PackType.FONT -> check(TexturePackFiles.hasFonts(directory), "O pacote de fonte não tem .json em Fonts/")
+            // Um projeto de fonte é sempre um `.bl`: TML só existe para `.tmod`.
+            PackType.TML -> throw IllegalArgumentException("TML não é um tipo de projeto")
             PackType.MOD -> {
                 check(manifest.type == "mod", "O tipo do manifesto deve ser mod, texture ou font")
                 check(manifest.entryNames.any { safePath(directory, it).isFile }, "O projeto não tem ${manifest.id}.cs na raiz")

@@ -15,7 +15,8 @@ namespace Terraria.ModLoader;
 
 public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
 {
-    public ref NPC NPC => ref entity;
+    /// <summary>Por valor, como no tML (mesmo motivo de <see cref="ModProjectile.Projectile"/>).</summary>
+    public NPC NPC => entity;
 
     int registeredType, aiType, animationType;
 
@@ -23,7 +24,14 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
     internal NPCHook Extra;
     internal int RegisteredType => registeredType;
 
-    public int Type { get => entity.IsNull ? registeredType : entity.type; internal set => registeredType = value; }
+    // `Type` é o tipo REGISTRADO (fixo, atribuído em NPCLoader.Register), como
+    // no tML. Antes era `entity.IsNull ? registeredType : entity.type`: como o
+    // template SEMPRE tem entidade (InitTemplateInstance cria uma), o getter
+    // devolvia `entity.type` — que sem `.ctor()` era lixo (16843009) e, mesmo
+    // com o objeto zerado, seria 0 para TODO NPC de mod. Resultado:
+    // `NPCID.Search.Add(name, Type)` colidia ("same key has already been
+    // added. Key: 1") e nenhum NPC de mod acertava tipo/textura/interação.
+    public int Type { get => registeredType; internal set => registeredType = value; }
 
     public int AIType
     {
@@ -55,9 +63,12 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
 
     public virtual string BossHeadTexture => Texture + "_Head_Boss";
 
-    int drawOffsetY;
+    // Contrato 1.4.4.9 é `float DrawOffsetY { get; set; }` (participa de
+    // `height + own.DrawOffsetY`, altura é float). O shim declarava `int`, então
+    // `set_DrawOffsetY(float)` do mod não ligava -> MissingMethodException.
+    float drawOffsetY;
 
-    public int DrawOffsetY
+    public float DrawOffsetY
     {
         get => drawOffsetY;
         set { drawOffsetY = value; NPCDrawOffsetHooks.Install(); }
@@ -71,7 +82,7 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
 
     bool townNPCStayingHomeless;
 
-    protected sealed override NPC CreateTemplateEntity() => default;
+    protected sealed override NPC CreateTemplateEntity() => TemplateEntity.Create<NPC>(NPC.Class);
 
     protected sealed override void Register() => NPCLoader.Register(this);
 

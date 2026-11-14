@@ -20,7 +20,6 @@ internal static class InterfaceLayerHooks
 
     static readonly List<GameInterfaceLayer> vanilla = new();
     static readonly List<IntPtr> applied = new();
-    static readonly List<IntPtr> final = new();
     static readonly Dictionary<string, Native> natives = new();
     static readonly Dictionary<IntPtr, GameInterfaceLayer> byNative = new();
     static readonly Dictionary<string, int> seen = new();
@@ -87,11 +86,9 @@ internal static class InterfaceLayerHooks
             layers.Add(layer);
         }
         SystemLoader.ModifyInterfaceLayers(layers);
-        SubworldVoteUI.ModifyInterfaceLayers(layers);
-        SubworldTransition.ModifyInterfaceLayers(layers);
 
         seen.Clear();
-        final.Clear();
+        var final = new List<IntPtr>(layers.Count);
         foreach (GameInterfaceLayer layer in layers)
         {
             if (layer == null || !layer.Active) continue;

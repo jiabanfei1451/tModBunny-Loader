@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.ObjectData;
 
-public readonly partial struct TileObjectData
+public sealed partial class TileObjectData
 {
     public static int GetTileStyle(Tile getTile) => getTile.active() ? Terraria.ModLoader.TileLoader.StyleOf(getTile) : -1;
 

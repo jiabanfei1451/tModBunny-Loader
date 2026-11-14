@@ -212,10 +212,15 @@ public static unsafe partial class NPCLoader
     static void Installed(int first, int last)
     {
         NPCImmunity.Resize();
+        Log.Info($"NPCs de mod: gancho gerenciado comecou ({first}..{last})");
         for (int type = first; type <= last; type++)
         {
             ModNPC? npc = GetNPC(type);
             if (npc == null) continue;
+            // O SetupContent do mod pode derrubar o processo (AV); o proxy de
+            // textura, o `NPC.frame` e o `SetDefaults` vem depois, cada um com
+            // a sua linha, para a ultima do arquivo apontar o passo exato.
+            Log.Info($"NPCs de mod: {type} {npc.FullName}: SetStaticDefaults");
             try
             {
                 if (npc.Entity.IsNull)
@@ -232,6 +237,8 @@ public static unsafe partial class NPCLoader
                 npc.NPC.frame = new Rectangle(0, 0, texture.Width, texture.Height / frames);
             }
             catch (Exception e) { Log.Error($"NPC {npc.FullName}: SetStaticDefaults threw: {e}"); }
+            Log.Info($"NPCs de mod: {type} {npc.FullName}: ok");
         }
+        Log.Info("NPCs de mod: gancho gerenciado terminou");
     }
 }

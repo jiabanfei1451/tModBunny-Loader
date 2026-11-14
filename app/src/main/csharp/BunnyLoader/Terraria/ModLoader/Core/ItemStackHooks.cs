@@ -101,17 +101,13 @@ internal static class ItemStackHooks
     {
         Snapshot from = scope.Items[source.Pointer];
         Snapshot to = scope.Items[destination.Pointer];
-
         if (source.type != from.Type || destination.type != from.Type) return;
-
         int sourceFinal = source.stack, destinationFinal = destination.stack;
         int sourceBefore = from.Remaining, destinationBefore = split ? 0 : to.Remaining;
         source.stack = sourceBefore;
         destination.stack = destinationBefore;
-        
         if (split) { destination.favorited = false; ItemLoader.NotifySplit(destination, source, count); }
         else ItemLoader.OnStack(destination, source, count);
-        
         int sourceAdjustment = source.stack - sourceBefore, destinationAdjustment = destination.stack - destinationBefore;
         source.stack = sourceFinal + sourceAdjustment;
         destination.stack = destinationFinal + destinationAdjustment;
@@ -141,21 +137,21 @@ internal static class ItemStackHooks
         orig(item);
     }
 
-    static void Left(On_ItemSlot.orig_LeftClick_ItemArray_int_int orig, GameArray<Item> inventory, int context, int slot)
+    static void Left(On_ItemSlot.orig_LeftClick_ItemArray_int_int orig, GameRefArray<Item> inventory, int context, int slot)
     {
         TransferScope? scope = Begin();
         try { current?.Watch(Main.mouseItem); if ((uint)slot < (uint)inventory.Length) current?.Watch(inventory[slot]); orig(inventory, context, slot); }
         finally { End(scope); }
     }
 
-    static bool Right(On_ItemSlot.orig_RightClick_ItemArray_int_int orig, GameArray<Item> inventory, int context, int slot)
+    static bool Right(On_ItemSlot.orig_RightClick_ItemArray_int_int orig, GameRefArray<Item> inventory, int context, int slot)
     {
         TransferScope? scope = Begin();
         try { current?.Watch(Main.mouseItem); if ((uint)slot < (uint)inventory.Length) current?.Watch(inventory[slot]); return orig(inventory, context, slot); }
         finally { End(scope); }
     }
 
-    static void Place(On_ItemSlot.orig_PlaceItem orig, ref GameArray<Item> inventory, ref Item item, int context, int slot, int keepStack)
+    static void Place(On_ItemSlot.orig_PlaceItem orig, ref GameRefArray<Item> inventory, ref Item item, int context, int slot, int keepStack)
     {
         TransferScope? scope = Begin();
         try { current?.Watch(item); foreach (Item existing in inventory) current?.Watch(existing); orig(ref inventory, ref item, context, slot, keepStack); }

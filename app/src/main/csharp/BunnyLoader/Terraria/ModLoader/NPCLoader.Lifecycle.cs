@@ -18,20 +18,19 @@ public static unsafe partial class NPCLoader
         GlobalNPC?[] globals = Slots(npc);
         if (PreAI(npc, own, globals))
         {
+            int type = npc.type;
+            var previous = NPCEventHooks.Borrowing;
             if (own?.AIType is > 0)
             {
-                int type = npc.type;
-                var previous = NPCEventHooks.Borrowing;
                 NPCEventHooks.Borrowing = new() { Pointer = npc.Pointer, Instance = own };
                 npc.type = own.AIType;
-                try { npc.VanillaAI(); }
-                finally
-                {
-                    npc.type = type;
-                    NPCEventHooks.Borrowing = previous;
-                }
             }
-            else npc.VanillaAI();
+            try { npc.VanillaAI(); }
+            finally
+            {
+                npc.type = type;
+                NPCEventHooks.Borrowing = previous;
+            }
             AI(npc, own, globals);
         }
         PostAI(npc, own, globals);

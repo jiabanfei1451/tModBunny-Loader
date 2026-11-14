@@ -122,8 +122,22 @@ public static class ConfigManager
         return depth;
     }
 
+    /// <summary>
+    /// Configuração desligada no harness de PC (<c>BL_NO_CONFIGS=1</c>).
+    /// O CLR do PC derruba o processo dentro de <see cref="Load"/> (FailFast de
+    /// <c>UnmanagedCallersOnly</c>) e não há como capturar; sem esta saída o
+    /// fluxo de carga nunca passaria daqui no Windows. No aparelho a flag não
+    /// existe e nada muda.
+    /// </summary>
+    static readonly bool skip = Environment.GetEnvironmentVariable("BL_NO_CONFIGS") == "1";
+
     internal static void Add(ModConfig config)
     {
+        if (skip)
+        {
+            Log.Warn($"config: {config.FullName} ignorado (BL_NO_CONFIGS=1)");
+            return;
+        }
         ConfigMenu.Install();
         ConfigNetHooks.Install();
         FindSavePath(config.Mod);

@@ -15,6 +15,28 @@ static class Program
 
     static Assembly gameAssembly = null!;
 
+    /// <summary>
+    /// Tipos que o tML declara como RECORD: o código do mod usa `with`
+    /// (`((SoundStyle)SoundID.Shatter) with { Pitch = 0.5f }`) e isso só
+    /// compila para record. Marcados em types.txt com <c>@record Tipo.Completo</c>.
+    /// </summary>
+    static readonly HashSet<string> RecordTypes = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Tipos que NÃO devem ser gerados: existem escritos à mão no shim.
+    /// Marcados em types.txt com <c>- Tipo.Completo</c>.
+    /// </summary>
+    static readonly HashSet<string> SkipTypes = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Tipos que são STRUCT no tModLoader mas CLASSE no dump (o jogo foi
+    /// compilado assim). O proxy tem de ser struct para o mod compilar/ligar
+    /// ("Method Draw does not have an implementation" acontece porque o
+    /// <c>ref PlayerDrawSet</c> do mod não bate com a classe).
+    /// Marcados em types.txt com <c>% Tipo.Completo</c>.
+    /// </summary>
+    static readonly HashSet<string> PointerStructs = new(StringComparer.Ordinal);
+
     static int Main(string[] args)
     {
         string? dummy = null, outDir = null;
@@ -61,6 +83,38 @@ static class Program
                 string owner = parts[0][..dot];
                 if (!ExtraEnumValues.TryGetValue(owner, out List<(string Name, string Value)>? values)) ExtraEnumValues[owner] = values = new List<(string Name, string Value)>();
                 values.Add((parts[0][(dot + 1)..], parts[1]));
+                continue;
+            }
+            if (line.StartsWith('%'))
+            {
+                PointerStructs.Add(line[1..].Trim());
+                continue;
+            }
+            if (line.StartsWith('-'))
+            {
+                SkipTypes.Add(line[1..].Trim());
+                continue;
+            }
+            if (line.StartsWith('@'))
+            {
+                // @record Tipo.Completo — o primeiro token é a diretiva.
+                string[] directive = line[1..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (directive.Length >= 2 && directive[0].Equals("record", StringComparison.OrdinalIgnoreCase))
+                    RecordTypes.Add(directive[1]);
+                continue;
+            }
+            if (line.StartsWith("!!"))
+            {
+                // `!!Tipo.Membro`: escrito à mão inclusive a dupla orig_/hook_.
+                // O `!` simples só reserva o nome no proxy e continua gerando o
+                // gancho (há código escrito à mão que usa esses delegates).
+                int dot = line.LastIndexOf('.');
+                string owner = line[2..dot];
+                string member = line[(dot + 1)..];
+                if (!HandWrittenHooks.TryGetValue(owner, out HashSet<string>? hookNames)) HandWrittenHooks[owner] = hookNames = new HashSet<string>();
+                hookNames.Add(member);
+                if (!HandWritten.TryGetValue(owner, out HashSet<string>? allNames)) HandWritten[owner] = allNames = new HashSet<string>();
+                allNames.Add(member);
                 continue;
             }
             if (line.StartsWith('!'))
@@ -273,6 +327,12 @@ static class Program
                 if (t.IsValueType && !f.IsStatic && !f.IsLiteral) continue;
                 if (isStatic && !f.IsStatic && !f.IsLiteral) continue;
                 TypeUse? use = map.Map(f.FieldType, true);
+                // `SoundID.Item1` & cia: no dump são LegacySoundStyle (classe),
+                // no tML são `SoundStyle` (struct). O mod empilha
+                // `newobj Nullable<SoundStyle>` — se aqui voltar uma referência
+                // o IL fica inválido no aparelho (`newobj 0x0a...`).
+                if (f.FieldType.FullName == "Terraria.Audio.LegacySoundStyle" && owner.FullName == "Terraria.ID.SoundID")
+                    use = TypeMap.SoundStyleUse(TypeMap.DumpName(f.FieldType));
                 if (use == null || use.Abi == AbiClass.Void)
                 {
                     emitter.Skip(owner, f.Name, $"field type {TypeMap.DumpName(f.FieldType)} has no C# mapping");
@@ -354,11 +414,14 @@ static class Program
         }
 
         var hookable = new List<MethodModel>();
+        bool IsHandWrittenHook(MethodInfo m) =>
+            HandWrittenHooks.TryGetValue(t.FullName ?? t.Name, out HashSet<string>? hand) && hand.Contains(m.Name);
         foreach (MethodInfo m in t.GetMethods(All))
         {
             if (m.IsAbstract || !TypeMap.ValidName(m.Name)) continue;
             if (m.IsSpecialName && !m.Name.StartsWith("get_") && !m.Name.StartsWith("set_")) continue;
             if (t.IsInterface) continue;
+            if (IsHandWrittenHook(m)) continue;
             MethodModel? model = emitter.Model(m, t, true);
             if (model != null) hookable.Add(model);
         }
@@ -435,6 +498,9 @@ static class Program
 
     static readonly Dictionary<string, HashSet<string>> HandWritten = new();
 
+    /// <summary>`!!Tipo.Membro` em types.txt: a dupla <c>orig_/hook_</c> também é escrita à mão.</summary>
+    static readonly Dictionary<string, HashSet<string>> HandWrittenHooks = new();
+
     static readonly Dictionary<string, List<(string Name, string Value)>> ExtraEnumValues = new();
 
     static IEnumerable<string> Reserved(Type t)
@@ -492,6 +558,11 @@ static class Program
         }
 
         bool isStruct = t.IsValueType;
+        if (SkipTypes.Contains(TypeMap.Key(t)) || SkipTypes.Contains(t.FullName ?? t.Name))
+        {
+            Console.WriteLine($"ProxyGen: {t.FullName}: gerado à mão (types.txt '-'), pulando");
+            return;
+        }
         bool isStaticClass = t.IsAbstract && t.IsSealed && !isStruct;
         plans.TryGetValue(key, out TypePlan? plan);
         StructLayout? layout = isStruct ? map.Layout(t) : null;
@@ -502,20 +573,41 @@ static class Program
             sb.Append(ind).Append($"[global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Explicit, Size = {layout.Size})]\n");
             sb.Append(ind).Append($"public unsafe partial struct {name}\n").Append(ind).Append("{\n");
             sb.Append(i1).Append($"public static readonly {RT}.GameClass Class = {NewClass(t)};\n");
-            var used = new HashSet<string>(Reserved(t));
-            foreach (var (f, offset, use) in layout.Fields)
-            {
-                if (map.Missing(use) is Type missing)
-                {
-                    emitter.Skip(t, f.Name, $"type {TypeMap.DumpName(missing)} is not generated");
-                    continue;
-                }
-                string id = TypeMap.Ident(f.Name);
-                if (!TypeMap.ValidName(f.Name)) id = $"__field{offset}";
-                while (!used.Add(id)) id += "_";
-                sb.Append(i1).Append($"[global::System.Runtime.InteropServices.FieldOffset({offset})] public {use.Cs} {id};\n");
-                emitter.Fields++;
-            }
+              var used = new HashSet<string>(Reserved(t));
+              foreach (var (f, offset, use) in layout.Fields)
+              {
+                  if (map.Missing(use) is Type missing)
+                  {
+                      emitter.Skip(t, f.Name, $"type {TypeMap.DumpName(missing)} is not generated");
+                      continue;
+                  }
+                  string id = TypeMap.Ident(f.Name);
+                  if (!TypeMap.ValidName(f.Name)) id = $"__field{offset}";
+                  while (!used.Add(id)) id += "_";
+                  // Campo de REFERENCIA (Item, Texture2D...): um struct nao
+                  // pode segurar uma referencia gerenciada (o compilador
+                  // recusa: CS8377). Guarda-se o ponteiro e a propriedade
+                  // devolve o proxy.
+                  bool refField = use.Cs != $"{RT}.GameString"
+                      && use.Cs != "nint"
+                      && !f.FieldType.IsValueType
+                      && !(f.FieldType.IsAbstract && f.FieldType.IsSealed);
+                  if (refField)
+                  {
+                      string backing = "__ptr" + id;
+                      while (!used.Add(backing)) backing += "_";
+                      sb.Append(i1).Append($"[global::System.Runtime.InteropServices.FieldOffset({offset})] private nint {backing};\n");
+                      if (use.IsClassProxy)
+                          sb.Append(i1).Append($"public {use.Cs} {id} {{ get => {backing} == 0 ? null! : new {use.Cs}({backing}); set => {backing} = (nint)(value?.Pointer ?? 0); }}\n");
+                      else
+                          sb.Append(i1).Append($"public {use.Cs} {id} {{ get => new {use.Cs}({backing}); set => {backing} = value.Pointer; }}\n");
+                  }
+                  else
+                  {
+                      sb.Append(i1).Append($"[global::System.Runtime.InteropServices.FieldOffset({offset})] public {FieldCs(use)} {id};\n");
+                  }
+                  emitter.Fields++;
+              }
             if (!t.IsGenericType) layoutChecks.Add($"({ClassExpr(t)}, {layout.Size})");
         }
         else if (isStaticClass)
@@ -523,22 +615,45 @@ static class Program
             sb.Append(ind).Append($"public static unsafe partial class {name}\n").Append(ind).Append("{\n");
             sb.Append(i1).Append($"public static readonly {RT}.GameClass Class = {NewClass(t)};\n");
         }
-        else
-        {
-            sb.Append(ind).Append($"public readonly unsafe partial struct {name} : {RT}.IGameObject, global::System.IEquatable<{self}>\n");
+          else
+          {
+            // Referencia de verdade (Item, NPC, Player...): o tModLoader ve
+            // CLASSE, e o IL do mod faz `callvirt get_Item()` + `stfld
+            // Item::damage`. Com um proxy struct esse IL nao resolve (o
+            // MemberRef pede uma referencia e o struct e um valor) e o
+            // SetDefaults do mod nao JITa. Entao o proxy e uma class.
+            //
+            // `@record` em types.txt: alguns tipos são RECORD no tML e o mod
+            // usa a expressão `with` (`soundStyle with { Pitch = 0.5f }`).
+            // Record só existe com `record class` — e aí o compilador já gera
+            // Equals/GetHashCode/ToString/==, que não podemos emitir de novo.
+            bool asRecord = RecordTypes.Contains(t.FullName ?? t.Name);
+            bool asStruct = PointerStructs.Contains(t.FullName ?? t.Name);
+            string kind = asStruct ? "readonly partial struct"
+                : asRecord ? "sealed partial record class"
+                : "sealed partial class";
+            // struct proxy não implementa IEquatable<T> aqui: o `Equals(T?)` do
+            // gerador não existe para value type e o `==` com null também não.
+            string ifaces = asStruct
+                ? $"{RT}.IGameObject"
+                : $"{RT}.IGameObject, global::System.IEquatable<{self}>";
+            sb.Append(ind).Append($"public unsafe {kind} {name} : {ifaces}\n");
             sb.Append(ind).Append("{\n");
             sb.Append(i1).Append($"public static readonly {RT}.GameClass Class = {NewClass(t)};\n");
             sb.Append(i1).Append("public readonly nint Pointer;\n");
             sb.Append(i1).Append($"public {name}(nint pointer) => Pointer = pointer;\n");
             sb.Append(i1).Append($"nint {RT}.IGameObject.Pointer => Pointer;\n");
             sb.Append(i1).Append("public bool IsNull => Pointer == 0;\n");
-            sb.Append(i1).Append($"public bool Equals({self} other) => Pointer == other.Pointer;\n");
-            sb.Append(i1).Append($"public override bool Equals(object? obj) => obj is {self} o && o.Pointer == Pointer;\n");
-            sb.Append(i1).Append("public override int GetHashCode() => Pointer.GetHashCode();\n");
-            sb.Append(i1).Append($"public static bool operator ==({self} a, {self} b) => a.Pointer == b.Pointer;\n");
-            sb.Append(i1).Append($"public static bool operator !=({self} a, {self} b) => a.Pointer != b.Pointer;\n");
-            if (!(HandWritten.TryGetValue(t.FullName ?? t.Name, out HashSet<string>? own) && own.Contains("ToString")))
-                sb.Append(i1).Append($"public override string ToString() => new {RT}.GameObject(Pointer).ToString();\n");
+            if (!asRecord && !asStruct)
+            {
+                sb.Append(i1).Append($"public bool Equals({self}? other) => other is not null && Pointer == other.Pointer;\n");
+                sb.Append(i1).Append($"public override bool Equals(object? obj) => obj is {self} o && o.Pointer == Pointer;\n");
+                sb.Append(i1).Append("public override int GetHashCode() => Pointer.GetHashCode();\n");
+                sb.Append(i1).Append($"public static bool operator ==({self} a, {self} b) => a is null ? b is null : b is not null && a.Pointer == b.Pointer;\n");
+                sb.Append(i1).Append($"public static bool operator !=({self} a, {self} b) => !(a == b);\n");
+                if (!(HandWritten.TryGetValue(t.FullName ?? t.Name, out HashSet<string>? own) && own.Contains("ToString")))
+                    sb.Append(i1).Append($"public override string ToString() => new {RT}.GameObject(Pointer).ToString();\n");
+            }
             sb.Append(i1).Append($"public static implicit operator {RT}.GameObject({self} v) => new {RT}.GameObject(v.Pointer);\n");
             sb.Append(i1).Append($"public static {self} From({RT}.GameObject o) => new {self}(o.Pointer);\n");
             sb.Append(i1).Append($"public static bool Is({RT}.GameObject o) => {RT}.GameInterop.IsInstance(o.Pointer, Class);\n");
@@ -582,6 +697,22 @@ static class Program
         return list;
     }
 
+    // ---- campos nullable ------------------------------------------------
+    // O Mono resolve `ldfld/stfld` pelo NOME **e pela assinatura** do campo.
+    // O proxy usava `GameNullable<T>` em todo lugar, então
+    // `NPCID.Sets.NPCBestiaryDrawModifiers.Direction` (que o mod chama de
+    // `int?`) não batia: o JIT morria com MissingFieldException e, no
+    // aparelho, a referência quebrada entrava em libmonosgen (+0xC8758,
+    // si_addr 0) matando o processo sem exceção nenhuma — foi o que derrubou
+    // `Fargowiltas/Abominationn` antes mesmo do primeiro SetStaticDefaults.
+    // O layout é idêntico (bool + valor), então basta o tipo ter o nome certo
+    // nos slots de MEMÓRIA (campos). Em parâmetro/retorno continua
+    // GameNullable: ali o valor atravessa a fronteira nativa.
+    static bool IsNullableField(TypeUse use) => use.Cs.StartsWith(RT + ".GameNullable<", StringComparison.Ordinal);
+
+    static string FieldCs(TypeUse use)
+        => IsNullableField(use) ? "global::System.Nullable<" + use.Cs[(RT + ".GameNullable<").Length..] : use.Cs;
+
     static void EmitMembers(StringBuilder sb, string ind, Type t, TypePlan plan, Emitter emitter)
     {
         string cls = ClassExpr(t);
@@ -602,10 +733,26 @@ static class Program
             if (f.IsStatic)
             {
                 sb.Append(ind).Append($"static {RT}.StaticRef __s{n};\n");
+                // As cores nomeadas (`Color.White`, `Color.Red`...) sao CAMPOS
+                // neste dump, mas no FNA do PC sao PROPRIEDADES: o mod chama
+                // `get_White()`. Uma ref property nao serve (a assinatura de
+                // retorno seria `Color&`). Emitindo propriedade de valor, o
+                // getter tem exatamente a assinatura que o mod espera — e o
+                // IlPatcher continua achando `White` para `ldsfld`.
+                if (t.FullName == "Microsoft.Xna.Framework.Graphics.Color")
+                {
+                    string access = $"ref __s{n}, {cls}, {fname}";
+                    sb.Append(ind).Append($"public static {f.Use.Cs} {id}\n").Append(ind).Append("{\n");
+                    sb.Append(ind).Append($"    get => {RT}.GameInterop.ReadStatic<{f.Use.Cs}>({access});\n");
+                    sb.Append(ind).Append($"    set => {RT}.GameInterop.WriteStatic<{f.Use.Cs}>({access}, value, false);\n");
+                    sb.Append(ind).Append("}\n");
+                    n++;
+                    continue;
+                }
                 if (f.Field.GetCustomAttributesData().Any(a => a.AttributeType.FullName == "System.ThreadStaticAttribute"))
                 {
                     string access = $"ref __s{n}, {cls}, {fname}";
-                    bool raw = f.Use.IsString || f.Use.Converted;
+                    bool raw = f.Use.IsString || f.Use.Converted || f.Use.IsClassProxy;
                     string type = raw ? "nint" : f.Use.Cs;
                     string read = $"{RT}.GameInterop.ReadStatic<{type}>({access})";
                     string value = raw ? $"(nint)({f.Use.ToRaw("value")})" : "value";
@@ -618,7 +765,7 @@ static class Program
                     continue;
                 }
                 string addr = $"{RT}.GameInterop.StaticAddress(ref __s{n}, {cls}, {fname})";
-                if (f.Use.IsString || f.Use.Converted)
+                if (f.Use.IsString || f.Use.Converted || f.Use.IsClassProxy)
                 {
                     sb.Append(ind).Append($"public static {f.Use.Cs} {id}\n").Append(ind).Append("{\n");
                     sb.Append(ind).Append($"    get => {f.Use.FromRaw($"*(nint*){addr}")};\n");
@@ -627,29 +774,70 @@ static class Program
                 }
                 else
                 {
+                    // ref properties nao podem ter set accessor (CS8147) e o
+                    // nome set_X fica RESERVADO para a propriedade (CS0082) —
+                    // por isso o metodo explicito usa __set_.
                     sb.Append(ind).Append($"public static ref {f.Use.Cs} {id} => ref *({f.Use.Cs}*){addr};\n");
+                    sb.Append(ind).Append($"public static void __set_{id}({f.Use.Cs} value) => *({f.Use.Cs}*){addr} = value;\n");
                 }
                 n++;
                 continue;
             }
             sb.Append(ind).Append($"static int __f{n} = -1;\n");
             string at = $"(Pointer + {RT}.GameInterop.Offset(ref __f{n}, {cls}, {fname}))";
-            if (f.Use.IsString || f.Use.Converted)
+            // O IL do mod faz `ldfld/stfld ENTITY::width` com o receiver sendo
+            // um Item — mas no shim cada proxy e uma classe SOLTA (Item nao
+            // herda Entity). Chamar `Entity.__set_width` por callvirt nesse
+            // receiver estoura (o SetDefaults do mod parava no `width` e TODO
+            // o resto dos campos ficava no default). Por isso os acessadores
+            // que o IlPatcher usa sao STATIC e recebem IGameObject: qualquer
+            // proxy do jogo serve como receiver.
+            string selfAt = $"(self.Pointer + {RT}.GameInterop.Offset(ref __f{n}, {cls}, {fname}))";
+            // Campo `T?`: o tipo tem de se chamar System.Nullable<T> para o
+            // `ldfld/stfld` do mod resolver (ver FieldCs). Como é um valor,
+            // sai por get/set comuns — nada de `ref T?` na propriedade.
+            if (IsNullableField(f.Use))
+            {
+                string fcs = FieldCs(f.Use);
+                sb.Append(ind).Append($"public {fcs} {id}\n").Append(ind).Append("{\n");
+                sb.Append(ind).Append($"    get => *({fcs}*){at};\n");
+                sb.Append(ind).Append($"    set => *({fcs}*){at} = value;\n");
+                sb.Append(ind).Append("}\n");
+                sb.Append(ind).Append($"public static {fcs} __get_{id}({RT}.IGameObject self) => *({fcs}*){selfAt};\n");
+                sb.Append(ind).Append($"public static void __set_{id}({RT}.IGameObject self, {fcs} value) => *({fcs}*){selfAt} = value;\n");
+                n++;
+                continue;
+            }
+            if (f.Use.IsString || f.Use.Converted || f.Use.IsClassProxy)
             {
                 sb.Append(ind).Append($"public {f.Use.Cs} {id}\n").Append(ind).Append("{\n");
                 sb.Append(ind).Append($"    get => {f.Use.FromRaw($"*(nint*){at}")};\n");
                 sb.Append(ind).Append($"    set => *(nint*){at} = (nint)({f.Use.ToRaw("value")});\n");
                 sb.Append(ind).Append("}\n");
+                sb.Append(ind).Append($"public static {f.Use.Cs} __get_{id}({RT}.IGameObject self) => {f.Use.FromRaw($"*(nint*){selfAt}")};\n");
+                sb.Append(ind).Append($"public static void __set_{id}({RT}.IGameObject self, {f.Use.Cs} value) => *(nint*){selfAt} = (nint)({f.Use.ToRaw("value")});\n");
             }
             else
             {
+                // ref properties nao podem ter set accessor (CS8147) e o nome
+                // set_X fica reservado (CS0082) — metodo explicito __set_.
                 sb.Append(ind).Append($"public ref {f.Use.Cs} {id} => ref *({f.Use.Cs}*){at};\n");
+                sb.Append(ind).Append($"public static ref {f.Use.Cs} __ref_{id}({RT}.IGameObject self) => ref *({f.Use.Cs}*){selfAt};\n");
+                sb.Append(ind).Append($"public static void __set_{id}({RT}.IGameObject self, {f.Use.Cs} value) => *({f.Use.Cs}*){selfAt} = value;\n");
             }
             n++;
         }
 
         foreach (PropModel p in plan.Props)
         {
+            // `!Tipo.Membro` em types.txt: a propriedade é escrita à mão
+            // (ex.: CreativeItemSacrificesCatalog.SacrificeCountNeededByItemId,
+            // que o mod espera como Dictionary<int,int> gerenciado).
+            if (HandWritten.TryGetValue(t.FullName ?? t.Name, out HashSet<string>? handProps) && handProps.Contains(p.Name))
+            {
+                emitter.Properties++;
+                continue;
+            }
             emitter.Properties++;
             string st = p.IsStatic ? "static " : "";
             string getName = $"__get_{p.Name.TrimStart('@')}", setName = $"__set_{p.Name.TrimStart('@')}";

@@ -1,6 +1,0 @@
-ExampleInfoDisplay:
-{
-    DisplayName: Число приспешников
-    CurrentMinions: "Приспешников: {0}"
-    NoMinions: Нет приспешников
-}

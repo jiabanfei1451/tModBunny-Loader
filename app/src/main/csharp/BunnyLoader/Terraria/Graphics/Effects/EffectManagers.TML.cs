@@ -82,7 +82,7 @@ internal static unsafe class EffectManagerCalls
     }
 }
 
-public readonly partial struct FilterManager
+public sealed partial class FilterManager
 {
     public Filter this[string key]
     {
@@ -95,7 +95,7 @@ public readonly partial struct FilterManager
     public void Deactivate(string name, params object[] args) => EffectManagerCalls.Deactivate(Pointer, name, args);
 }
 
-public readonly partial struct SkyManager
+public sealed partial class SkyManager
 {
     public CustomSky this[string key]
     {
@@ -108,7 +108,7 @@ public readonly partial struct SkyManager
     public void Deactivate(string name, params object[] args) => EffectManagerCalls.Deactivate(Pointer, name, args);
 }
 
-public readonly partial struct OverlayManager
+public sealed partial class OverlayManager
 {
     public Overlay this[string key]
     {

@@ -121,7 +121,7 @@ public static class CloudLoader
 
     static void GrowMasks(int total, ModCloud[] adding)
     {
-        GameArray<TextureMask> masks = TextureMaskManager.CloudMasks;
+        GameRefArray<TextureMask> masks = TextureMaskManager.CloudMasks;
         if (masks.IsNull) return;
         if (masks.Length < total) TextureMaskManager.CloudMasks = masks = masks.Resized(total);
         foreach (ModCloud cloud in adding)

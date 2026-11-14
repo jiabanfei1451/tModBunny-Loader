@@ -5,7 +5,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.IO;
 
-public readonly unsafe partial struct GameConfiguration
+public unsafe sealed partial class GameConfiguration
 {
     static readonly GameClass TokenClass = new("Newtonsoft.Json.Linq", "JToken");
 

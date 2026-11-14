@@ -10,7 +10,7 @@ public struct WhipSettings
     public float RangeMultiplier;
 }
 
-public readonly partial struct Projectile
+public sealed partial class Projectile
 {
     public ref WhipSettings WhipSettings => ref WhipHooks.Of(this).Value;
 

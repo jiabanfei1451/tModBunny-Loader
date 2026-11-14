@@ -14,8 +14,8 @@ public sealed class ModAccessorySlotPlayer
 {
     static AccessorySlotLoader Loader => AccessorySlotLoader.Instance;
 
-    internal GameArray<Item> exAccessorySlot;
-    internal GameArray<Item> exDyesAccessory;
+    internal GameRefArray<Item> exAccessorySlot;
+    internal GameRefArray<Item> exDyesAccessory;
     internal bool[] exHideAccessory = Array.Empty<bool>();
 
     readonly Dictionary<string, int> slots = new();
@@ -121,7 +121,7 @@ public sealed class ModAccessorySlotPlayer
     public Item GetSharedLoadoutItem(int context, int slot, out int? sharedFromLoadout)
     {
         sharedFromLoadout = null;
-        GameArray<Item> items = context == ItemSlot.Context.ModdedDyeSlot ? exDyesAccessory : exAccessorySlot;
+        GameRefArray<Item> items = context == ItemSlot.Context.ModdedDyeSlot ? exDyesAccessory : exAccessorySlot;
         if (!items[slot].IsAir || !CanLoadoutShare(context, slot))
             return items[slot];
         foreach (ExEquipmentLoadout loadout in exLoadouts)
@@ -261,9 +261,12 @@ public sealed class ModAccessorySlotPlayer
 
         public int LoadoutIndex { get; }
 
-        public GameArray<Item> ExAccessorySlot { get; private set; }
+        // v65: era `{ get; private set; }` — com GameRefArray sendo struct, atribuir a
+        // um elemento do valor de retorno da erro CS1612. Como o array carrega o
+        // ponteiro nativo, copiar o struct e' inofensivo; vira campo.
+        public GameRefArray<Item> ExAccessorySlot;
 
-        public GameArray<Item> ExDyesAccessory { get; private set; }
+        public GameRefArray<Item> ExDyesAccessory;
 
         public bool[] ExHideAccessory { get; private set; } = Array.Empty<bool>();
 
@@ -324,14 +327,14 @@ public sealed class ModAccessorySlotPlayer
 
         internal void Swap(ModAccessorySlotPlayer player)
         {
-            GameArray<Item> armor = player.exAccessorySlot;
+            GameRefArray<Item> armor = player.exAccessorySlot;
             for (int i = 0; i < armor.Length; i++)
             {
                 if (player.IsSharedSlot(i))
                     continue;
                 (armor[i], ExAccessorySlot[i]) = (ExAccessorySlot[i], armor[i]);
             }
-            GameArray<Item> dye = player.exDyesAccessory;
+            GameRefArray<Item> dye = player.exDyesAccessory;
             for (int j = 0; j < dye.Length; j++)
             {
                 if (player.IsSharedSlot(j))

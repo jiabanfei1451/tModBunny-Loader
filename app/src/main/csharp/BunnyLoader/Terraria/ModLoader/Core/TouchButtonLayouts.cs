@@ -62,7 +62,7 @@ internal static class TouchButtonLayouts
         foreach (VirtualControlsProfile_Layout profile in Profiles(styles))
         {
             if (!data.TryGetValue(profile.Id ?? "", out List<Row>? rows) || rows.Count == 0) continue;
-            GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+            GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
             if (controls.IsNull) continue;
             var bySlot = new Dictionary<string, VirtualControlsBinding_Layout>();
             for (int i = 0; i < controls.Length; i++)
@@ -137,7 +137,7 @@ internal static class TouchButtonLayouts
             if (old.TryGetValue(id, out List<Row>? previousRows))
                 foreach (Row r in previousRows) before[r.Slot] = r;
             var rows = new List<Row>();
-            GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+            GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
             for (int i = 0; !controls.IsNull && i < controls.Length; i++)
             {
                 VirtualControlsBinding_Layout binding = controls[i];
@@ -186,7 +186,7 @@ internal static class TouchButtonLayouts
         var undo = new List<Action>();
         foreach (VirtualControlsProfile_Layout profile in profiles)
         {
-            GameArray<VirtualControlsBinding_Layout> controls = profile.Controls;
+            GameRefArray<VirtualControlsBinding_Layout> controls = profile.Controls;
             for (int i = 0; !controls.IsNull && i < controls.Length; i++)
             {
                 VirtualControlsBinding_Layout binding = controls[i];
@@ -215,11 +215,11 @@ internal static class TouchButtonLayouts
     {
         var result = new List<VirtualControlsProfile_Layout>();
         if (styles.IsNull) return result;
-        GameArray<VirtualControlsProfile_Layout> all = styles.Profiles;
+        GameRefArray<VirtualControlsProfile_Layout> all = styles.Profiles;
         for (int i = 0; !all.IsNull && i < all.Length; i++)
             if (!all[i].IsNull) result.Add(all[i]);
-        VirtualControlsProfile_Layout active = styles._activeProfile;
-        if (!active.IsNull && !result.Contains(active)) result.Add(active);
+        VirtualControlsProfile_Layout? active = styles._activeProfile;
+        if (active is { IsNull: false } && !result.Contains(active)) result.Add(active);
         return result;
     }
 

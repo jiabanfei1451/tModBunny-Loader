@@ -3,11 +3,11 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria.ID;
 
-public readonly partial struct ArmorIDs
+public sealed partial class ArmorIDs
 {
-    public readonly partial struct Head
+    public sealed partial class Head
     {
-        public readonly partial struct Sets
+        public sealed partial class Sets
         {
             internal static readonly SlotSet FullHair = new(() => Count, false, ItemArmorDrawHooks.WantHair,
                 10, 12, 28, 42, 62, 97, 106, 113, 116, 119, 133, 138, 139, 163, 178, 181, 191, 198, 217, 218, 220, 222, 224, 225, 228, 229, 230, 232,
@@ -38,9 +38,9 @@ public readonly partial struct ArmorIDs
         }
     }
 
-    public readonly partial struct Body
+    public sealed partial class Body
     {
-        public readonly partial struct Sets
+        public sealed partial class Sets
         {
             internal static readonly SlotSet TopSkin = new(() => Count, false, ItemArmorDrawHooks.WantSkin, 21, 22, 82, 83, 93);
 
@@ -63,9 +63,9 @@ public readonly partial struct ArmorIDs
         }
     }
 
-    public readonly partial struct Legs
+    public sealed partial class Legs
     {
-        public readonly partial struct Sets
+        public sealed partial class Sets
         {
             internal static readonly SlotSet TopSkin = new(() => Count, false, ItemArmorDrawHooks.WantSkin);
 

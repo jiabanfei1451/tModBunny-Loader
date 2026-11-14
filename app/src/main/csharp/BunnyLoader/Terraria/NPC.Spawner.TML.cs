@@ -3,9 +3,9 @@ using Terraria.ModLoader.Core;
 
 namespace Terraria;
 
-public readonly partial struct NPC
+public sealed partial class NPC
 {
-    public readonly partial struct Spawner
+    public sealed partial class Spawner
     {
         public int SpawnTileX => NPCSpawnHooks.InfoOf(this).SpawnTileX;
         public int SpawnTileY => NPCSpawnHooks.InfoOf(this).SpawnTileY;

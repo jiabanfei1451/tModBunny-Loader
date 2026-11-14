@@ -38,12 +38,9 @@ DrawRefFn g_drawRef = nullptr;
 std::mutex g_mx;
 int g_state = 0;
 
-bool intercepting() {
-    return g_active.load(std::memory_order_relaxed) && g_callback.load(std::memory_order_relaxed) && !t_inside;
-}
-
-void intercept(void* self, ResourceDrawArgs& args) {
-    const ResourceDrawCallback callback = g_callback.load(std::memory_order_acquire);
+bool Intercept(void* self, ResourceDrawArgs& args, ResourceDrawCallback& callback) {
+    callback = g_callback.load(std::memory_order_acquire);
+    if (!callback || t_inside || !g_active.load(std::memory_order_relaxed)) return false;
     t_inside = true;
     const int32_t draw = callback(0, self, &args);
     if (draw && g_drawVector && args.texture) {
@@ -53,25 +50,22 @@ void intercept(void* self, ResourceDrawArgs& args) {
     }
     callback(1, self, &args);
     t_inside = false;
+    return true;
 }
 
 void hkDrawFloat(void* self, void* texture, Vec2 position, NullableRect source, uint32_t color, float rotation, Vec2 origin, float scale,
                  int32_t effects, float depth, const MethodInfo* method) {
-    if (intercepting()) {
-        ResourceDrawArgs args{texture, position.x, position.y, source.has, {source.x, source.y, source.w, source.h}, color, rotation,
-                              origin.x, origin.y, scale, scale, effects};
-        intercept(self, args);
-        return;
-    }
+    ResourceDrawArgs args{texture, position.x, position.y, source.has, {source.x, source.y, source.w, source.h}, color, rotation, origin.x, origin.y,
+                          scale, scale, effects};
+    ResourceDrawCallback callback;
+    if (Intercept(self, args, callback)) return;
     g_drawFloat(self, texture, position, source, color, rotation, origin, scale, effects, depth, method);
 }
 
 void hkDrawRef(void* self, void* texture, Vec2* position, uint32_t* color, float rotation, Vec2 origin, float scale, const MethodInfo* method) {
-    if (intercepting()) {
-        ResourceDrawArgs args{texture, position->x, position->y, 0, {0, 0, 0, 0}, *color, rotation, origin.x, origin.y, scale, scale, 0};
-        intercept(self, args);
-        return;
-    }
+    ResourceDrawArgs args{texture, position->x, position->y, 0, {0, 0, 0, 0}, *color, rotation, origin.x, origin.y, scale, scale, 0};
+    ResourceDrawCallback callback;
+    if (Intercept(self, args, callback)) return;
     g_drawRef(self, texture, position, color, rotation, origin, scale, method);
 }
 

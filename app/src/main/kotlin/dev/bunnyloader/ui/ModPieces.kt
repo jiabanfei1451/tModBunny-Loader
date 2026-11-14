@@ -132,7 +132,9 @@ private fun rememberIconAnimation(catalog: Catalog, path: String, version: Strin
  * (tools/mod-art.py para os nossos). Cortada para caber, nunca esticada, e sem
  * filtro — o pixel da arte continua quadrado.
  *
- * Pacote sem capa (um importado, por exemplo) mostra o ícone da categoria.
+ * Pacote sem capa (um importado, por exemplo) mostra um trecho do cenário do
+ * launcher, escolhido pelo id: a ficha de um mod é sempre a mesma, e é
+ * imagem do jogo, não um retângulo liso.
  */
 @Composable
 fun ModBanner(entry: Catalog.Entry, catalog: Catalog, modifier: Modifier = Modifier) {
@@ -143,10 +145,20 @@ fun ModBanner(entry: Catalog.Entry, catalog: Catalog, modifier: Modifier = Modif
     }
     val own = rememberPackagePicture(catalog, media.bannerAsset,
         "${media.remote?.download?.sha256 ?: media.manifest.version}:${media.mediaRevision}")
+    val fallback = ImageBitmap.imageResource(
+        FALLBACK_BANNERS[(entry.uid.hashCode() and 0x7fffffff) % FALLBACK_BANNERS.size]
+    )
     Box(modifier.framePanel().padding(2.dp).clipToBounds()) {
         val first = own?.frames?.first()
         if (own == null || first == null) {
-            PixelIcon(categoryIcon(entry.manifest.category), 64.dp, Modifier.align(Alignment.Center))
+            Image(
+                bitmap = fallback,
+                contentDescription = null,
+                filterQuality = FilterQuality.None,
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.BottomCenter,
+                modifier = Modifier.fillMaxSize(),
+            )
         } else if (first.width < first.height * 1.8f) {
             // Arte estreita: inteira no meio, sobre ela mesma esmaecida.
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.22f }) {
@@ -158,6 +170,10 @@ fun ModBanner(entry: Catalog.Entry, catalog: Catalog, modifier: Modifier = Modif
         }
     }
 }
+
+private val FALLBACK_BANNERS = listOf(
+    R.drawable.bg_forest, R.drawable.bg_ocean, R.drawable.bg_lake, R.drawable.bg_snow,
+)
 
 /** Linha da lista: ícone, nome, autor, categoria, tamanho e, se houver, downloads. */
 @Composable

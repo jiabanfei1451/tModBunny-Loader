@@ -4,7 +4,7 @@ using Terraria.ModLoader;
 
 namespace Terraria;
 
-public readonly partial struct Player
+public sealed partial class Player
 {
     public struct HurtModifiers
     {

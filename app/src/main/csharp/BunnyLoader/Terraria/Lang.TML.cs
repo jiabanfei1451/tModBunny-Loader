@@ -4,7 +4,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria;
 
-public readonly unsafe partial struct Lang
+public unsafe sealed partial class Lang
 {
     static MethodRef localizedDuration;
 

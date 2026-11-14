@@ -2,9 +2,9 @@ using System;
 
 namespace Terraria.ID;
 
-public readonly partial struct ItemID
+public sealed partial class ItemID
 {
-    public readonly partial struct Sets
+    public sealed partial class Sets
     {
         static readonly object Gate = new();
 

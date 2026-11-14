@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.DataStructures;
 
-public readonly partial struct DrawAnimationVertical
+public sealed partial class DrawAnimationVertical
 {
     static readonly List<GameHandle> Kept = new();
 

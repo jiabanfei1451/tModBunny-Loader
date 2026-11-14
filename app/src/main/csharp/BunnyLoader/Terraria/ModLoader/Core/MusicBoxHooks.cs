@@ -34,7 +34,7 @@ internal static class MusicBoxHooks
             int slot = MusicLoader.TileMusic(cells[k * 3 + 2], tile.frameY);
             if (slot > 0) return slot;
         }
-        GameArray<Item> armor = Main.LocalPlayer.armor;
+        GameRefArray<Item> armor = Main.LocalPlayer.armor;
         for (int k = 3; k < armor.Length; k++)
         {
             if (k >= 10 && k < 13) continue;
@@ -73,7 +73,7 @@ internal static class MusicBoxHooks
     {
         int playing = MusicHooks.Playing;
         if (playing <= 0 || !MusicLoader.musicToItem.TryGetValue(playing, out int box)) return;
-        GameArray<Item> armor = player.armor;
+        GameRefArray<Item> armor = player.armor;
         for (int k = 3; k < armor.Length && k < 20; k++)
         {
             if (k >= 10 && k < 13) continue;

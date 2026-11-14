@@ -6,7 +6,7 @@ using Terraria.ModLoader.Exceptions;
 
 namespace Terraria;
 
-public readonly partial struct Recipe
+public sealed partial class Recipe
 {
     public static class IngredientQuantityRules
     {
@@ -41,8 +41,6 @@ public readonly partial struct Recipe
 
     public bool DecraftDisabled => notDecraftable;
 
-    public (Recipe target, bool after) Ordering => (Data.OrderTarget, Data.OrderAfter);
-
     public static Recipe Create(int result, int amount = 1)
     {
         Mod mod = RecipeLoader.Setup("A Recipe can only be created inside recipe related methods");
@@ -57,13 +55,18 @@ public readonly partial struct Recipe
         var items = requiredItem;
         int slot = 0;
         while (slot < items.Length && items[slot].type > 0) slot++;
-        if (slot >= items.Length - 1)
-            throw new RecipeException($"A recipe takes at most {items.Length - 1} ingredients, because the game needs an empty slot after the last one; item {itemID} does not fit.");
-        Item item = Item.New();
+        // O tML guarda as receitas em List<Item> (sem teto); aqui o campo
+        // nativo é Item[15]. Uma exceção aqui abortava o AddRecipes() inteiro
+        // e levava junto todas as receitas seguintes do sistema, então o
+        // excesso só marca a receita para ser descartada no Register.
+        if (slot >= items.Length)
+        {
+            RecipeLoader.MarkOverflow(this, itemID);
+            return this;
+        }
+        Item item = items[slot];
         item.SetDefaults(itemID, default);
         item.stack = stack;
-        items[slot] = item;
-        RecipeLoader.Edited(this);
         return this;
     }
 
@@ -180,41 +183,6 @@ public readonly partial struct Recipe
         RecipeLoader.WantConsume();
         return this;
     }
-
-    Recipe SetOrdering(Recipe recipe, bool after)
-    {
-        if (!RecipeLoader.setupRecipes) throw new RecipeException("You can only move recipes during setup");
-        if (RecipeLoader.IndexOf(recipe) < 0) throw new RecipeException("The selected recipe is not registered.");
-        RecipeLoader.Extra data = Data;
-        if (!data.OrderTarget.IsNull) throw new RecipeException("This recipe already has an ordering.");
-        data.OrderTarget = recipe;
-        data.OrderAfter = after;
-        RecipeLoader.WantOrder();
-        Recipe target = recipe;
-        do
-        {
-            if (target == this) throw new Exception("Recipe ordering loop!");
-            target = RecipeLoader.OrderTargetOf(target);
-        }
-        while (!target.IsNull);
-        return this;
-    }
-
-    public Recipe SortBeforeFirstRecipesOf(int itemId)
-    {
-        Recipe target = RecipeLoader.FirstRecipeFor(itemId);
-        return target.IsNull ? this : SortBefore(target);
-    }
-
-    public Recipe SortBefore(Recipe recipe) => SetOrdering(recipe, false);
-
-    public Recipe SortAfterFirstRecipesOf(int itemId)
-    {
-        Recipe target = RecipeLoader.FirstRecipeFor(itemId);
-        return target.IsNull ? this : SortAfter(target);
-    }
-
-    public Recipe SortAfter(Recipe recipe) => SetOrdering(recipe, true);
 
     public Recipe Clone()
     {
@@ -346,7 +314,6 @@ public readonly partial struct Recipe
             if (groups[i] != groupID) continue;
             for (int j = i; j < groups.Length - 1; j++) groups[j] = groups[j + 1];
             groups[groups.Length - 1] = -1;
-            RecipeLoader.Edited(this);
             return true;
         }
         return false;
@@ -367,7 +334,6 @@ public readonly partial struct Recipe
     {
         createItem.SetDefaults(itemID, default);
         createItem.stack = stack;
-        RecipeLoader.Edited(this);
     }
 
     public void ReplaceResult(ModItem item, int stack = 1) => ReplaceResult(item.Type, stack);
@@ -394,6 +360,5 @@ public readonly partial struct Recipe
         removed.SetDefaults(0, default);
         removed.stack = 0;
         items[items.Length - 1] = removed;
-        RecipeLoader.Edited(this);
     }
 }

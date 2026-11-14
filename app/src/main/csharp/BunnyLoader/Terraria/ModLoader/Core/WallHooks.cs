@@ -269,9 +269,15 @@ internal static unsafe class WallHooks
             Once("Animate", () => On_Main.DoUpdate_AnimateWalls += Animate);
         }
 
-        if (flags != 0 && Host.Native()->WallEvents(wall.Type, flags, &Event) == 0)
-            throw new InvalidOperationException($"{wall.FullName}: native wall hooks could not be installed");
+        if (flags != 0 && !FailedTypes.Contains(wall.Type) && Host.Native()->WallEvents(wall.Type, flags, &Event) == 0)
+        {
+            lock (FailedTypes) FailedTypes.Add(wall.Type);
+            Log.Warn($"wall hooks: sem ponto de gancho para {wall.FullName}; seguindo sem ele");
+        }
     }
+
+    /// <summary>Tipos cujo gancho nativo não existe neste binário.</summary>
+    static readonly System.Collections.Generic.HashSet<int> FailedTypes = new();
 
     static void WantCanPlace() => Once("CanPlace", () => On_Player.PlaceThing_Walls += PlaceThingWalls);
 
@@ -303,6 +309,16 @@ internal static unsafe class WallHooks
         exploding++;
         try { orig(self, compareSpot, radius, minI, maxI, minJ, maxJ, wallSplode, explodeHardmodeOres); }
         finally { exploding--; }
+    }
+
+    static bool CanExplode(int i, int j, int type)
+    {
+        if (WallLoader.GetWall(type)?.CanExplode(i, j) == false)
+            return false;
+        foreach (GlobalWall global in WallLoader.Globals)
+            if (!global.CanExplode(i, j, type))
+                return false;
+        return true;
     }
 
     static readonly List<(int X, int Y)> hiddenWalls = new();
@@ -381,7 +397,7 @@ internal static unsafe class WallHooks
     static void Kill(On_WorldGen.orig_KillWall orig, int i, int j, bool fail)
     {
         int wallType = Main.tile[i, j].wall;
-        if (exploding > 0 && wallType != 0 && !WallLoader.CanExplode(i, j, wallType))
+        if (exploding > 0 && wallType != 0 && !CanExplode(i, j, wallType))
             return;
         ModWall? wall = WallLoader.GetWall(wallType);
         if (wall == null && (wallType == 0 || WallLoader.Globals.Count == 0))

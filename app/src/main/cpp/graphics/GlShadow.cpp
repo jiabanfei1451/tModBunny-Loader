@@ -40,9 +40,9 @@ int compareGlState(const GlShadow& a, const GlShadow& b, char* diff, size_t size
     };
     note(a.program == b.program, "programa");
     note(a.vertexArray == b.vertexArray, "vao");
-    note(a.drawFbo == b.drawFbo, "draw-fbo");
+    note(a.drawFbo == b.drawFbo, "fbo-desenho");
     note(a.readFbo == b.readFbo, "fbo-leitura");
-    note(a.activeTexture == b.activeTexture, "active-texture");
+    note(a.activeTexture == b.activeTexture, "textura-ativa");
     note(std::memcmp(a.viewport, b.viewport, sizeof a.viewport) == 0, "viewport");
     note(a.blend == b.blend, "blend");
     note(a.depth == b.depth, "depth");
@@ -53,4 +53,4 @@ int compareGlState(const GlShadow& a, const GlShadow& b, char* diff, size_t size
     return count;
 }
 
-}
+} // namespace bl::graphics

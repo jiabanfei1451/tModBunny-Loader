@@ -94,6 +94,39 @@ public readonly unsafe struct GameDictionary
         call.Invoke(fn);
     }
 
+    /// <summary>
+    /// Variante de <see cref="TryGetValue{TKey,TValue}"/> para valores de
+    /// REFERENCIA (classes do jogo): o slot de saida guarda o ponteiro cru.
+    /// </summary>
+    public bool TryGetReference<TKey>(TKey key, out IntPtr value) where TKey : unmanaged
+    {
+        IntPtr fn = Method("TryGetValue", 2, out IntPtr info);
+        IntPtr result = IntPtr.Zero;
+        var call = GameCall.Returning(RetKind.Int);
+        call.Arg(dictionary);
+        call.Arg(key);
+        call.Arg((IntPtr)(&result));
+        call.Arg(info);
+        bool found = (call.Invoke(fn) & 0xff) != 0;
+        value = result;
+        return found;
+    }
+
+    /// <summary>
+    /// Variante de <see cref="Set{TKey,TValue}"/> para valores de REFERENCIA
+    /// (classes do jogo): passa o ponteiro do objeto como argumento.
+    /// </summary>
+    public void SetReference<TKey>(TKey key, IntPtr value) where TKey : unmanaged
+    {
+        IntPtr fn = Method("set_Item", 2, out IntPtr info);
+        var call = GameCall.Returning(RetKind.Int);
+        call.Arg(dictionary);
+        call.Arg(key);
+        call.Arg(value);
+        call.Arg(info);
+        call.Invoke(fn);
+    }
+
     public KeyValuePair<int, int>[] IntEntries()
     {
         IntPtr entries = *(IntPtr*)(dictionary + Offset("_entries"));

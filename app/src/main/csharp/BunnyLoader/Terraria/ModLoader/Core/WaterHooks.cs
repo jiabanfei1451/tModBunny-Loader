@@ -236,7 +236,7 @@ internal static unsafe class WaterHooks
         }
         if (drip < GoreID.Count) return orig(Position, Velocity, drip, Scale);
         int index = orig(Position, Velocity, GoreID.WaterDrip, Scale);
-        GameArray<Gore> gores = Main.gore;
+        GameRefArray<Gore> gores = Main.gore;
         if ((uint)index < (uint)gores.Length) gores[index].type = drip;
         return index;
     }
@@ -272,7 +272,7 @@ internal static unsafe class WaterHooks
 
     static void SetRainType(int index, ModWaterStyle style)
     {
-        GameArray<Rain> rain = Main.rain;
+        GameRefArray<Rain> rain = Main.rain;
         if ((uint)index < (uint)rain.Length) rain[index].type = Variant(style);
     }
 

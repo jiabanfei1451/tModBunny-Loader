@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.GameContent.Items;
 
-public readonly partial struct WhipTagEffect
+public sealed partial class WhipTagEffect
 {
     static readonly List<GameHandle> Kept = new();
 

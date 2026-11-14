@@ -19,18 +19,22 @@ namespace {
 
 struct Entry {
     ModBuffDef def;
-    uint32_t asset = 0;
+    uint32_t asset = 0;   // gchandle do Asset<Texture2D>: reaplicado se a tabela for refeita
 };
 
 std::mutex g_mx;
-std::vector<Entry> g_regs;
+std::vector<Entry> g_regs;   // indice = type - kVanillaBuffCount
 std::mutex g_hooksMx;
 std::vector<BuffsInstalledHook> g_installedHooks;
 std::atomic<int> g_total{0};
 std::atomic<int> g_installed{0};
 bool g_failed = false;
 
-TypeTables g_tables("mod buffs", kVanillaBuffCount, {
+// Conferida contra toda alocacao de 401 posicoes na libil2cpp (`mov #0x191`):
+// as estaticas estao em Main (10), BuffID.Sets, Lang (nome e descricao) e
+// TextureAssets; as por instancia, em Player e NPC (abaixo). O Main tem mais
+// 4 de 401 que sao dos itens no chao (Main.maxItems + 1), e ficam como estao.
+TypeTables g_tables("buffs de mod", kVanillaBuffCount, {
     {"Terraria.ID", "BuffID", "Sets"},
     {"Terraria", "Main", "", "", {"item", "timeItemSlotCannotBeReusedFor", "itemFrame", "itemFrameCounter"}},
     {"Terraria", "Lang", ""},
@@ -39,14 +43,14 @@ TypeTables g_tables("mod buffs", kVanillaBuffCount, {
 
 struct Refs {
     bool tried = false, ok = false;
-    FieldInfo* textures = nullptr;
-    FieldInfo* names = nullptr;
-    FieldInfo* descriptions = nullptr;
-    FieldInfo* noSave = nullptr;
-    FieldInfo* players = nullptr;
-    FieldInfo* npcs = nullptr;
-    int32_t playerImmune = -1, npcImmune = -1;
-    int32_t buffType = -1, buffTime = -1;
+    FieldInfo* textures = nullptr;       // TextureAssets.Buff
+    FieldInfo* names = nullptr;          // Lang._buffNameCache
+    FieldInfo* descriptions = nullptr;   // Lang._buffDescriptionCache
+    FieldInfo* noSave = nullptr;         // Main.buffNoSave
+    FieldInfo* players = nullptr;        // Main.player
+    FieldInfo* npcs = nullptr;           // Main.npc
+    int32_t playerImmune = -1, npcImmune = -1;   // buffImmune
+    int32_t buffType = -1, buffTime = -1;        // Player
     const MethodInfo* playerCtor = nullptr;
     const MethodInfo* npcCtor = nullptr;
 };
@@ -78,7 +82,7 @@ Refs& refs() {
            r.playerImmune >= 0 && r.npcImmune >= 0 && r.buffType >= 0 && r.buffTime >= 0 &&
            r.playerCtor && r.npcCtor;
     if (!r.ok) {
-        BL_ERROR("mod buffs: references missing (TextureAssets.Buff=%p Lang._buffNameCache=%p "
+        BL_ERROR("buffs de mod: refs faltando (TextureAssets.Buff=%p Lang._buffNameCache=%p "
                  "Player.buffImmune=%d NPC.buffImmune=%d)",
                  (void*)r.textures, (void*)r.names, r.playerImmune, r.npcImmune);
     }
@@ -105,6 +109,7 @@ void applyTexture(int type, const Entry& e) {
     if (asset) content::setTableElement(refs().textures, type, asset);
 }
 
+/** Tabela que o jogo refez (a troca de idioma refaz os nomes): reaplica o nosso. */
 void onTableRegrown(FieldInfo* f, int size) {
     const Refs& r = refs();
     std::lock_guard<std::mutex> l(g_mx);
@@ -124,22 +129,29 @@ bool gameReady(int size) {
            textures->length == static_cast<uintptr_t>(size) && names->length >= static_cast<uintptr_t>(size);
 }
 
+// ---- limites compilados no codigo ----
+
 struct LimitPatch {
     const char* ns;
     const char* cls;
     const char* method;
-    uint32_t vanilla;
-    int offset;
-    bool belowToo;
+    uint32_t vanilla;   // o limite como esta no codigo
+    int offset;         // novo limite = total + offset
+    bool belowToo;      // tambem `tipo < limite` (b.lo)
 };
 
+// Achados varrendo a libil2cpp por `cmp #399..#401` + desvio de ordem, e
+// conferidos um a um (os outros sao tiles e projeteis com esses numeros).
 constexpr LimitPatch kLimitPatches[] = {
+    // A barra: `1 <= tipo <= 400` entra; `tipo >= 401` e ZERADO no jogador.
     {"", "GUIBuffs", "Draw", kVanillaBuffCount - 2, -2, true},
     {"", "GUIBuffs", "Draw", kVanillaBuffCount, 0, true},
+    // A enfermeira so cura debuff com tipo <= 400.
     {"Terraria", "Main", "GetNurseHealCost", kVanillaBuffCount - 1, -1, false},
     {"Terraria", "Main", "NPCChatText_DoNurseHeal", kVanillaBuffCount - 1, -1, false},
     {"", "GUINPCDialogue", "Option1Clicked", kVanillaBuffCount - 1, -1, false},
     {"", "GUINPCDialogue", "SetupButtonText", kVanillaBuffCount - 1, -1, false},
+    // Remover buff de NPC pedido pela rede (chicote etc. no multijogador).
     {"Terraria", "NPC", "RequestBuffRemoval", kVanillaBuffCount - 1, -1, false},
 };
 
@@ -159,15 +171,21 @@ void patchLimits(int total) {
         }
         if (patched > 0) {
             ++methodsOk;
-            BL_DEBUG("mod buffs: %s.%s: %d limit(s) from %u to %u", p.cls, p.method, patched, p.vanilla, to);
+            BL_DEBUG("buffs de mod: %s.%s: %d limite(s) de %u para %u", p.cls, p.method, patched, p.vanilla, to);
         } else {
-            BL_ERROR("mod buffs: %s.%s: limit %u not swapped: %s", p.cls, p.method, p.vanilla,
+            BL_ERROR("buffs de mod: %s.%s: limite %u nao trocado: %s", p.cls, p.method, p.vanilla,
                      describeCompareMiss(last, p.vanilla, to, p.belowToo).c_str());
         }
     }
     const int methods = static_cast<int>(sizeof(kLimitPatches) / sizeof(kLimitPatches[0]));
-    BL_INFO("mod buffs: compiled limits swapped in %d of %d method(s)", methodsOk, methods);
+    BL_INFO("buffs de mod: limites do codigo trocados em %d de %d metodo(s)", methodsOk, methods);
 }
+
+// ---- buffImmune: bool[401] em cada Player e NPC ----
+//
+// O construtor cria; Player.Update e NPC.SetDefaults so zeram as 401
+// primeiras (memset). Os de Main.player/Main.npc ja existem na instalacao; os
+// que nascerem depois passam pelo construtor.
 
 using CtorFn = void (*)(Il2CppObject*, const MethodInfo*);
 CtorFn g_origPlayerCtor = nullptr;
@@ -205,18 +223,18 @@ void growInstances(int size) {
     if (!hooked) {
         hooked = true;
         if (!hook::install(r.playerCtor, hkPlayerCtor, &g_origPlayerCtor)) {
-            BL_ERROR("mod buffs: no hook on the Player constructor; a new player reads past buffImmune");
+            BL_ERROR("buffs de mod: sem hook no construtor de Player; jogador novo le fora de buffImmune");
         }
         if (!hook::install(r.npcCtor, hkNpcCtor, &g_origNpcCtor)) {
-            BL_ERROR("mod buffs: no hook on the NPC constructor; a new NPC reads past buffImmune");
+            BL_ERROR("buffs de mod: sem hook no construtor de NPC; NPC novo le fora de buffImmune");
         }
     }
     const int players = growAll(r.players, r.playerImmune, size);
     const int npcs = growAll(r.npcs, r.npcImmune, size);
-    BL_DEBUG("mod buffs: buffImmune grown in %d player(s) and %d NPC(s)", players, npcs);
+    BL_DEBUG("buffs de mod: buffImmune aumentada em %d jogador(es) e %d NPC(s)", players, npcs);
 }
 
-}
+} // namespace
 
 int registerModBuff(ModBuffDef def) {
     std::lock_guard<std::mutex> l(g_mx);
@@ -267,8 +285,11 @@ void tickModBuffs() {
         return;
     }
     if (!gameReady(from)) return;
+    // Os limites compilados valem para UM total: um lote depois do primeiro
+    // (mod carregado mais tarde) ficaria de fora da barra. Todos os mods
+    // registram antes da tela de titulo, entao na pratica ha um lote so.
     if (installed > 0) {
-        BL_ERROR("mod buffs: %d registered after installation; they get no table", total - installed);
+        BL_ERROR("buffs de mod: %d registrado(s) depois da instalacao; ficam sem tabela", total - installed);
         g_failed = true;
         return;
     }
@@ -276,7 +297,7 @@ void tickModBuffs() {
     const int to = kVanillaBuffCount + total;
     const int grown = g_tables.grow(from, to);
     if (grown < 0) {
-        BL_ERROR("mod buffs: no buff table found; mod buffs disabled");
+        BL_ERROR("buffs de mod: nenhuma tabela de buff achada; buffs de mod desligados");
         g_failed = true;
         return;
     }
@@ -297,7 +318,7 @@ void tickModBuffs() {
             applyTexts(type, e);
         }
     }
-    BL_INFO("mod buffs: %d installed (ids %d..%d), %d table(s) grown from %d to %d",
+    BL_INFO("buffs de mod: %d instalado(s) (ids %d..%d), %d tabela(s) aumentadas de %d para %d",
             total - installed, from, to - 1, grown, from, to);
     std::vector<BuffsInstalledHook> hooks;
     {
@@ -387,6 +408,8 @@ std::vector<SavedBuff> restoreModBuffs(Il2CppObject* player, const std::vector<S
     for (const SavedBuff& s : saved) {
         const int type = modBuffTypeByKey(s.key);
         if (type < 0) { kept.push_back(s); continue; }
+        // O jogo compacta a lista ao carregar (o buff de mod saiu dela) e a
+        // quer continua: primeiro slot livre, nao o de antes.
         int slot = -1;
         for (int i = 0; i < n && slot < 0; ++i) {
             if (t[i] == 0) slot = i;
@@ -398,4 +421,4 @@ std::vector<SavedBuff> restoreModBuffs(Il2CppObject* player, const std::vector<S
     return kept;
 }
 
-}
+} // namespace bl::runtime

@@ -50,7 +50,7 @@ public static class AchievementLoader
         var list = new GameList(manager.CreateAchievementsList());
         for (int i = 0; i < list.Count; i++)
         {
-            Achievement achievement = list.Get<Achievement>(i);
+            Achievement achievement = new(list[i]);
             if (Of(achievement) == null) kept.Add((achievement, achievement._completedCount));
         }
         try

@@ -3,7 +3,7 @@ using BunnyLoader.Interop;
 
 namespace Terraria.Localization;
 
-public readonly partial struct NetworkText
+public sealed partial class NetworkText
 {
     public override string ToString() => Pointer == 0 ? "" : ToString_() ?? "";
 
@@ -15,7 +15,7 @@ public readonly partial struct NetworkText
     {
         NetworkText result = New(text, mode);
         int count = substitutions?.Length ?? 0;
-        GameArray<NetworkText> list = GameArray<NetworkText>.New(Class, count);
+        GameRefArray<NetworkText> list = GameRefArray<NetworkText>.New(Class, count);
         for (int i = 0; i < count; i++)
             list[i] = substitutions![i] is NetworkText network && !network.IsNull ? network : FromLiteral(substitutions[i]?.ToString() ?? "");
         result._substitutions = list;
@@ -36,7 +36,7 @@ public readonly partial struct NetworkText
         writer.Write(_text ?? "");
         if (mode == Mode.Literal)
             return;
-        GameArray<NetworkText> list = _substitutions;
+        GameRefArray<NetworkText> list = _substitutions;
         int count = list.IsNull ? 0 : list.Length;
         writer.Write((byte)count);
         for (int i = 0; i < count; i++)

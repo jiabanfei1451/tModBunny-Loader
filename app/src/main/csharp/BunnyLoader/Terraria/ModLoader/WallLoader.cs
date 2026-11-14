@@ -25,14 +25,6 @@ public static unsafe partial class WallLoader
 
     public static ModWall? GetWall(int type) => (uint)type < (uint)walls.Length ? walls[type] : null;
 
-    public static bool CanExplode(int i, int j, int type)
-    {
-        foreach (GlobalWall global in Globals)
-            if (!global.CanExplode(i, j, type))
-                return false;
-        return GetWall(type)?.CanExplode(i, j) ?? true;
-    }
-
     internal static void Register(ModWall wall)
     {
         byte* mod = Host.Utf8(wall.Mod.Uid), name = Host.Utf8(wall.Name), texture = Host.Utf8(ItemLoader.ResolveTexture(wall, wall.Texture));
@@ -66,10 +58,15 @@ public static unsafe partial class WallLoader
     [System.Runtime.InteropServices.UnmanagedCallersOnly]
     static void Installed(int first, int last)
     {
+        // Uma linha por parede: se o processo morrer dentro de
+        // `SetStaticDefaults` (AV nao e excecao, o try/catch nao pega), a
+        // ultima linha do arquivo diz exatamente qual parede e qual metade.
+        Log.Info($"paredes de mod: gancho gerenciado comecou ({first}..{last})");
         for (int i = first; i <= last; i++)
         {
             if (GetWall(i) is not ModWall wall)
                 continue;
+            Log.Info($"paredes de mod: {wall.FullName}: SetStaticDefaults");
             try
             {
                 wall.SetupContent();
@@ -78,7 +75,9 @@ public static unsafe partial class WallLoader
             {
                 ItemHooks.Report(wall.FullName + ".SetStaticDefaults", e);
             }
+            Log.Info($"paredes de mod: {wall.FullName}: ok");
         }
+        Log.Info("paredes de mod: gancho gerenciado terminou");
     }
 
     internal static readonly List<GlobalWall> Globals = new();
