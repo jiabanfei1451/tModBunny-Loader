@@ -44,7 +44,7 @@ internal static class IlPatcher
     static Dictionary<string, Type>? shimMap;
     static MethodInfo? readMethod;
 
-    static Dictionary<string, Type> ShimMap => shimMap ??= BuildMap();
+    static Dictionary<string, Type> ShimMap { get { BuildMapsOnce(); return shimMap!; } }
 
     static Dictionary<string, Type>? structMap;
 
@@ -158,51 +158,61 @@ internal static class IlPatcher
     /// receptor <c>IGameObject</c> — mas a troca de chamada por campo
     /// (<see cref="PatchMethodToField"/>) vale para eles.
     /// </summary>
-    static Dictionary<string, Type> StructMap => structMap ??= BuildStructMap();
+    static Dictionary<string, Type> StructMap { get { BuildMapsOnce(); return structMap!; } }
 
     static bool IsGameNamespace(string ns) =>
         GameNamespaces.Any(n => ns == n || ns.StartsWith(n + ".", StringComparison.Ordinal));
 
-    static Dictionary<string, Type> BuildStructMap()
+    /// <summary>
+    /// Um passe de <c>GetTypes()</c> para os DOIS mapas.
+    ///
+    /// Antes cada mapa fazia o seu próprio <c>GetTypes()</c> e esse passe é a
+    /// parte mais cara da preparação no aparelho (o Mono materializa o
+    /// metadado de milhares de proxies de uma vez). Pagá-lo duas vezes custava
+    /// dezenas de segundos no primeiro mod carregado — e o mapa de structs só
+    /// era construído quando um campo de struct aparecia, então o custo
+    /// reaparecia no meio da carga de outro mod.
+    /// </summary>
+    static void BuildMapsOnce()
     {
-        var map = new Dictionary<string, Type>(StringComparer.Ordinal);
-        foreach (Type type in typeof(IlPatcher).Assembly.GetTypes())
+        if (shimMap != null) return;
+        var classes = new Dictionary<string, Type>(StringComparer.Ordinal);
+        var structs = new Dictionary<string, Type>(StringComparer.Ordinal);
+        Type[] all;
+        try
         {
-            if (!type.IsValueType || type.IsEnum) continue;
-            string ns = type.Namespace ?? "";
-            if (!GameNamespaces.Any(n => ns == n || ns.StartsWith(n + ".", StringComparison.Ordinal))) continue;
-            map[type.FullName!] = type;
-            string flat = type.FullName!.Replace('/', '.').Replace('+', '.');
-            if (!map.ContainsKey(flat)) map[flat] = type;
+            all = typeof(IlPatcher).Assembly.GetTypes();
         }
-        return map;
-    }
-
-    static Dictionary<string, Type> BuildMap()
-    {
-        // Custa ~53 s no aparelho (Mono carrega o metadado de milhares de
-        // proxies de uma vez) e e pago UMA vez por processo. A tentativa de
-        // trocar isto por um indice lido do DLL com Cecil + `Assembly.GetType`
-        // sob demanda deixava o assembly reescrito com o mesmo tamanho, mas o
-        // JIT estourava 0xC0000005 no sandbox: a semantica do mapa nao era
-        // identica. Enquanto nao houver um teste que prove equivalencia, fica
-        // a versao por reflexao — cara, porem correta.
-        var map = new Dictionary<string, Type>(StringComparer.Ordinal);
-        foreach (Type type in typeof(IlPatcher).Assembly.GetTypes())
+        catch (ReflectionTypeLoadException e)
         {
-            // Só classes do jogo (static classes são abstract+sealed — entram;
-            // classes abstratas de verdade ficam de fora: um mod não faz
-            // ldfld num tipo que não pode instanciar... e os proxies do jogo
-            // do PC são concretos).
+            // Sem mapa nenhum campo do mod é traduzido e o jogo fecha no
+            // primeiro `ldfld`: seguir com os que carregaram é sempre melhor.
+            Log.Warn($"il patch: GetTypes parcial ({e.LoaderExceptions?.Length ?? 0} falha(s))");
+            all = e.Types.Where(t => t != null).ToArray()!;
+        }
+        foreach (Type type in all)
+        {
+            string ns = type.Namespace ?? "";
+            if (!IsGameNamespace(ns)) continue;
+            if (type.IsValueType && !type.IsEnum)
+            {
+                AddName(structs, type);
+                continue;
+            }
             if (!type.IsClass || type.IsInterface) continue;
             if (type.IsAbstract && !type.IsSealed) continue;
-            string ns = type.Namespace ?? "";
-            if (!GameNamespaces.Any(n => ns == n || ns.StartsWith(n + ".", StringComparison.Ordinal))) continue;
-            map[type.FullName!] = type;
-            string flat = type.FullName!.Replace('/', '.').Replace('+', '.');
-            if (!map.ContainsKey(flat)) map[flat] = type;
+            AddName(classes, type);
         }
-        return map;
+        structMap = structs;
+        shimMap = classes;
+    }
+
+    static void AddName(Dictionary<string, Type> map, Type type)
+    {
+        string full = type.FullName ?? type.Name;
+        map[full] = type;
+        string flat = full.Replace('/', '.').Replace('+', '.');
+        if (!map.ContainsKey(flat)) map[flat] = type;
     }
 
     static MethodInfo ReadMethod => readMethod ??= typeof(IlInterop)
@@ -218,6 +228,146 @@ internal static class IlPatcher
     /// <summary>Diferença de <see cref="Stopwatch.GetTimestamp"/> em milissegundos.</summary>
     static long Ms(long ticks) => (long)(ticks * 1000.0 / Stopwatch.Frequency);
 
+    // ---------------- cache de pre-compilacao (Configuracoes) ----------------
+    //
+    // Nao e AOT. O runtime dos mods aqui e o Mono embutido
+    // (`libmonosgen-2.0.so`, pacote Microsoft.NETCore.App.Runtime.Mono.android-arm64),
+    // que so aceita IL: NativeAOT gera codigo nativo para o CoreCLR e nao tem
+    // como ser carregado por este host, e o proprio pacote do Mono nao traz
+    // `mono-aot-cross`. O que da para fazer — e da o MESMO ganho na abertura —
+    // e guardar o IL JA REESCRITO: a segunda abertura nao repete o Cecil, que e
+    // onde vao os 170 s do FargowiltasSouls.
+
+    static bool? cacheOn;
+
+    /// <summary>Lido do ambiente, publicado pelo nativo a partir das Configuracoes.</summary>
+    static bool CacheEnabled
+    {
+        get
+        {
+            if (cacheOn is bool value) return value;
+            bool on = true;
+            try
+            {
+                string? raw = Environment.GetEnvironmentVariable("BL_COMPILE_CACHE");
+                if (raw == "0" || string.Equals(raw, "off", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(raw, "false", StringComparison.OrdinalIgnoreCase)) on = false;
+            }
+            catch { }
+            cacheOn = on;
+            return on;
+        }
+    }
+
+    /// <summary>
+    /// Identidade do ARQUIVO + identidade do PATCHER. Se qualquer um muda, a
+    /// saida muda, e a entrada antiga deixa de valer: o MVID do shim entra na
+    /// conta porque a reescrita depende do mapa de campos dele (todo build novo
+    /// gera um MVID novo, entao um shim atualizado invalida tudo sozinho).
+    /// </summary>
+    static string CacheKey(string path)
+    {
+        long size = 0, ticks = 0;
+        try
+        {
+            var info = new FileInfo(path);
+            if (info.Exists) { size = info.Length; ticks = info.LastWriteTimeUtc.Ticks; }
+        }
+        catch { }
+        // Hash amostrado (primeiros e ultimos 256 KB). So tamanho+mtime nao
+        // pega o caso de o arquivo ser recopiado com o mtime preservado
+        // (tar/rsync); o arquivo inteiro custaria 20 MB por mod a cada
+        // abertura, que e justamente o que este cache existe para evitar.
+        ulong hash = 14695981039346656037UL;
+        try
+        {
+            var buffer = new byte[256 * 1024];
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                int read = stream.Read(buffer, 0, buffer.Length);
+                for (int i = 0; i < read; i++) { hash ^= buffer[i]; hash *= 1099511628211UL; }
+                if (size > 4L * buffer.Length)
+                {
+                    stream.Seek(size - buffer.Length, SeekOrigin.Begin);
+                    read = stream.Read(buffer, 0, buffer.Length);
+                    for (int i = 0; i < read; i++) { hash ^= buffer[i]; hash *= 1099511628211UL; }
+                }
+            }
+        }
+        catch { }
+        string shim = "000000000000";
+        try { shim = typeof(IlPatcher).Assembly.ManifestModule.ModuleVersionId.ToString("N").Substring(0, 12); }
+        catch { }
+        return $"{size:x}-{ticks:x}-{hash:x16}-{shim}";
+    }
+
+    /// <summary>
+    /// <c>&lt;pasta do mod&gt;/.ilcache/&lt;nome&gt;.&lt;chave&gt;.dll</c>. Fica
+    /// dentro da pasta do proprio mod: e o unico diretorio que o shim conhece
+    /// com certeza (vem no caminho do assembly) e e gravavel — o loader extrai
+    /// os .tmod ali. Uma subpasta pontuada nao entra na varredura de mods, que
+    /// olha as pastas IRMAS dentro de `TML/mods/mods`.
+    /// </summary>
+    static string? CacheFileFor(string path, string key)
+    {
+        try
+        {
+            string? folder = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(folder)) return null;
+            string cacheDir = Path.Combine(folder, ".ilcache");
+            Directory.CreateDirectory(cacheDir);
+            return Path.Combine(cacheDir, Path.GetFileNameWithoutExtension(path) + "." + key + ".dll");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"il patch: {Path.GetFileName(path)}: sem cache ({e.GetType().Name}: {e.Message})");
+            return null;
+        }
+    }
+
+    static byte[]? ReadCache(string path, string? cacheFile)
+    {
+        if (cacheFile == null || !File.Exists(cacheFile)) return null;
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(cacheFile);
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"il patch: {Path.GetFileName(path)}: cache ilegivel ({e.GetType().Name}: {e.Message}); reescrevendo");
+            return null;
+        }
+    }
+
+    static void SaveCache(string path, string? cacheFile, byte[] bytes)
+    {
+        if (cacheFile == null) return;
+        try
+        {
+            string temp = cacheFile + ".tmp";
+            File.WriteAllBytes(temp, bytes);
+            if (File.Exists(cacheFile)) File.Delete(cacheFile);
+            File.Move(temp, cacheFile);
+            // Poda: so a entrada desta chave interessa. Sem isto cada build novo
+            // do shim deixa uma copia inteira do mod no aparelho — o
+            // FargowiltasSouls sozinho ja sao dezenas de MB.
+            string? folder = Path.GetDirectoryName(cacheFile);
+            string prefix = Path.GetFileNameWithoutExtension(path) + ".";
+            if (folder != null)
+                foreach (string old in Directory.GetFiles(folder, prefix + "*.dll"))
+                {
+                    if (string.Equals(old, cacheFile, StringComparison.Ordinal)) continue;
+                    try { File.Delete(old); } catch { }
+                }
+            Log.Info($"il patch: {Path.GetFileName(path)}: pre-compilado e guardado ({bytes.Length / 1024} KB)");
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"il patch: {Path.GetFileName(path)}: nao consegui guardar o cache ({e.GetType().Name}: {e.Message})");
+        }
+    }
+
     /// <summary>
     /// Carrega o assembly do mod, reescrevendo o IL antes de o Mono ver os
     /// bytes. Qualquer falha do Cecil é isolada: devolve o assembly SEM
@@ -227,8 +377,33 @@ internal static class IlPatcher
     {
         try
         {
+            // Um mod pode ter sido carregado ANTES, como dependência de outro:
+            // `ResolveFromMods` chama este mesmo método quando o assembly de um
+            // mod vizinho é pedido (o FargowiltasSouls pede o Luminance, que
+            // ainda não tinha chegado a sua vez). Carregar de novo criaria uma
+            // SEGUNDA cópia dos mesmos tipos na mesma ALC — dois `Mod` com o
+            // mesmo nome, `Type` que não é igual a si mesmo — e o registro do
+            // mod quebraria de um jeito silencioso. Se já está na ALC, é ele.
+            Assembly? already = AlreadyLoaded(path);
+            if (already != null)
+            {
+                Log.Info($"il patch: {Path.GetFileName(path)}: já carregado como dependência; reaproveitando");
+                return already;
+            }
+            string? cacheFile = null;
+            if (CacheEnabled)
+            {
+                cacheFile = CacheFileFor(path, CacheKey(path));
+                byte[]? hit = ReadCache(path, cacheFile);
+                if (hit != null)
+                {
+                    Log.Info($"il patch: {Path.GetFileName(path)}: pre-compilado; Cecil pulado ({hit.Length / 1024} KB)");
+                    return AssemblyLoadContext.Default.LoadFromStream(new MemoryStream(hit));
+                }
+            }
             byte[] bytes = File.ReadAllBytes(path);
             byte[] patched = Rewrite(path, bytes);
+            if (cacheFile != null) SaveCache(path, cacheFile, patched);
             return AssemblyLoadContext.Default.LoadFromStream(new MemoryStream(patched));
         }
         catch (Exception e)
@@ -236,6 +411,26 @@ internal static class IlPatcher
             Log.Warn($"il patch: {Path.GetFileName(path)}: recarrego sem reescrita ({e.GetType().Name}: {e.Message})");
             return AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
         }
+    }
+
+    /// <summary>Assembly com o mesmo nome simples já presente no contexto padrão.</summary>
+    static Assembly? AlreadyLoaded(string path)
+    {
+        AssemblyName want;
+        try { want = AssemblyName.GetAssemblyName(path); }
+        catch { return null; }
+        if (string.IsNullOrEmpty(want.Name)) return null;
+        Assembly[] present;
+        try { present = AssemblyLoadContext.Default.Assemblies.ToArray(); }
+        catch { return null; }
+        foreach (Assembly assembly in present)
+        {
+            string? name;
+            try { name = assembly.GetName().Name; }
+            catch { continue; }
+            if (string.Equals(name, want.Name, StringComparison.OrdinalIgnoreCase)) return assembly;
+        }
+        return null;
     }
 
     static byte[] Rewrite(string path, byte[] bytes)
@@ -482,9 +677,7 @@ internal static class IlPatcher
                             // REALMENTE empilha o array — o `Read<T>` —, não o
                             // getter. Marcar o getter fazia a busca pelo
                             // produtor errar e o `ldelem` ficar sobre a struct.
-                            var generic = new GenericInstanceMethod((MethodReference)module.ImportReference(ReadMethod));
-                            generic.GenericArguments.Add(module.ImportReference(element));
-                            Instruction read = il.Create(OpCodes.Call, generic);
+                            Instruction read = il.Create(OpCodes.Call, ReadInstanceOf(module, element));
                             il.InsertAfter(ins, read);
                             TrackArray(read, element, byRef: false, arrays);
                         }
@@ -529,8 +722,10 @@ internal static class IlPatcher
         {
             // O corpo ainda tem instrucao apontando para membro inexistente.
             // Isto e o que derrubava o processo no JIT do Mono, entao o
-            // metodo vai vazio em vez de invalido.
-            Stub(method);
+            // metodo vai vazio em vez de invalido. Uma linha so: o log do
+            // aparelho custa ~8 ms por linha (logcat + arquivo) e eram DUAS
+            // por metodo esvaziado no FargowiltasSouls (1 268 metodos).
+            Stub(method, announce: false);
             stubbed++;
             Log.Warn($"il patch: {method.DeclaringType.FullName}.{method.Name}: campo sem traducao; corpo trocado por retorno padrao");
             if (Trace != null)
@@ -555,7 +750,12 @@ internal static class IlPatcher
     /// <see cref="Quarantine"/>): o objetivo e tirar do JIT um IL que ele nao
     /// consegue compilar sem derrubar o processo. Nao preserva efeito nenhum.
     /// </summary>
-    static void Stub(MethodDefinition method)
+    /// <param name="announce">
+    /// <c>false</c> quando quem chama já vai logar o motivo: cada método
+    /// esvaziado custava duas linhas de log (logcat + arquivo, ~8 ms cada no
+    /// aparelho) e são mais de mil por mod grande.
+    /// </param>
+    static void Stub(MethodDefinition method, bool announce = true)
     {
         try
         {
@@ -569,7 +769,7 @@ internal static class IlPatcher
             // devolver com seguranca, entao esse caso fica como esta.
             if (method.ReturnType.IsByReference)
             {
-                Log.Warn($"il patch: {method.FullName}: quarentena ignorada (retorna byref)");
+                if (announce) Log.Warn($"il patch: {method.FullName}: quarentena ignorada (retorna byref)");
                 return;
             }
 
@@ -585,7 +785,7 @@ internal static class IlPatcher
             }
             il.Append(il.Create(OpCodes.Ret));
             body.MaxStackSize = 8;
-            Log.Warn($"il patch: {method.FullName}: em quarentena (corpo trocado por retorno padrao)");
+            if (announce) Log.Warn($"il patch: {method.FullName}: em quarentena (corpo trocado por retorno padrao)");
         }
         catch (Exception e)
         {
@@ -612,8 +812,11 @@ internal static class IlPatcher
     /// </summary>
     static void WidenBranches(Mono.Cecil.Cil.MethodBody body)
     {
-        string mode = Environment.GetEnvironmentVariable("BL_WIDEN") ?? "overflow";
-        if (mode == "off") return;
+        // Lido UMA vez: `WidenBranches` roda para cada método reescrito e
+        // `GetEnvironmentVariable` no Mono embutido varre o ambiente (no
+        // Android são centenas de entradas) — dezenas de milhares de leituras
+        // por mod carregado.
+        if (WidenMode == "off") return;
 
         for (int pass = 0; pass < 16; pass++)
         {
@@ -630,7 +833,7 @@ internal static class IlPatcher
             {
                 if (i.Operand is not Instruction target) continue;
                 if (!ShortToLong.TryGetValue(i.OpCode.Code, out OpCode wide)) continue;
-                if (mode != "all")
+                if (WidenMode != "all")
                 {
                     long delta = (long)at[target] - at[i] - 1;
                     if (delta >= sbyte.MinValue && delta <= sbyte.MaxValue) continue;
@@ -642,8 +845,10 @@ internal static class IlPatcher
         }
     }
 
-    static readonly Dictionary<Code, OpCode> ShortToLong = new()
-    {
+    /// <summary>`BL_WIDEN` lido uma vez (ver <see cref="WidenBranches"/>).</summary>
+    static readonly string WidenMode = Environment.GetEnvironmentVariable("BL_WIDEN") ?? "overflow";
+
+    static readonly Dictionary<Code, OpCode> ShortToLong = new()    {
         [Code.Br_S] = OpCodes.Br,
         [Code.Brfalse_S] = OpCodes.Brfalse,
         [Code.Brtrue_S] = OpCodes.Brtrue,
@@ -940,12 +1145,31 @@ internal static class IlPatcher
         if (producer == null) return;
         if (!arrays.TryGetValue(producer, out ArrayRef info) || !info.ByRef) return;
         if (done.ContainsKey(producer)) return;
-        var generic = new GenericInstanceMethod((MethodReference)module.ImportReference(ReadMethod));
-        generic.GenericArguments.Add(module.ImportReference(info.Clr));
-        Instruction read = il.Create(OpCodes.Call, generic);
+        Instruction read = il.Create(OpCodes.Call, ReadInstanceOf(module, info.Clr));
         il.InsertAfter(producer, read);
         done[producer] = read;
     }
+
+    /// <summary>
+    /// Referência a <c>IlInterop.Read&lt;T&gt;</c> fechada em <paramref name="element"/>,
+    /// reaproveitada dentro do MÓDULO que está sendo reescrito.
+    ///
+    /// <c>module.ImportReference</c> é caro (percorre o tipo declarante e cria
+    /// referência de metadado) e era chamado duas vezes por acesso a campo —
+    /// 77 616 acessos no FargowiltasSouls. A referência é presa ao módulo, por
+    /// isso o cache é limpo a cada arquivo.
+    /// </summary>
+    static MethodReference ReadInstanceOf(ModuleDefinition module, Type element)
+    {
+        readRefs ??= new Dictionary<Type, MethodReference>();
+        if (readRefs.TryGetValue(element, out MethodReference? cached) && cached.Module == module) return cached;
+        var generic = new GenericInstanceMethod((MethodReference)module.ImportReference(ReadMethod));
+        generic.GenericArguments.Add(module.ImportReference(element));
+        readRefs[element] = generic;
+        return generic;
+    }
+
+    static Dictionary<Type, MethodReference>? readRefs;
 
     static void Pop(List<Instruction?> stack)
     {
@@ -1223,10 +1447,28 @@ internal static class IlPatcher
     static string? OwnerOf(TypeReference declaring)
     {
         if (declaring is GenericInstanceType generic) declaring = generic.ElementType;
-        return declaring.FullName.Replace('/', '.');
+        // O nome completo do Cecil é montado a cada chamada e o laço de
+        // reescrita pergunta isto para CADA instrução: guardar por nome bruto
+        // evita o `Replace` e a decisão de "é tipo do jogo?" repetidos.
+        string raw = declaring.FullName;
+        if (ownerCache.TryGetValue(raw, out string? cached)) return cached;
+        string owner = raw.Replace('/', '.');
+        ownerCache[raw] = owner;
+        return owner;
     }
 
+    static readonly Dictionary<string, string> ownerCache = new(StringComparer.Ordinal);
+    static readonly Dictionary<string, bool> gameTypeCache = new(StringComparer.Ordinal);
+
     static bool IsGameType(string fullName)
+    {
+        if (gameTypeCache.TryGetValue(fullName, out bool cached)) return cached;
+        bool result = IsGameTypeSlow(fullName);
+        gameTypeCache[fullName] = result;
+        return result;
+    }
+
+    static bool IsGameTypeSlow(string fullName)
     {
         int dot = fullName.LastIndexOf('.');
         string ns = dot < 0 ? "" : fullName[..dot];
@@ -1249,81 +1491,6 @@ internal static class IlPatcher
         if (!ShimMap.TryGetValue(owner, out Type shim) && !StructMap.TryGetValue(owner, out shim))
             return true; // tipo do jogo deletado/ausente no shim
         return !FindMethodBySignature(shim, method);
-    }
-
-    /// <summary>
-    /// Como <see cref="FindMethod"/> mas com assinatura completa (nome + static/
-    /// instance + aridade + tipos dos parâmetros). O <see cref="IsMissingGameMethod"/>
-    /// precisa disto: um <c>call</c> a uma SOBRECARGA que não existe mais
-    /// (ex.: <c>Item.SetDefaults(int, bool, ItemVariant)</c>,
-    /// <c>Main.NewText(string, byte, byte, byte)</c>, <c>SpriteBatch.Draw</c> de
-    /// 9 parâmetros) passa no teste por NOME — o nome existe, mas aquela
-    /// assinatura foi removida na 1.4.5. No aparelho o Mono não consegue ligar
-    /// o <c>call</c> e derruba o processo no PrepareMethod (era o crash do v30).
-    /// Só comparar nome deixa esses furos passarem.
-    /// </summary>
-    static bool FindMethodBySignature(Type type, MethodReference method)
-    {
-        int arity = method.Parameters.Count;
-        bool wantStatic = !method.HasThis;
-        // `.ctor` NÃO aparece em GetMethods(): é ConstructorInfo. Comparar só
-        // GetMethods fazia TODOS os `new Vector2(...)`, `new Rectangle(...)`,
-        // `new UIState()` parecerem "apagados na 1.4.5" e esvaziava cada
-        // método que constrói alguma coisa. Construtores são sempre instance.
-        if (method.Name == ".ctor" && !wantStatic)
-        {
-            foreach (ConstructorInfo ctor in type.GetConstructors(
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-            {
-                ParameterInfo[] cps = ctor.GetParameters();
-                if (cps.Length != arity) continue;
-                bool ok = true;
-                for (int i = 0; i < arity; i++)
-                    if (!TypeNamesMatch(CecilTypeName(method.Parameters[i].ParameterType), ClrTypeName(cps[i].ParameterType)))
-                    { ok = false; break; }
-                if (ok) return true;
-            }
-            // Structs (Vector2, Rectangle) não declaram .ctor() algum: o CLR
-            // cria com `initobj`. O `newobj` do mod é legítimo do mesmo jeito.
-            if (type.IsValueType) return true;
-            return false;
-        }
-        for (Type? current = type; current != null; current = current.BaseType)
-        {
-            foreach (MethodInfo m in current.GetMethods(
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly))
-            {
-                if (m.Name != method.Name || m.IsStatic != wantStatic) continue;
-                // O tipo de retorno faz parte da assinatura na resolução de
-                // método do CLR, mas compará-lo como STRING EXATA era uma
-                // armadilha: o shim devolve proxies (`GameArray<T>` por `T[]`,
-                // `SoundStyle` por `LegacySoundStyle`...) e métodos genéricos
-                // aparecem fechados no Cecil (`GetModPlayer<FargoPlayer>`) e
-                // abertos na reflexão (`T`). Cada uma dessas diferenças era
-                // lida como "método apagado na 1.4.5" -> `unresolved` -> o
-                // método INTEIRO virava `ret`. Só comparamos quando os dois
-                // lados são tipos concretos e não genéricos; genérico casa com
-                // qualquer coisa (o JIT do Mono resolve a instância depois).
-                if (!TypeNamesMatch(CecilTypeName(method.ReturnType), ClrTypeName(m.ReturnType)))
-                    continue;
-                ParameterInfo[] ps = m.GetParameters();
-                if (ps.Length != arity) continue;
-                bool match = true;
-                for (int i = 0; i < arity; i++)
-                {
-                    if (!TypeNamesMatch(
-                        CecilTypeName(method.Parameters[i].ParameterType),
-                        ClrTypeName(ps[i].ParameterType)))
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-                if (match) return true;
-            }
-            if (current.BaseType == null || current.BaseType == typeof(object)) break;
-        }
-        return false;
     }
 
     /// <summary>
@@ -1395,18 +1562,166 @@ internal static class IlPatcher
         return (type.FullName ?? type.Name).Replace('+', '.');
     }
 
-    static PropertyInfo? FindProperty(Type type, string name)
+    /// <summary>
+    /// Índice de membros de um tipo do shim, montado UMA vez por tipo.
+    ///
+    /// Antes, cada acesso a campo do mod fazia <c>GetProperty</c>/<c>GetField</c>
+    /// e — pior — cada <c>call</c> fazia <c>GetMethods()</c> para descobrir se o
+    /// método existe. <c>GetMethods()</c> ALOCA um array com todos os métodos do
+    /// tipo e o código ainda percorria a cadeia de bases: num mod grande isso
+    /// acontece centenas de milhares de vezes. Era aí que o FargowiltasSouls
+    /// gastava 170 s de reescrita (77 616 acessos de campo, 1 268 corpos
+    /// esvaziados).
+    ///
+    /// Com o índice a busca passa a ser um <c>TryGetValue</c> por nome.
+    /// </summary>
+    sealed class MemberIndex
     {
-        // Propriedades herdadas contam (um mod pode referir Item::width
-        // mesmo que o campo seja declarado em Entity no PC).
-        for (Type? current = type; current != null; current = current.BaseType)
+        internal readonly Dictionary<string, PropertyInfo> Props = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, FieldInfo> Fields = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, MethodInfo> FirstByName = new(StringComparer.Ordinal);
+        internal readonly Dictionary<string, List<Overload>> ByName = new(StringComparer.Ordinal);
+        /// <summary>Só do próprio tipo (não das bases), como <c>GetConstructors</c>.</summary>
+        internal readonly List<string[]> Ctors = new();
+    }
+
+    /// <summary>Uma sobrecarga com os nomes canónicos já calculados.</summary>
+    readonly struct Overload
+    {
+        internal readonly MethodInfo Method;
+        internal readonly string Return;
+        internal readonly string[] Params;
+        internal readonly bool Static;
+
+        internal Overload(MethodInfo method)
         {
-            PropertyInfo? found = current.GetProperty(name,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
-            if (found != null) return found;
-            if (current.BaseType == null || current.BaseType == typeof(object)) break;
+            Method = method;
+            Static = method.IsStatic;
+            Return = ClrTypeName(method.ReturnType);
+            ParameterInfo[] parameters = method.GetParameters();
+            Params = new string[parameters.Length];
+            for (int i = 0; i < parameters.Length; i++) Params[i] = ClrTypeName(parameters[i].ParameterType);
         }
-        return null;
+    }
+
+    static readonly Dictionary<Type, MemberIndex> memberIndex = new();
+    static readonly object memberIndexGate = new();
+
+    const BindingFlags AllMembers =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance |
+        BindingFlags.Static | BindingFlags.DeclaredOnly;
+
+    static MemberIndex IndexOf(Type type)
+    {
+        lock (memberIndexGate)
+        {
+            if (memberIndex.TryGetValue(type, out MemberIndex? cached)) return cached;
+            var index = new MemberIndex();
+            try
+            {
+                for (Type? current = type; current != null; current = current.BaseType)
+                {
+                    // A ordem importa: derivado primeiro, como o laço de bases
+                    // original. Por isso só a primeira ocorrência de cada nome
+                    // entra nos dicionários de nome único.
+                    foreach (PropertyInfo p in current.GetProperties(AllMembers))
+                        if (!index.Props.ContainsKey(p.Name)) index.Props[p.Name] = p;
+                    foreach (FieldInfo f in current.GetFields(AllMembers))
+                        if (!index.Fields.ContainsKey(f.Name)) index.Fields[f.Name] = f;
+                    foreach (MethodInfo m in current.GetMethods(AllMembers))
+                    {
+                        if (!index.FirstByName.ContainsKey(m.Name)) index.FirstByName[m.Name] = m;
+                        if (!index.ByName.TryGetValue(m.Name, out List<Overload>? list))
+                            index.ByName[m.Name] = list = new List<Overload>(2);
+                        list.Add(new Overload(m));
+                    }
+                    if (current.BaseType == null || current.BaseType == typeof(object)) break;
+                }
+                foreach (ConstructorInfo ctor in type.GetConstructors(
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                {
+                    ParameterInfo[] parameters = ctor.GetParameters();
+                    var names = new string[parameters.Length];
+                    for (int i = 0; i < parameters.Length; i++) names[i] = ClrTypeName(parameters[i].ParameterType);
+                    index.Ctors.Add(names);
+                }
+            }
+            catch (Exception e)
+            {
+                // Um tipo problemático não pode impedir a reescrita dos outros.
+                Log.Warn($"il patch: indice de {type.FullName} incompleto ({e.GetType().Name}: {e.Message})");
+            }
+            memberIndex[type] = index;
+            return index;
+        }
+    }
+
+    static PropertyInfo? FindProperty(Type type, string name) =>
+        IndexOf(type).Props.TryGetValue(name, out PropertyInfo? found) ? found : null;
+
+    /// <summary>
+    /// Como <see cref="FindMethod"/> mas com assinatura completa (nome + static/
+    /// instance + aridade + tipos dos parâmetros). O <see cref="IsMissingGameMethod"/>
+    /// precisa disto: um <c>call</c> a uma SOBRECARGA que não existe mais
+    /// (ex.: <c>Item.SetDefaults(int, bool, ItemVariant)</c>,
+    /// <c>Main.NewText(string, byte, byte, byte)</c>, <c>SpriteBatch.Draw</c> de
+    /// 9 parâmetros) passa no teste por NOME — o nome existe, mas aquela
+    /// assinatura foi removida na 1.4.5. No aparelho o Mono não consegue ligar
+    /// o <c>call</c> e derruba o processo no PrepareMethod (era o crash do v30).
+    /// Só comparar nome deixa esses furos passarem.
+    /// </summary>
+    static bool FindMethodBySignature(Type type, MethodReference method)
+    {
+        MemberIndex index = IndexOf(type);
+        int arity = method.Parameters.Count;
+        bool wantStatic = !method.HasThis;
+        // `.ctor` NÃO aparece em GetMethods(): é ConstructorInfo. Comparar só
+        // GetMethods fazia TODOS os `new Vector2(...)`, `new Rectangle(...)`,
+        // `new UIState()` parecerem "apagados na 1.4.5" e esvaziava cada
+        // método que constrói alguma coisa. Construtores são sempre instance.
+        if (method.Name == ".ctor" && !wantStatic)
+        {
+            foreach (string[] names in index.Ctors)
+            {
+                if (names.Length != arity) continue;
+                bool ok = true;
+                for (int i = 0; i < arity; i++)
+                    if (!TypeNamesMatch(CecilTypeName(method.Parameters[i].ParameterType), names[i]))
+                    { ok = false; break; }
+                if (ok) return true;
+            }
+            // Structs (Vector2, Rectangle) não declaram .ctor() algum: o CLR
+            // cria com `initobj`. O `newobj` do mod é legítimo do mesmo jeito.
+            return type.IsValueType;
+        }
+        if (!index.ByName.TryGetValue(method.Name, out List<Overload>? overloads)) return false;
+        // O tipo de retorno faz parte da assinatura na resolução de método do
+        // CLR, mas compará-lo como STRING EXATA era uma armadilha: o shim
+        // devolve proxies (`GameArray<T>` por `T[]`, `SoundStyle` por
+        // `LegacySoundStyle`...) e métodos genéricos aparecem fechados no Cecil
+        // (`GetModPlayer<FargoPlayer>`) e abertos na reflexão (`T`). Cada uma
+        // dessas diferenças era lida como "método apagado na 1.4.5" ->
+        // `unresolved` -> o método INTEIRO virava `ret`. O nome canónico já
+        // vem pronto do índice e `TypeNamesMatch` tolera o resto.
+        string want = "";
+        bool wantDone = false;
+        foreach (Overload slot in overloads)
+        {
+            if (slot.Static != wantStatic || slot.Params.Length != arity) continue;
+            if (!wantDone) { want = CecilTypeName(method.ReturnType); wantDone = true; }
+            if (!TypeNamesMatch(want, slot.Return)) continue;
+            bool match = true;
+            for (int i = 0; i < arity; i++)
+            {
+                if (!TypeNamesMatch(CecilTypeName(method.Parameters[i].ParameterType), slot.Params[i]))
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -1454,28 +1769,11 @@ internal static class IlPatcher
         // reescrita de campo) — era a regressão 162 -> 197. Aqui a busca é
         // só por NOME (o objetivo é saber se o membro existe), então a
         // primeira ocorrência resolve sem ambiguidade.
-        for (Type? current = type; current != null; current = current.BaseType)
-        {
-            MethodInfo? found = current
-                .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
-                .FirstOrDefault(m => m.Name == name);
-            if (found != null) return found;
-            if (current.BaseType == null || current.BaseType == typeof(object)) break;
-        }
-        return null;
+        return IndexOf(type).FirstByName.TryGetValue(name, out MethodInfo? found) ? found : null;
     }
 
     static bool HasRealField(Type type, string name) => FindField(type, name) != null;
 
-    static FieldInfo? FindField(Type type, string name)
-    {
-        for (Type? current = type; current != null; current = current.BaseType)
-        {
-            FieldInfo? found = current.GetField(name,
-                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
-            if (found != null) return found;
-            if (current.BaseType == null || current.BaseType == typeof(object)) break;
-        }
-        return null;
-    }
+    static FieldInfo? FindField(Type type, string name) =>
+        IndexOf(type).Fields.TryGetValue(name, out FieldInfo? found) ? found : null;
 }

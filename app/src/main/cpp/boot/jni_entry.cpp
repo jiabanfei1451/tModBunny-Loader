@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <cstdlib>
 #include <string>
 #include "core/AppJni.h"
 #include "core/Config.h"
@@ -40,6 +41,11 @@ Java_dev_bunnyloader_nativebridge_NativeBridge_init(JNIEnv* env, jobject, jobjec
     c.cmdPath    = readString(env, cfg, cls, "cmdPath");
     c.showErrors = env->GetBooleanField(cfg, env->GetFieldID(cls, "showErrors", "Z"));
     c.verboseLog = env->GetBooleanField(cfg, env->GetFieldID(cls, "verboseLog", "Z"));
+    // O cache de pre-compilacao mora no C# (IlPatcher), que nao tem acesso ao
+    // Config: a ponte e' o ambiente do processo, lido antes do monovm_initialize.
+    // Ja e' o canal usado por BL_IL_OUT/BL_WIDEN no mesmo arquivo.
+    c.compileCache = env->GetBooleanField(cfg, env->GetFieldID(cls, "compileCache", "Z"));
+    setenv("BL_COMPILE_CACHE", c.compileCache ? "1" : "0", 1);
     c.gameVersion = env->GetLongField(cfg, env->GetFieldID(cls, "gameVersion", "J"));
     c.fastBoot   = env->GetBooleanField(cfg, env->GetFieldID(cls, "fastBoot", "Z"));
     c.dotnetDir  = readString(env, cfg, cls, "dotnetDir");

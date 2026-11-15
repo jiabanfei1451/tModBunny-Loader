@@ -11,6 +11,17 @@ struct OrderEntry {
     std::string id;                          // o "id" do manifesto
     std::vector<std::string> dependencies;   // "id" ou "uid" de outro mod
     bool usable = true;                      // false: ja caiu antes (sem arquivo de entrada)
+    /**
+     * Referência FRACA (`weakReferences`): só influencia a ordem. O mod que a
+     * declara carrega igual se ela faltar ou falhar — é o que o tModLoader faz.
+     *
+     * Sem isto um mod que HERDA tipos de outro (FargowiltasSouls <- Luminance)
+     * cai na ordem alfabética antes do referenciado e o carregamento do tipo
+     * estoura `TypeLoadException: Could not load file or assembly 'Luminance'`.
+     * Fica por último para não quebrar a inicialização agregada de quem já
+     * monta a entrada com os quatro campos de antes.
+     */
+    std::vector<std::string> softDependencies;
 };
 
 struct OrderResult {

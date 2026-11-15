@@ -298,6 +298,7 @@ class GameActivity : Activity() {
                     } else "",
                     showErrors = prefs.errorPanel,
                     verboseLog = prefs.verboseLog,
+                    compileCache = prefs.compileCache,
                     gameVersion = BundledRuntime.VERSION_CODE,
                     // Início rápido: vale também para o Reiniciar do Mod
                     // Menu, que abre esta Activity de novo. Mundo vazio =

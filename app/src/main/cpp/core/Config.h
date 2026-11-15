@@ -38,6 +38,13 @@ struct Config {
     bool showErrors = true;
     // "Log detalhado" (Configuracoes): as linhas BL_DEBUG tambem no arquivo.
     bool verboseLog = false;
+    // "Pre-compilar mods" (Configuracoes): o IL ja reescrito de cada mod fica
+    // em disco (`.ilcache/` na pasta do mod) e a proxima abertura carrega os
+    // bytes direto, sem passar o Cecil de novo. Nao e AOT de verdade — o
+    // runtime aqui e o Mono embutido, que so aceita IL — mas o efeito na
+    // abertura e o mesmo que AOT daria na parte cara (170 s -> ~1 s no
+    // FargowiltasSouls). Falso = sempre reescreve, como antes.
+    bool compileCache = true;
     int64_t gameVersion = 0;
     // Onde o launcher extraiu o runtime .NET (System.Private.CoreLib.dll,
     // BunnyLoader.dll...). Vazio = mods C# desligados. Ver script/dotnet/.

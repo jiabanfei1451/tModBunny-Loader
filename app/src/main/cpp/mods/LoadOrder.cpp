@@ -74,6 +74,15 @@ struct Sorter {
             }
         }
 
+        // Referências fracas: ordenam, não obrigam. Ausente, ambígua ou em
+        // ciclo, simplesmente não restringe — nunca vira erro.
+        for (const std::string& ref : mods[t].softDependencies) {
+            const size_t d = resolve(ref);
+            if (d == kMissing || d == kAmbiguous || d == t) continue;
+            if (marks[d] == Mark::Visiting) continue;
+            visit(d);
+        }
+
         stack.pop_back();
         marks[t] = Mark::Done;
         result.order.push_back(t);

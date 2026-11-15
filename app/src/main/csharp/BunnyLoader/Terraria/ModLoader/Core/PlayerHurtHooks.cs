@@ -41,26 +41,52 @@ internal static class PlayerHurtHooks
         Player.HurtInfo pending;
         int slot = cooldownCounter, defense;
         float perPoint;
+        // v72: a imunidade roda FORA do bloco principal. Antes, qualquer falha
+        // nas etapas seguintes caia no catch e chamava o Hurt original direto,
+        // descartando ImmuneTo/CanBeHitByNPC/CanBeHitByProjectile — era isso que
+        // fazia o jogador levar dano que devia estar bloqueado ("friendly fire").
+        bool immune = false;
         try
         {
+            immune = !PlayerLoader.All(self, nameof(ModPlayer.ImmuneTo), (damageSource, cooldownCounter, dodgeable),
+                static (m, s) => !m.ImmuneTo(s.damageSource, s.cooldownCounter, s.dodgeable));
+        }
+        catch (Exception e) { ItemHooks.Report("Player.Hurt/ImmuneTo", e); }
+        if (immune) return 0;
+        // v72: `stage` existe so' para o log dizer em que passo o NRE estourou —
+        // o ToString do Mono aqui sai com uma unica moldura, nao da' para ler.
+        string stage = "inicio";
+        try
+        {
+            stage = "catching";
             PlayerWorldHooks.HurtWhileCatching(self, damageSource);
-            if (!PlayerLoader.All(self, nameof(ModPlayer.ImmuneTo), (damageSource, cooldownCounter, dodgeable),
-                    static (m, s) => !m.ImmuneTo(s.damageSource, s.cooldownCounter, s.dodgeable)))
-                return 0;
+            stage = "fonte";
             if (!damageSource.IsNull)
             {
                 int npcIndex = damageSource._sourceNPCIndex, projectileIndex = damageSource._sourceProjectileLocalIndex;
                 if ((uint)npcIndex < 200u) npc = Main.npc[npcIndex];
                 if ((uint)projectileIndex < 1000u) projectile = Main.projectile[projectileIndex];
             }
+            stage = "npc";
             if (!npc.IsNull)
             {
+                // v77: NPC de cidade ou friendly nao machuca o jogador. O vanilla
+                // tambem nao machuca — entao dano vindo de um deles significa que
+                // algum gancho o deixou hostil (friendly=false com o alvo travado
+                // no jogador). Cortar aqui evita o estrago e a linha do log diz
+                // qual NPC foi, para achar quem o virou.
+                if (npc.townNPC || npc.friendly)
+                {
+                    BlockedNpcHurt(npc, self, Damage);
+                    return 0;
+                }
                 if (!NPCLoader.CanHitPlayer(npc, self, ref slot)) return 0;
                 (bool Allowed, int Slot) gate = (true, slot);
                 PlayerLoader.Each(self, nameof(ModPlayer.CanBeHitByNPC), npc, ref gate, static (m, n, ref g) => g.Allowed &= m.CanBeHitByNPC(n, ref g.Slot));
                 if (!gate.Allowed) return 0;
                 slot = gate.Slot;
             }
+            stage = "projetil";
             if (!projectile.IsNull && !pvp && (!ProjectileLoader.CanHitPlayer(projectile, self) ||
                 !PlayerLoader.All(self, nameof(ModPlayer.CanBeHitByProjectile), projectile, static (m, p) => m.CanBeHitByProjectile(p))))
                 return 0;
@@ -72,6 +98,7 @@ internal static class PlayerHurtHooks
                         static (m, s) => m.CanHitPvpWithProj(s.projectile, s.self)))
                     return 0;
             }
+            stage = "modificadores";
             modifiers = new Player.HurtModifiers
             {
                 DamageSource = damageSource, PvP = pvp, CooldownCounter = slot, Dodgeable = dodgeable, HitDirection = hitDirection,
@@ -91,9 +118,12 @@ internal static class PlayerHurtHooks
             }
             PlayerLoader.Each(self, nameof(ModPlayer.ModifyHurt), 0, ref modifiers, static (m, _, ref h) => m.ModifyHurt(ref h));
             if (modifiers.Cancelled) return 0;
+            stage = "defesa";
             defense = self.statDefense;
             perPoint = defense > 0 ? (float)((100000 - Main.CalculateDamagePlayersTake(100000, defense)) / defense) : 0f;
+            stage = "hurtinfo";
             pending = modifiers.ToHurtInfo(Damage, defense, perPoint, 0f, self.noKnockback);
+            stage = "dodge";
             if (pending.Dodgeable && self.whoAmI == Main.myPlayer)
             {
                 if (Any(self, nameof(ModPlayer.FreeDodge), pending, static (m, i) => m.FreeDodge(i))) return 0;
@@ -102,7 +132,9 @@ internal static class PlayerHurtHooks
         }
         catch (Exception e)
         {
-            ItemHooks.Report("Player.Hurt (before)", e);
+            // v72: o stage vai no rotulo — o Report deduplica por "quem|tipo",
+            // entao sem ele so' a primeira falha de cada tipo aparecia no log.
+            ItemHooks.Report($"Player.Hurt (before)@{stage} pid={self.whoAmI} npc={(npc.IsNull ? -1 : npc.type)} proj={(projectile.IsNull ? -1 : projectile.type)} dano={Damage}", e);
             return orig(self, damageSource, Damage, hitDirection, pvp, quiet, Crit, cooldownCounter, dodgeable);
         }
         int raw = Raw(modifiers, Damage, defense, perPoint, pending.Damage);
@@ -140,4 +172,13 @@ internal static class PlayerHurtHooks
 
     static bool Any(Player player, string method, Player.HurtInfo info, Func<ModPlayer, Player.HurtInfo, bool> call) =>
         !PlayerLoader.All(player, method, info, (m, i) => !call(m, i));
+
+    /** Um aviso por tipo de NPC: o mesmo bicho batendo toda hora nao vira spam. */
+    static readonly System.Collections.Generic.HashSet<int> blocked = new();
+
+    static void BlockedNpcHurt(NPC npc, Player self, int damage)
+    {
+        if (!blocked.Add(npc.type)) return;
+        BunnyLoader.Log.Info($"[hit] dano de NPC de cidade ignorado pid={self.whoAmI} npc={npc.type}#{npc.whoAmI} town={npc.townNPC} friendly={npc.friendly} alvo={npc.target} dano={damage}");
+    }
 }

@@ -32,6 +32,20 @@ class Prefs(context: Context) {
         set(v) = p.edit().putBoolean(VERBOSE_LOG, v).apply()
 
     /**
+     * Pré-compilar mods: o IL já reescrito de cada mod fica em disco
+     * (`.ilcache/` na pasta do mod) e a abertura seguinte carrega os bytes
+     * prontos, sem repetir a reescrita com Cecil — que é o que custa 170 s no
+     * FargowiltasSouls. Desligado, cada abertura reescreve do zero.
+     *
+     * Não é AOT: o runtime dos mods aqui é o Mono embutido, que só aceita IL, e
+     * o pacote `Microsoft.NETCore.App.Runtime.Mono.android-arm64` não traz
+     * `mono-aot-cross`. O ganho na abertura, porém, é o mesmo que AOT daria.
+     */
+    var compileCache: Boolean
+        get() = p.getBoolean(COMPILE_CACHE, true)
+        set(v) = p.edit().putBoolean(COMPILE_CACHE, v).apply()
+
+    /**
      * Canal de comando por arquivo (adb push). Desligado, o `cmdPath` vai
      * vazio no NativeConfig e o núcleo nem tenta abrir o arquivo a cada quadro.
      */
@@ -141,6 +155,7 @@ class Prefs(context: Context) {
         const val ERROR_PANEL = "errorPanel"
         const val DEV_CHANNEL = "devChannel"
         const val VERBOSE_LOG = "verboseLog"
+        const val COMPILE_CACHE = "compileCache"
         const val QUICK_START = "quickStart"
         const val QUICK_PLAYER = "quickPlayer"
         const val QUICK_WORLD = "quickWorld"

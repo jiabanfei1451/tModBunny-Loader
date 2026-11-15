@@ -29,6 +29,11 @@ struct LoadedMod {
     // de fato na lista — um pedido por um mod ausente nao pode derrubar este.
     std::vector<std::string> references;
     std::vector<std::string> weakReferences;
+    // Os `weakReferences` que ESTÃO na lista, já filtrados. Serve só para
+    // ORDEM: o FargowiltasSouls herda tipos do Luminance e os dois são
+    // carregados em ordem alfabética, então o Luminance precisa vir antes.
+    // Fraco = se o outro não carregar, este segue igual.
+    std::vector<std::string> softReferences;
 };
 
 /**

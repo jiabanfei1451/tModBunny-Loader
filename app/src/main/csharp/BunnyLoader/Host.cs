@@ -92,6 +92,12 @@ internal static unsafe class Host
             string file = path;
             string folder = Path.GetDirectoryName(file)!;
             AddModFolder(folder);
+            // Um mod pode referenciar o ASSEMBLY de outro que ainda não chegou
+            // à sua vez (o FargowiltasSouls herda tipos do Luminance, que é só
+            // `weakReference` e por isso não entra na ordenação do manifesto).
+            // Antes de qualquer carga, todos os vizinhos da pasta de mods ficam
+            // registrados: a resolução acha o DLL quando o tipo precisar dele.
+            AddModRoot(Path.GetDirectoryName(folder));
             string[] dependencies = ManifestField(uid, 3).Split('\n', StringSplitOptions.RemoveEmptyEntries);
             // Nome para a faixa de progresso: o UID é feio e indistinguível.
             string label = ManifestField(uid, 1);
@@ -128,11 +134,27 @@ internal static unsafe class Host
                 lock (Created) Created.Add(mod);
             }
 
+            int skippedTypes = 0;
             foreach (Type type in pipeline.DiscoverTypes(assembly, uid))
             {
-                if (type.IsAbstract || !typeof(Mod).IsAssignableFrom(type)) continue;
-                Register((Mod)Activator.CreateInstance(type)!);
+                // `IsAssignableFrom` RESOLVE a cadeia de bases, então um tipo
+                // que herda de um assembly ausente estoura TypeLoadException
+                // aqui — e antes isso derrubava o mod INTEIRO (o catch lá fora
+                // devolvia 0 e o FargowiltasSouls sumia do jogo por causa de um
+                // único tipo). Um tipo que não dá para inspecionar não é um
+                // `Mod` que dê para instanciar: pula e segue.
+                try
+                {
+                    if (type.IsAbstract || !typeof(Mod).IsAssignableFrom(type)) continue;
+                    Register((Mod)Activator.CreateInstance(type)!);
+                }
+                catch (Exception e)
+                {
+                    skippedTypes++;
+                    Log.Warn($"mod {uid}: tipo {type.FullName} ignorado ({e.GetType().Name}: {e.Message})");
+                }
             }
+            if (skippedTypes > 0) Log.Warn($"mod {uid}: {skippedTypes} tipo(s) ignorado(s) por falha de carga");
             if (mods.Count == 0)
             {
                 // tML 1.4.5, Core/AssemblyManager.cs: um mod sem classe `Mod`
@@ -270,22 +292,100 @@ internal static unsafe class Host
     {
         lock (ModFolders)
         {
-            if (ModFolders.Count == 0) AssemblyLoadContext.Default.Resolving += ResolveFromMods;
+            if (ModFolders.Count == 0)
+            {
+                // Os DOIS canais: o Mono embutido às vezes resolve um TypeRef de
+                // dentro de `RuntimeModule.GetTypes()` sem passar pelo
+                // `AssemblyLoadContext` — é o mesmo motivo pelo qual o
+                // ShimAssembly instala evento de AppDomain E hook nativo.
+                AssemblyLoadContext.Default.Resolving += ResolveFromMods;
+                AppDomain.CurrentDomain.AssemblyResolve += ResolveFromAppDomain;
+            }
             if (!ModFolders.Contains(folder)) ModFolders.Add(folder);
         }
     }
 
-    static Assembly? ResolveFromMods(AssemblyLoadContext context, AssemblyName name)
+    static Assembly? ResolveFromAppDomain(object? sender, ResolveEventArgs args)
     {
-        string[] folders;
-        lock (ModFolders) folders = ModFolders.ToArray();
-        foreach (string folder in folders)
+        try
         {
-            string candidate = Path.Combine(folder, name.Name + ".dll");
-            if (File.Exists(candidate)) return IlPatcher.Load(candidate);
+            return FindModAssembly(new AssemblyName(args.Name).Name);
         }
-        return null;
+        catch
+        {
+            return null;
+        }
     }
+
+    /// <summary>Nomes em resolução AGORA nesta thread: evita reentrar em si mesmo.</summary>
+    [ThreadStatic] static HashSet<string>? resolving;
+
+    /// <summary>
+    /// Procura <c>&lt;pasta&gt;/&lt;Nome&gt;.dll</c> em toda pasta de mod conhecida.
+    /// Devolve o assembly já reescrito (mesma rota do <see cref="IlPatcher"/>).
+    /// </summary>
+    static Assembly? FindModAssembly(string? simpleName)
+    {
+        if (string.IsNullOrEmpty(simpleName)) return null;
+        // `IlPatcher.Load` dispara resolução das dependências do próprio arquivo;
+        // sem esta trava o mesmo nome voltaria aqui e entraria em laço.
+        resolving ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!resolving.Add(simpleName)) return null;
+        try
+        {
+            string[] folders;
+            lock (ModFolders) folders = ModFolders.ToArray();
+            foreach (string folder in folders)
+            {
+                string candidate = Path.Combine(folder, simpleName + ".dll");
+                if (!File.Exists(candidate)) continue;
+                try
+                {
+                    Log.Info($"assembly resolve: {simpleName} -> {candidate}");
+                    return IlPatcher.Load(candidate);
+                }
+                catch (Exception e)
+                {
+                    Log.Warn($"assembly resolve: {simpleName} em {candidate} falhou ({e.GetType().Name}: {e.Message})");
+                    return null;
+                }
+            }
+            return null;
+        }
+        finally
+        {
+            resolving.Remove(simpleName);
+        }
+    }
+
+    /// <summary>
+    /// Registra todas as pastas de mod vizinhas de uma vez.
+    ///
+    /// O resolvedor só procura em pastas já vistas, e as pastas entram uma a
+    /// uma conforme cada mod começa a carregar. A ordem do manifesto é
+    /// alfabética (mais as dependências declaradas), então um mod que usa
+    /// <c>weakReference</c> carrega ANTES do referenciado: foi assim que o
+    /// FargowiltasSouls falhou com
+    /// <c>TypeLoadException: Could not load file or assembly 'Luminance'</c> e
+    /// ficou de fora do jogo, sem nenhuma mensagem na tela.
+    /// </summary>
+    static void AddModRoot(string? root)
+    {
+        if (string.IsNullOrEmpty(root)) return;
+        try
+        {
+            if (!Directory.Exists(root)) return;
+            foreach (string dir in Directory.GetDirectories(root)) AddModFolder(dir);
+            AddModFolder(root);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"resolver: não consegui listar {root} ({e.GetType().Name}: {e.Message})");
+        }
+    }
+
+    static Assembly? ResolveFromMods(AssemblyLoadContext context, AssemblyName name) =>
+        FindModAssembly(name.Name);
 
     internal static byte* Utf8(string text) => (byte*)Marshal.StringToCoTaskMemUTF8(text);
 

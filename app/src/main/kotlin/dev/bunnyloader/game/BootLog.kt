@@ -9,6 +9,19 @@ import dev.bunnyloader.TAG
 import java.io.File
 
 /**
+ * De onde a linha veio. A tela "Log" (Configurações) filtra por isto: o arquivo
+ * de sessão mistura o núcleo (C++), o shim .NET e os mods (C#) no mesmo texto,
+ * e o logcat do processo traz o lado Java.
+ *
+ * A separação é por prefixo de texto, não por marcação binária. Trocar o
+ * formato do arquivo (carimbar a origem em cada linha) resolveria de vez, mas
+ * quebraria quem lê o `logs/bunny_*.txt` no PC, que é justamente o público
+ * desse arquivo. Os prefixos atuais são estáveis: `dotnet:` para o runtime
+ * .NET, `[mod]` para o shim e os mods, e linha sem prefixo = núcleo.
+ */
+enum class LogChannel { All, CSharp, Cpp, Js, Java }
+
+/**
  * Trilha do boot hospedado, gravada em arquivo.
  *
  * A GameActivity roda no processo `:game`, e quando ela falha só sobra um Toast
@@ -20,6 +33,14 @@ object BootLog {
     private const val FILE = "hosted-boot.log"
     /** Quantas linhas dos mods o relatório mostra (as últimas). */
     private const val MOD_LINES = 200
+    /**
+     * Teto da tela "ver log do C#". 8000 linhas cobrem o log de uma sessão
+     * normal inteiro (o de 800 KB tem ~10 mil linhas) e 1 MB de texto UTF-16
+     * são 2 MB de heap, folgado para o launcher. Só uma sessão muito longa
+     * bate no teto — foi por isso que o recorte existe.
+     */
+    private const val SESSION_TAIL_LINES = 8000
+    private const val SESSION_TAIL_BYTES = 1024 * 1024
 
     private fun file(ctx: Context) = File(ctx.filesDir, FILE)
 
@@ -171,6 +192,80 @@ object BootLog {
         val base = ctx.getExternalFilesDir(null)?.parentFile ?: return null
         return File(base, "logs").listFiles { f -> f.name.startsWith("bunny_") && f.name.endsWith(".txt") }
             .orEmpty().maxByOrNull { it.name }
+    }
+
+    /**
+     * A cauda do log da última sessão: o que a tela "ver log do C#" mostra e
+     * copia. A ordem das linhas é a do arquivo, do mais velho para o mais novo.
+     *
+     * NÃO dá para ler o arquivo inteiro. Uma sessão longa deixou 88 MB aqui
+     * (o log detalhado das mods despeja tudo), e um String UTF-16 desse tamanho
+     * estoura a heap do launcher — a tela feita para ver o log viraria mais um
+     * crash para investigar. Lemos só o fim, que é onde ficam o erro e o bloco
+     * do crash, com teto de bytes e de linhas para a lista não pesar.
+     */
+    fun sessionTail(
+        ctx: Context,
+        maxLines: Int = SESSION_TAIL_LINES,
+        maxBytes: Int = SESSION_TAIL_BYTES,
+    ): SessionTail = runCatching {
+        val file = lastSessionLog(ctx) ?: return@runCatching SessionTail("", 0L, emptyList(), false)
+        val size = file.length()
+        if (size <= 0L) return@runCatching SessionTail(file.name, 0L, emptyList(), false)
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            val from = (size - maxBytes).coerceAtLeast(0L)
+            raf.seek(from)
+            val bytes = ByteArray((size - from).toInt())
+            raf.readFully(bytes)
+            var text = String(bytes, Charsets.UTF_8)
+            // O corte em bytes pega a primeira linha pela metade (e pode partir
+            // um caractere UTF-8 no meio): ela não serve, então some com ela.
+            if (from > 0L) text = text.substringAfter('\n', text)
+            var lines = text.split('\n')
+            val cut = lines.size > maxLines
+            if (cut) lines = lines.takeLast(maxLines)
+            SessionTail(file.name, size, lines, from > 0L || cut)
+        }
+    }.getOrElse { SessionTail("", 0L, listOf("(erro lendo: ${it.javaClass.simpleName})"), false) }
+
+    /**
+     * O recorte de UM canal, pronto para a tela "Log".
+     *
+     * `All` é o antigo botão "ver relatório" (o relatório de diagnóstico) MAIS o
+     * log de sessão inteiro: eram duas telas separadas e o usuário tinha de
+     * adivinhar qual abrir. `Java` vem do logcat do próprio processo — é o único
+     * lugar onde as linhas do lado Android existem, já que o núcleo só grava em
+     * arquivo as linhas dele mesmo e as do runtime .NET.
+     */
+    fun channel(ctx: Context, channel: LogChannel): SessionTail = runCatching {
+        if (channel == LogChannel.Java) {
+            val file = logcatFile(ctx)
+            return@runCatching SessionTail(
+                file.name, file.length(),
+                runCatching { file.readLines() }.getOrDefault(emptyList()), false,
+            )
+        }
+        val tail = sessionTail(ctx)
+        if (channel == LogChannel.All) {
+            return@runCatching SessionTail(
+                tail.file, tail.totalBytes,
+                read(ctx).split('\n') +
+                    listOf("", "===== log da sessao (todas as origens) =====", "") +
+                    tail.lines,
+                tail.truncated,
+            )
+        }
+        SessionTail(
+            tail.file, tail.totalBytes,
+            tail.lines.filter { channelOf(it) == channel }, tail.truncated,
+        )
+    }.getOrElse { SessionTail("", 0L, listOf("(erro lendo: ${it.javaClass.simpleName})"), false) }
+
+    /** A qual canal a linha pertence. Ver o comentário de [LogChannel]. */
+    private fun channelOf(line: String): LogChannel = when {
+        line.contains("[js]") || line.contains(" js: ") -> LogChannel.Js
+        line.contains(" dotnet:") || line.contains("[mod]") -> LogChannel.CSharp
+        else -> LogChannel.Cpp
     }
 
     /**
@@ -357,3 +452,16 @@ object BootLog {
         else -> "codigo $r"
     }
 }
+
+/**
+ * A cauda do log de sessão pronta para a tela: o nome do arquivo, o tamanho
+ * real (para poder avisar que só o fim está ali) e as linhas já separadas —
+ * separar uma vez só evita refazer o `split` a cada recomposição.
+ */
+class SessionTail(
+    val file: String,
+    val totalBytes: Long,
+    val lines: List<String>,
+    /** `true` quando o arquivo é maior que o teto e só o fim está presente. */
+    val truncated: Boolean,
+)

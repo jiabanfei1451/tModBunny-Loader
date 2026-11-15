@@ -284,7 +284,15 @@ void loadAll(const std::string& modsDir, const std::string& tmlDir,
             }
         }
         for (const std::string& ref : mod.weakReferences) {
-            BL_DEBUG("TML %s: referencia fraca %s", mod.id.c_str(), ref.c_str());
+            const bool present = std::any_of(listed.begin(), listed.end(),
+                [&ref](const LoadedMod& other) { return other.id == ref || other.internalName == ref; });
+            if (present) {
+                // Ordena antes do mod que a declara; não obriga nada.
+                mod.softReferences.push_back(ref);
+                BL_DEBUG("TML %s: referencia fraca %s (ordena antes)", mod.id.c_str(), ref.c_str());
+            } else {
+                BL_DEBUG("TML %s: referencia fraca %s", mod.id.c_str(), ref.c_str());
+            }
         }
     }
 
@@ -292,7 +300,7 @@ void loadAll(const std::string& modsDir, const std::string& tmlDir,
     // fica na ordem do launcher. Faltou uma, ou ha ciclo: o mod fica de fora.
     std::vector<OrderEntry> entries;
     entries.reserve(listed.size());
-    for (const LoadedMod& m : listed) entries.push_back({m.id, m.internalName, m.dependencies, m.enabled});
+    for (const LoadedMod& m : listed) entries.push_back({m.id, m.internalName, m.dependencies, m.enabled, m.softReferences});
     const OrderResult sorted = sortByDependencies(entries);
     std::vector<size_t> position(listed.size());
     for (size_t k = 0; k < sorted.order.size(); ++k) {

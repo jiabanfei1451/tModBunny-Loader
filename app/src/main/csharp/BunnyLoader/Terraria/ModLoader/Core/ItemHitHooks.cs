@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria.ModLoader;
@@ -13,15 +14,25 @@ internal static class ItemHitHooks
         public Item Item;
         public NPC Target;
         public bool? CanHit;
-        public bool Friendly;
-        public bool RestoreFriendly;
         public bool Struck;
+    }
+
+    // v75: NPC cujo "friendly" foi desligado temporariamente para o vanilla
+    // deixar o golpe passar (NPC de cidade, tipo a Dryad, e friendly = true).
+    // v77: ninguem mais desliga o friendly — o golpe em NPC de cidade e' negado
+    // direto (ver CanNPCBeHit). A lista e o RestoreSuspended ficam como rede de
+    // seguranca: se algum caminho antigo ainda marcar, o finally devolve.
+    struct Suspended
+    {
+        public NPC Npc;
+        public bool Friendly;
     }
 
     static bool globalHit, npcHit;
 
     [ThreadStatic] static Attack attack;
     [ThreadStatic] static bool hasAttack;
+    [ThreadStatic] static List<Suspended>? suspended;
 
     [ThreadStatic] static int hidingText, critText;
 
@@ -156,36 +167,100 @@ internal static class ItemHitHooks
         try { orig(self, sItem, rect, originalDamage, knockBack, npcIndex); }
         finally
         {
-            if (attack.RestoreFriendly) target.friendly = attack.Friendly;
+            RestoreSuspended();
             attack = outer;
             hasAttack = outerActive;
         }
     }
 
+    /// <summary>
+    /// Devolve o <c>friendly</c> de todo NPC que esta rodada desligou. Idempotente:
+    /// chamado tanto pelo inicio de StrikeNPC (para o vanilla calcular o golpe com
+    /// o estado original) quanto pelo finally externo (rede de seguranca).
+    /// </summary>
+    static void RestoreSuspended()
+    {
+        List<Suspended>? list = suspended;
+        if (list == null || list.Count == 0) return;
+        suspended = null;
+        foreach (Suspended entry in list)
+        {
+            if (entry.Npc.IsNull) continue;
+            entry.Npc.friendly = entry.Friendly;
+            BunnyLoader.Log.Info($"[hit] friendly restaurado npc={entry.Npc.type}#{entry.Npc.whoAmI} valor={entry.Friendly}");
+        }
+    }
+
+    /// <summary>Devolve o friendly de um NPC especifico e tira ele da lista.</summary>
+    static void RestoreOne(NPC npc)
+    {
+        List<Suspended>? list = suspended;
+        if (list == null) return;
+        for (int i = list.Count - 1; i >= 0; i--)
+        {
+            if (list[i].Npc.Pointer != npc.Pointer) continue;
+            bool friendly = list[i].Friendly;
+            list.RemoveAt(i);
+            npc.friendly = friendly;
+            BunnyLoader.Log.Info($"[hit] friendly restaurado npc={npc.type}#{npc.whoAmI} valor={friendly}");
+            return;
+        }
+    }
+
+    static bool SuspendedFriendly(NPC npc)
+    {
+        List<Suspended>? list = suspended;
+        if (list == null) return false;
+        foreach (Suspended entry in list) if (entry.Npc.Pointer == npc.Pointer) return true;
+        return false;
+    }
+
     static bool CanNPCBeHit(On_Player.orig_CanNPCBeHitByPlayerOrPlayerProjectile orig, Player self, NPC npc, Projectile projectile)
     {
-        if (!hasAttack || !projectile.IsNull || attack.CanHit != true || attack.Player != self || attack.Target != npc) return orig(self, npc, projectile);
-        ref Attack a = ref attack;
-        if (npc.friendly && !a.RestoreFriendly)
+        if (!hasAttack || !projectile.IsNull || attack.CanHit != true || attack.Player != self || attack.Target != npc)
+            return orig(self, npc, projectile);
+        // v77: NPC de cidade ou friendly nao leva dano do jogador, nem quando um
+        // mod pede. Ate' a v76, para o gancho do mod poder rodar, o friendly era
+        // desligado e o vanilla seguia o golpe com o NPC valendo como hostil —
+        // dai' a Dryad apanhar mesmo com o estado restaurado logo depois (o
+        // "acertou" ja' tinha sido decidido). Negar aqui e' o que o vanilla faz,
+        // so' que sem mexer no NPC.
+        if (npc.friendly || npc.townNPC)
         {
-            a.Friendly = true;
-            a.RestoreFriendly = true;
-            npc.friendly = false;
+            RefusedHit(npc, ItemHooks.ModItemOf(attack.Item)?.FullName ?? ("item#" + attack.Item.type));
+            return false;
         }
         return true;
     }
 
+    /** Um aviso por tipo de NPC: sem isso, cada golpe no mesmo bicho repete a linha. */
+    static readonly HashSet<int> refused = new();
+
+    static void RefusedHit(NPC npc, string origem)
+    {
+        if (!refused.Add(npc.type)) return;
+        BunnyLoader.Log.Info($"[hit] golpe negado em NPC de cidade/friendly npc={npc.type}#{npc.whoAmI} town={npc.townNPC} friendly={npc.friendly} por={origem}");
+    }
+
     static int StrikeNPC(On_NPC.orig_StrikeNPC orig, NPC self, int Damage, float knockBack, int hitDirection, bool crit, bool fromNet, int owner)
     {
+        // v77: o dano vindo de um jogador nao entra em NPC de cidade nem em
+        // bicho friendly, por este caminho tambem. Armas com area costumam
+        // chamar StrikeNPC direto (sem passar por ProcessHitAgainstNPC), entao
+        // negar so' na entrada do golpe corpo a corpo deixava a porta aberta.
+        if (!fromNet && (uint)owner < 255u && (self.townNPC || self.friendly))
+        {
+            RefusedHit(self, "StrikeNPC");
+            return 0;
+        }
         if (fromNet || !hasAttack || attack.Struck || attack.Target != self) return orig(self, Damage, knockBack, hitDirection, crit, fromNet, owner);
         attack.Struck = true;
-        Attack a = attack;
-        if (a.RestoreFriendly)
-        {
-            self.friendly = a.Friendly;
-            a.RestoreFriendly = false;
-        }
+        // O vanilla calcula dano/knockback olhando friendly: aqui o estado volta a
+        // ser o original antes de entrar no Strike. Se este caminho nao for o que
+        // aplica o golpe, o finally de ProcessHitAgainstNPC ainda devolve o resto.
+        RestoreOne(self);
         hasAttack = false;
+        Attack a = attack;
         try { return Strike(orig, self, Damage, knockBack, hitDirection, crit, owner, a); }
         finally { attack = a; hasAttack = true; }
     }

@@ -22,6 +22,9 @@ public static unsafe partial class ItemLoader
 {
     static readonly object Gate = new();
 
+    /// <summary>Tipos de item cuja linha de diagnóstico já foi escrita.</summary>
+    static readonly HashSet<int> LoggedItems = new();
+
     static ModItem?[] items = Array.Empty<ModItem?>();
 
     static int itemCount = ItemID.Count;
@@ -397,8 +400,12 @@ public static unsafe partial class ItemLoader
             api->FinishItem(self.Pointer, type);
             GlobalSetDefaults(self);
             // Autodiagnostico: sem isto, "a arma nao ataca / a classe esta
-            // errada" vira adivinhacao. Uma linha por item de mod no log.
-            Log.Info($"item {template.FullName}: useStyle={self.useStyle} useTime={self.useTime} useAnimation={self.useAnimation} damage={self.damage} knockBack={self.knockBack} crit={self.crit} rare={self.rare} value={self.value} shoot={self.shoot} mana={self.mana} autoReuse={self.autoReuse} noMelee={self.noMelee} maxStack={self.maxStack} class={DamageClassLoader.ItemClass(self).Name}");
+            // errada" vira adivinhacao. UMA linha por item de mod no log —
+            // o SetDefaults de um mesmo item roda varias vezes (prefixo,
+            // receita, inventario) e cada linha custa ~8 ms de logcat: no
+            // Fargowiltas eram 3 589 linhas, 29 s de carga e 0 informacao nova.
+            if (LoggedItems.Add(type))
+                Log.Info($"item {template.FullName}: useStyle={self.useStyle} useTime={self.useTime} useAnimation={self.useAnimation} damage={self.damage} knockBack={self.knockBack} crit={self.crit} rare={self.rare} value={self.value} shoot={self.shoot} mana={self.mana} autoReuse={self.autoReuse} noMelee={self.noMelee} maxStack={self.maxStack} class={DamageClassLoader.ItemClass(self).Name} makeNPC={self.makeNPC} w={self.width} h={self.height}");
         }
         finally { DamageClassLoader.Defaulting = outer; }
     }

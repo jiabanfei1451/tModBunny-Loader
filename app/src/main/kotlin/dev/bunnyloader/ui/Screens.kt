@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -73,6 +74,7 @@ import dev.bunnyloader.mods.compareVersions
 import dev.bunnyloader.mods.formatCount
 import dev.bunnyloader.mods.formatSize
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal val EdgePad = 14.dp
@@ -850,18 +852,26 @@ fun ConfigTab(
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scroll = rememberScrollState()
-    var log by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     val prefs = remember { Prefs(ctx) }
     var enableNewMods by remember { mutableStateOf(prefs.enableOnInstall) }
     var devChannel by remember { mutableStateOf(prefs.devChannel) }
     var errorPanel by remember { mutableStateOf(prefs.errorPanel) }
     var verboseLog by remember { mutableStateOf(prefs.verboseLog) }
+    var compileCache by remember { mutableStateOf(prefs.compileCache) }
     var modMenu by remember { mutableStateOf(prefs.devModMenu) }
     var editor by remember { mutableStateOf(prefs.devEditor) }
     var restart by remember { mutableStateOf(prefs.devRestart) }
     var sourcesOpen by rememberSaveable { mutableStateOf(false) }
+    var logsOpen by rememberSaveable { mutableStateOf(false) }
     if (sourcesOpen) {
         ModSourcesScreen(shell) { sourcesOpen = false }
+        return
+    }
+    // O log ocupa a tela inteira: milhares de linhas dentro do cartão de
+    // diagnóstico, no meio da rolagem das configurações, seriam ilegíveis.
+    if (logsOpen) {
+        LogsScreen { logsOpen = false }
         return
     }
 
@@ -913,6 +923,16 @@ fun ConfigTab(
                 tr("FileCommandChannelDescription"),
                 devChannel,
             ) { devChannel = it; prefs.devChannel = it }
+            // A reescrita de IL é o que domina a abertura com mods grandes: o
+            // FargowiltasSouls tem 77 616 acessos de campo e gasta ~170 s nisso
+            // toda vez. Guardando o IL já reescrito, as aberturas seguintes
+            // carregam os bytes prontos.
+            Setting(
+                tr("CompileCache"),
+                tr("CompileCacheDescription"),
+                compileCache,
+            ) { compileCache = it; prefs.compileCache = it }
+            CompileCacheCard()
 
             SectionTitle(tr("Developer"))
             PixelButton(tr("ModSources"), { sourcesOpen = true },
@@ -945,22 +965,19 @@ fun ConfigTab(
                         Modifier.padding(top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        PixelButton(tr("ViewReport"), { log = BootLog.read(ctx) },
-                            fontSize = Ts.Small)
-                        // 「复制」和「查看」同一层、始终可用：以前它被 log.isNotEmpty() 挡着，
-                        // 必须先点过一次查看才会出现，等于把复制藏在查看里面。
-                        // 现在直接自己读报告再复制，不依赖上一步。
+                        // Um botão só: o seletor de origem (tudo / C# / C++ / JS /
+                        // Java) mora dentro da tela. Antes eram dois botões — "ver
+                        // relatório" e "ver log do C#" — e quem procurava uma linha
+                        // de erro tinha de adivinhar qual dos dois abrir.
+                        PixelButton(tr("ViewLogs"), { logsOpen = true }, fontSize = Ts.Small)
+                        // Copia o relatório completo sem abrir a tela. Lê o disco
+                        // fora do frame do toque; o Toast sai no dispatcher principal.
                         PixelButton(tr("Copy"), {
-                            clipboard.setText(AnnotatedString(BootLog.read(ctx)))
+                            scope.launch {
+                                val text = withContext(Dispatchers.IO) { BootLog.read(ctx) }
+                                clipboard.setText(AnnotatedString(text))
+                            }
                         }, fontSize = Ts.Small)
-                    }
-                    if (log.isNotEmpty()) {
-                        Box(
-                            Modifier.fillMaxWidth().padding(top = 10.dp)
-                                .pixelPanel(fill = Bl.FrameFill, raised = false).padding(8.dp)
-                        ) {
-                            Text(log, fontSize = Ts.Tiny.sp, color = Bl.TextDim)
-                        }
                     }
                 }
             }

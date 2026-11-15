@@ -176,10 +176,36 @@ internal static unsafe class NPCEventHooks
         // Um item de template (so SetDefaults, sem UseItem) nao tem como pedir NPC.
         // Se um NPC aparece ao brandir, o pedido veio de outro lugar: esta linha
         // diz o tipo e as duas primeiras molduras do chamador.
-        Log.Info($"[mod] NewNPC type={Type} pos={X},{Y} src={source?.GetType().Name ?? "null"} por {Caller()}");
+        Log.Info($"[mod] NewNPC type={Type} pos={X},{Y} src={source?.GetType().Name ?? "null"}{Held()} por {Caller()}");
         int index = orig(source, X, Y, Type, Start, ai0, ai1, ai2, ai3, Target);
-        if ((uint)index < 200u && Main.npc[index].active) NPCLoader.OnSpawn(Main.npc[index], source);
+        if ((uint)index < 200u && Main.npc[index].active)
+        {
+            // v75: faccao do NPC recem-criado. "A Dryad virou hostil" so' da' para
+            // separar em duas causas olhando isto: se friendly ja' nasce false o
+            // problema esta' no SetDefaults/NewNPC; se nasce true e some depois, e'
+            // algum gancho (hit/hurt) devolvendo errado. Antes nao havia como saber.
+            NPC fresh = Main.npc[index];
+            Log.Info($"[mod] NewNPC -> #{index} type={fresh.type} friendly={fresh.friendly} town={fresh.townNPC} target={fresh.target} vida={fresh.lifeMax} mao={Held()}");
+            NPCLoader.OnSpawn(fresh, source);
+            Log.Info($"[mod] NewNPC pos-ganchos #{index} type={fresh.type} friendly={fresh.friendly} town={fresh.townNPC} target={fresh.target}");
+        }
         return index;
+    }
+
+    // v66: o que o jogador tem na mao NESTE instante. Se o item segurado nao
+    // for o mesmo que o log de UseItem diz, o mapeamento tipo->ModItem do shim
+    // esta' errado (era a suspeita de "contrato da camada de compatibilidade").
+    static string Held()
+    {
+        try
+        {
+            Player me = Main.player[Main.myPlayer];
+            if (me.IsNull) return " mao=nulo";
+            Item it = me.inventory[me.selectedItem];
+            string name = it.IsNull ? "nulo" : (ItemHooks.ModItemOf(it)?.FullName ?? ("item#" + it.type));
+            return $" mao={name} it={me.itemTime}/{me.itemAnimation} u={ItemHooks.UseDepth} c={me.Center.X:0},{me.Center.Y:0}";
+        }
+        catch (Exception e) { return " mao=?" + e.GetType().Name; }
     }
 
     static string Caller()
@@ -188,7 +214,7 @@ internal static unsafe class NPCEventHooks
         {
             var trace = new System.Diagnostics.StackTrace(3, false);
             string text = "";
-            for (int i = 0; i < trace.FrameCount && i < 6; i++)
+            for (int i = 0; i < trace.FrameCount && i < 12; i++)
             {
                 var method = trace.GetFrame(i)?.GetMethod();
                 if (method == null) continue;

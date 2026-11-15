@@ -43,6 +43,15 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.5" />
   </ItemGroup>
 
+  <!-- v72: AltFunctionTouchHooks.cs (11-11) ficou orfao: ninguem chama Install()
+       e ele referencia membros de ItemTimingHooks que nao existem mais
+       (HasAlternativeUse/AlternativeItem), alem de Mouse e ModItem.AltFunctionIcon.
+       Sem isso o projeto inteiro nao compila. Retirar do build ate' o
+       AltFunctionUse por toque ser retomado. -->
+  <ItemGroup>
+    <Compile Remove="Terraria/ModLoader/Core/AltFunctionTouchHooks.cs" />
+  </ItemGroup>
+
   <Target Name="IncludeGameProxies" AfterTargets="GenerateGameProxies" BeforeTargets="CoreCompile">
     <ItemGroup>
       <Compile Include="$(ProxyGenOut)*.g.cs" />

@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using Terraria.ModLoader.Core;
 
 namespace BunnyLoader.Pipelines;
 
@@ -28,9 +32,50 @@ internal sealed class TmlPipeline : ModPipeline
         // instalado no Host. Aqui só registramos que a rota é a do PC.
     }
 
+    static bool announced;
+
     internal override Assembly LoadAssembly(ModLoadRequest request)
     {
-        Progress.ModStep($"正在重写 IL：{request.Label}…", 0.25);
+        // v68: deixa o ItemHooks saber a pasta TML para ler flags de diagnostico
+        // (ex.: <TML>/no-owneronly).
+        try
+        {
+            string? modsDir = Path.GetDirectoryName(request.Folder);
+            string? tmlDir = modsDir == null ? null : Path.GetDirectoryName(modsDir);
+            if (tmlDir != null) ItemHooks.DebugDir = tmlDir;
+        }
+        catch { }
+        AnnounceAll(request);
+        Progress.ModStep($"正在重写 IL：{request.Label}（{request.InternalName}）…", 0.25);
         return IlPatcher.Load(request.File);
+    }
+
+    // v67: o painel mostrava so o mod da vez; como a reescrita e' por arquivo,
+    // nao dava para saber quantos/qua*s* seriam. Lemos a lista de habilitados
+    // (TML/mode.txt) uma vez e mostramos os NOMES INTERNOS de todos.
+    static void AnnounceAll(ModLoadRequest request)
+    {
+        if (announced) return;
+        announced = true;
+        try
+        {
+            string? modsDir = Path.GetDirectoryName(request.Folder);
+            string? tmlDir = modsDir == null ? null : Path.GetDirectoryName(modsDir);
+            string mode = tmlDir == null ? "" : Path.Combine(tmlDir, "mode.txt");
+            var list = new List<string>();
+            if (mode.Length > 0 && File.Exists(mode))
+            {
+                foreach (string line in File.ReadAllLines(mode))
+                {
+                    string name = line.Trim();
+                    if (name.Length > 0) list.Add(name);
+                }
+            }
+            if (list.Count == 0) list.Add(request.InternalName);
+            string joined = string.Join("、", list);
+            Log.Info($"TML: reescrevendo IL de {list.Count} mod(s): {joined}");
+            Progress.Write($"正在重写 IL：{joined}（共 {list.Count} 个）");
+        }
+        catch (Exception e) { Log.Warn("TML: lista de mods indisponivel (" + e.Message + ")"); }
     }
 }

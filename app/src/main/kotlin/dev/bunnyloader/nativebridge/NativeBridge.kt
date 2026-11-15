@@ -19,6 +19,12 @@ class NativeConfig(
     @JvmField val showErrors: Boolean,
     /** Log detalhado (Configuracoes): o detalhe do núcleo também no arquivo de sessão. */
     @JvmField val verboseLog: Boolean,
+    /**
+     * Pré-compilar mods (Configurações): o IL já reescrito de cada mod fica em
+     * disco e a próxima abertura carrega direto. O nativo repassa isto ao C#
+     * pelo ambiente (`BL_COMPILE_CACHE`), que é onde a reescrita acontece.
+     */
+    @JvmField val compileCache: Boolean = true,
     @JvmField val gameVersion: Long,
     /** Início rápido (Configurações > Desenvolvedor): sem a espera do splash. */
     @JvmField val fastBoot: Boolean,

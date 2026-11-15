@@ -47,8 +47,13 @@ internal static class BestiaryHooks
 
     static BestiaryEntry Find(BestiaryDatabase database, int type)
     {
-        BestiaryEntry entry = database.FindEntryByNPCID(type);
-        return !entry.IsNull && IndexOf(database, entry) >= 0 ? entry : default;
+        try
+        {
+            BestiaryEntry entry = database.FindEntryByNPCID(type);
+            if (entry is null || entry.IsNull) return default;
+            return IndexOf(database, entry) >= 0 ? entry : default;
+        }
+        catch { return default; }
     }
 
     static int IndexOf(BestiaryDatabase database, BestiaryEntry entry)
@@ -66,12 +71,12 @@ internal static class BestiaryHooks
         if (!generic.IsNull) new GameList(database._entries).RemoveAt(IndexOf(database, generic));
         if (NPCID.Sets.NPCBestiaryDrawOffset.TryGetValue(type, out var modifiers) && modifiers.Hide) return false;
         ContentSamples.NpcBestiaryRarityStars.Reapply(type);
-        NPC sample = Sample(type);
+        NPC? sample = Sample(type);
         BestiaryEntry entry;
-        if (!sample.IsNull && sample.townNPC) entry = BestiaryEntry.TownNPC(type);
+        if (sample is { IsNull: false } n && n.townNPC) entry = BestiaryEntry.TownNPC(type);
         else if (NPCID.Sets.CountsAsCritter[type]) entry = BestiaryEntry.Critter(type);
         else entry = BestiaryEntry.Enemy(type);
-        BiomeBestiaryHooks.AddTo(entry, (sample.IsNull ? null : NPCLoader.InstanceOf(sample)) ?? own);
+        BiomeBestiaryHooks.AddTo(entry, (sample is { IsNull: false } live ? NPCLoader.InstanceOf(live) : null) ?? own);
         NPCLoader.SetBestiary(sample, own, database, entry);
         Icon(own, entry);
         database.Register(entry);
@@ -100,8 +105,12 @@ internal static class BestiaryHooks
     {
         BestiaryEntry entry = Find(database, type);
         if (entry.IsNull) return;
-        NPC sample = Sample(type);
-        if (sample.IsNull) return;
+        // v71: Sample() devolve null quando o NPC ainda nao esta' na tabela
+        // NpcsByNetId (acontece na carga antes do conteudo fechar). Um
+        // sample.IsNull em null estourava NRE para TODOS os NPCs vanilla —
+        // eram as 159 linhas "bestiary entry of NPC N threw".
+        NPC? sample = Sample(type);
+        if (sample is null || sample.IsNull) return;
         if (globals)
         {
             try { NPCLoader.SetBestiary(sample, null, database, entry); }

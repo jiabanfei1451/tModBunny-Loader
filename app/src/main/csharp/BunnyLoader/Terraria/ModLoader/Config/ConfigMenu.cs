@@ -300,9 +300,18 @@ internal static unsafe class ConfigMenu
             ConfigNetHooks.RestoreLocal();
         entries.Clear();
         bool client = !Main.gameMenu && ModNet.NetMode == 1;
+        int total = 0;
         foreach (ModConfig config in ConfigManager.All)
-            if (!client || config.Mode != ConfigScope.ServerSide)
-                entries.Add(new Entry { Active = config, Draft = config.Clone(), Options = ConfigManager.OptionsOf(config.GetType()) });
+        {
+            total++;
+            try
+            {
+                if (!client || config.Mode != ConfigScope.ServerSide)
+                    entries.Add(new Entry { Active = config, Draft = config.Clone(), Options = ConfigManager.OptionsOf(config.GetType()) });
+            }
+            catch (Exception e) { Log.Error($"[config] entry {config.FullName} falhou: {e.Message}"); }
+        }
+        Log.Info($"[config] menu aberto: {total} config(s) registrada(s), {entries.Count} entrada(s)");
     }
 
     static IEnumerable<Entry> EntriesOf(Mod mod) => entries.Where(e => e.Active.Mod == mod);
@@ -330,13 +339,42 @@ internal static unsafe class ConfigMenu
         return text;
     }
 
-    static float Step(SettingsPauseMenu_Layout l) => l.Close.overloadedSize.Y + l.ButtonSpacing;
+    // v68: no Android 1.4.5.8.6 varios desses botoes do layout podem vir null
+    // em certos estados do menu (o getter devolve null quando o ponteiro e' 0).
+    // Antes, Layout/DrawButton faziam l.Settings.Pointer direto e estouravam
+    // NullReferenceException -> o botao "ModConfig" nunca era desenhado.
+    static TransactionButton_Layout Anchor(SettingsPauseMenu_Layout l)
+    {
+        TransactionButton_Layout? b = l.Settings;
+        if (b is { IsNull: false }) return b;
+        b = l.Home;
+        if (b is { IsNull: false }) return b;
+        b = l.Achievements;
+        if (b is { IsNull: false }) return b;
+        b = l.Controls;
+        if (b is { IsNull: false }) return b;
+        b = l.Close;
+        return b is { IsNull: false } ? b : null!;
+    }
+
+    static float Step(SettingsPauseMenu_Layout l)
+    {
+        TransactionButton_Layout anchor = Anchor(l);
+        if (anchor is null) return 84f;
+        float size = 84f;
+        try { size = anchor.overloadedSize.Y; } catch { }
+        float spacing = 0f;
+        try { spacing = l.ButtonSpacing; } catch { }
+        return size + spacing;
+    }
 
     static TransactionButton_Layout ButtonLayout(SettingsPauseMenu_Layout l)
     {
-        if (!button.IsNull)
+        if (button is { IsNull: false })
             return button;
-        button = new TransactionButton_Layout(Clone(l.Settings.Pointer));
+        TransactionButton_Layout anchor = Anchor(l);
+        if (anchor is null) return null!;
+        button = new TransactionButton_Layout(Clone(anchor.Pointer));
         try
         {
             Texture_Layout icon = new(Keep(Texture_Layout.New().Pointer));
@@ -368,18 +406,24 @@ internal static unsafe class ConfigMenu
         Panel_Layout backing = l.Backing;
         backing.Size = new Vector2(backing.Size.X, backing.Size.Y + step);
         var list = self._controllerList;
-        var above = new List<TransactionButton_Layout> { l.Close, l.Controls, l.Settings };
-        if (self.includeMPInviteActive)
-            above.Add(l.Invite);
-        var below = new List<TransactionButton_Layout> { l.Achievements, l.Bestiary, l.Home };
-        if (self.creativeModeActive)
-            below.Add(l.JourneySettings);
+        if (list is null || list.IsNull)
+            return;
+        var above = new List<TransactionButton_Layout>();
+        foreach (TransactionButton_Layout? b in new[] { l.Close, l.Controls, l.Settings })
+            if (b is { IsNull: false }) above.Add(b);
+        if (self.includeMPInviteActive && l.Invite is { IsNull: false } invite) above.Add(invite);
+        var below = new List<TransactionButton_Layout>();
+        foreach (TransactionButton_Layout? b in new[] { l.Achievements, l.Bestiary, l.Home })
+            if (b is { IsNull: false }) below.Add(b);
+        if (self.creativeModeActive && l.JourneySettings is { IsNull: false } journey) below.Add(journey);
         foreach (TransactionButton_Layout b in above)
             Move(b, -step / 2);
         foreach (TransactionButton_Layout b in below)
             Move(b, step / 2);
         TransactionButton_Layout ours = ButtonLayout(l);
-        ours.Location = new Vector2(l.Settings.Location.X, l.Settings.Location.Y + step);
+        if (ours is null) return;
+        TransactionButton_Layout anchor = Anchor(l);
+        ours.Location = new Vector2(anchor.Location.X, anchor.Location.Y + step);
         if (list.IsNull)
             return;
         var items = list._items;
@@ -399,9 +443,12 @@ internal static unsafe class ConfigMenu
     {
         if (open)
             return;
+        TransactionButton_Layout anchor = Anchor(l);
+        if (anchor is null) return;
         TransactionButton_Layout ours = ButtonLayout(l);
-        ours.overloadedSize = l.Settings.overloadedSize;
-        ours.Location = new Vector2(l.Settings.Location.X, ours.Location.Y);
+        if (ours is null) return;
+        ours.overloadedSize = anchor.overloadedSize;
+        ours.Location = new Vector2(anchor.Location.X, ours.Location.Y);
         var state = GUITransactionButton.Draw(ours, default(Item), Text("ModConfigButton"), false, ref buttonScale, false, Focus(), false, false);
         if (state != GUITransactionButton.InputState.Clicked)
             return;
@@ -1344,9 +1391,15 @@ internal static unsafe class ConfigMenu
     static float? DrawSlider(SettingsOverlay_Layout s, Row row, bool enabled, Slider_Layout layout, float value01, SliderDraw draw)
     {
         var t = s.SliderTemplate;
+        // v69: o template do slider (e os controles dentro dele) podem vir com
+        // ponteiro 0 no Android 1.4.5.8.6 — o getter devolve null e qualquer
+        // acesso a t.Title estoura NRE. Sem template nao ha como desenhar:
+        // pulamos a linha (o valor continua editavel? nao, mas nao quebra o resto).
+        if (t is null || t.IsNull || layout is null || layout.IsNull)
+            return null;
         RowState st = StateOf(row);
         GUITransactionButton.Draw(t.Title, default(Item), "", !enabled, ref st.Scale, false, Focus(), false, false);
-        if (st.Drag.IsNull)
+        if (st.Drag is null || st.Drag.IsNull)
             st.Drag = new GUISlider.DragState(Keep(GUISlider.DragState.New().Pointer));
         st.Value = value01;
         Rectangle r = ControlAnchor._gridItemRegion;
@@ -1364,6 +1417,8 @@ internal static unsafe class ConfigMenu
     static void DrawSliderValue(SettingsOverlay_Layout s, Parts p, Row row, string title, Slider_Layout layout, string text, bool enabled)
     {
         var t = s.SliderTemplate;
+        if (t is null || t.IsNull)
+            return;
         GUIString.Draw(t.Value, text, enabled ? t.Value.Color : t.DisabledValueColor, false);
         DrawButtonLabel(p, row, t.Title, title, enabled, Math.Min(TrackLeft(layout), GUIString.GetRegion(t.Value, text).X));
     }
