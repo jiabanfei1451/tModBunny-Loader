@@ -12,11 +12,19 @@ public static unsafe partial class NPCLoader
     static bool Has(ModNPC? npc, NPCMethod method) => npc != null && (npc.Hooks & method) != 0;
     static bool Has(GlobalNPC? global, NPCMethod method) => global != null && (global.Hooks & method) != 0;
 
+    static readonly bool[] aiReported = new bool[65536];
+
     public static void NPCAI(NPC npc)
     {
         ModNPC? own = InstanceOf(npc);
         GlobalNPC?[] globals = Slots(npc);
-        if (PreAI(npc, own, globals))
+        bool allowed = PreAI(npc, own, globals);
+        if (own != null && npc.type < aiReported.Length && !aiReported[npc.type])
+        {
+            aiReported[npc.type] = true;
+            Log.Info($"[npc ai] type={npc.type} {own.FullName} aiStyle={npc.aiStyle} hooksAI={Has(own, NPCMethod.AI)} pre={allowed} frame={npc.frame.X},{npc.frame.Y},{npc.frame.Width},{npc.frame.Height}");
+        }
+        if (allowed)
         {
             int type = npc.type;
             var previous = NPCEventHooks.Borrowing;

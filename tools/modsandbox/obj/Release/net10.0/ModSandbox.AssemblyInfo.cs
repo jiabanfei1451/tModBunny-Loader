@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ModSandbox")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1713bd66b1dfbe08db545f4580205c2310ad9d62")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e6e4c1051a7f8e369bfa6d37504faabf4cf34f3b")]
 [assembly: System.Reflection.AssemblyProductAttribute("ModSandbox")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ModSandbox")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

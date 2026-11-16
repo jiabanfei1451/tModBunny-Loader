@@ -4,7 +4,7 @@ using Terraria.DataStructures;
 
 namespace Terraria.ModLoader;
 
-public abstract class GlobalTile : ModType
+public abstract class GlobalTile : GlobalBlockType
 {
     protected sealed override void Register() => TileLoader.Register(this);
 
@@ -18,9 +18,9 @@ public abstract class GlobalTile : ModType
 
     public virtual bool CreateDust(int i, int j, int type, ref int dustType) => true;
 
-    public virtual bool CanPlace(int i, int j, int type) => true;
+    public override bool CanPlace(int i, int j, int type) => true;
 
-    public virtual bool CanExplode(int i, int j, int type) => true;
+    public override bool CanExplode(int i, int j, int type) => true;
 
     public virtual bool CanDrop(int i, int j, int type) => true;
 

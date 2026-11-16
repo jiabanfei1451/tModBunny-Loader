@@ -53,6 +53,14 @@ internal static class ShimAssembly
         // nome (FileLoadException) e a reescrita de IL nunca rodaria.
         "ReLogic", "FNA", "Microsoft.Xna.Framework",
         "log4net", "Newtonsoft.Json", "Steamworks.NET",
+        // MonoMod: o tML 1.4.5 embarca `Libraries/MonoMod.Utils.dll` e
+        // `MonoMod.RuntimeDetour.dll`. Os dois entram como identidade porque
+        // o mod referencia esses assemblies por nome — `List<ILHook>`,
+        // `new ILCursor(il)` — e sem resolvê-los o tipo que faz o patch nem
+        // carrega (foi o "VTable setup of ScreenShaderFixer failed").
+        // Rede de segurança: quem manda são as fachadas `MonoMod.*.dll`
+        // (HasFacade devolve null e o Mono carrega a fachada).
+        "MonoMod.Utils", "MonoMod.RuntimeDetour",
     };
 
     static bool installed;

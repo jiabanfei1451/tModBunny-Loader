@@ -93,7 +93,7 @@ public static class ModContent
     public static bool TryFind<T>(string modName, string name, out T value) where T : IModType =>
         TryFind(modName + "/" + name, out value);
 
-    public static Asset<T> Request<T>(string name, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
+    public static Asset<T> Request<T>(string name, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class
     {
         Asset<T>.CheckSupported();
         (string modName, string path) = SplitName(name);
@@ -114,7 +114,7 @@ public static class ModContent
         };
     }
 
-    public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
+    public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class
     {
         if (!HasAsset(name))
         {

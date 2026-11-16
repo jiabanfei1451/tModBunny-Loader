@@ -60,6 +60,8 @@
   "ClearCompileCache": "Xoá bộ nhớ biên dịch",
   "CompileCacheCleared": "Đã xoá bộ nhớ đệm, giải phóng",
   "CompileCacheReading": "Đang tính dung lượng…",
+  "ErrorTitle": "Bunny Loader — lỗi",
+  "ErrorCopied": "Đã sao chép nhật ký",
   "Developer": "Nhà phát triển",
   "ModMenu": "Mod Menu",
   "ModMenuDescription": "Nút thỏ trong game: sức mạnh, vật phẩm, NPC và buff. Khi tắt, các sức mạnh từ phiên trước vẫn bị vô hiệu.",

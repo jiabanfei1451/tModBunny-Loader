@@ -125,13 +125,10 @@ public unsafe partial struct Tile
         set => fullbrightWall(value);
     }
 
-    public ref byte LiquidAmount
+    public byte LiquidAmount
     {
-        get
-        {
-            __liquidAmount = liquid;
-            return ref __liquidAmount;
-        }
+        get => liquid;
+        set => liquid = value;
     }
 
     public int LiquidType
@@ -140,17 +137,15 @@ public unsafe partial struct Tile
         set => liquidType(value);
     }
 
-    // No tML estes três são `ref` (o Tile de lá é uma CLASSE com campos de
-    // verdade). Aqui o Tile é um handle de 4 bytes, então não existe endereço
-    // para devolver: o `ref` aponta para um buffer por thread, preenchido no
-    // getter. Leitura fica correta (o mod faz `ldind` logo depois), escrita
-    // continua sem efeito — o que já era o caso, porque o `tile` que o mod
-    // recebe é uma CÓPIA.
-    [ThreadStatic] static ushort __tileType;
-    [ThreadStatic] static short __tileFrameX;
-    [ThreadStatic] static short __tileFrameY;
-    [ThreadStatic] static ushort __tileWallType;
-    [ThreadStatic] static byte __liquidAmount;
+    // No tML 1.4.4/1.4.5 `TileFrameX`, `TileFrameY`, `TileType`, `WallType` e
+    // `LiquidAmount` sao PROPRIEDADES POR VALOR com getter E setter — os mods
+    // chamam `callvirt int16 get_TileFrameX()` / `void set_TileFrameX(int16)`.
+    // A versao anterior devolvia `ref short`: alem de nao bater a assinatura
+    // (`MissingMethodException: int16 Terraria.Tile::get_TileFrameX()`, que
+    // derrubava o TileLoader.Draw inteiro e sumia com TODOS os blocos de mod),
+    // a escrita caia num buffer [ThreadStatic] e nunca chegava ao jogo.
+    // O Tile daqui e um handle de 4 bytes: copiar o struct NAO perde a
+    // identidade, entao o setter por valor escreve de verdade na memoria nativa.
 
     // ---- tML 1.4.5 patches/Terraria/Tile.TML.cs:311-320 -------------------
     // `Tile` virou `readonly struct` no tML; estes operadores existem para
@@ -167,40 +162,28 @@ public unsafe partial struct Tile
     public override bool Equals(object? obj) => obj is Tile other && this == other;
     public override int GetHashCode() => TileId;
 
-    public ref ushort TileType
+    public ushort TileType
     {
-        get
-        {
-            __tileType = type;
-            return ref __tileType;
-        }
+        get => type;
+        set => type = value;
     }
 
-    public ref short TileFrameX
+    public short TileFrameX
     {
-        get
-        {
-            __tileFrameX = frameX;
-            return ref __tileFrameX;
-        }
+        get => frameX;
+        set => frameX = value;
     }
 
-    public ref short TileFrameY
+    public short TileFrameY
     {
-        get
-        {
-            __tileFrameY = frameY;
-            return ref __tileFrameY;
-        }
+        get => frameY;
+        set => frameY = value;
     }
 
-    public ref ushort WallType
+    public ushort WallType
     {
-        get
-        {
-            __tileWallType = wall;
-            return ref __tileWallType;
-        }
+        get => wall;
+        set => wall = value;
     }
 
     public int WallFrameX

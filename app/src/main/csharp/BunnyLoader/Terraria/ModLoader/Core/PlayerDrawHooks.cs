@@ -66,13 +66,19 @@ internal static class PlayerDrawHooks
 
     static void UseNormalLayers(On_LegacyPlayerRenderer.orig_DrawPlayer_UseNormalLayers orig, PlayerDrawSet drawinfo)
     {
+        // O jogo nativo faz o setup do PlayerDrawSet e desenha TODAS as camadas
+        // vanilla. A versao anterior deste hook substituia o metodo inteiro e
+        // so chamava os stubs do shim: o setup era perdido e o JOGADOR FICAVA
+        // INVISIVEL (sobravam alguns acessorios). Chamar `orig` primeiro
+        // devolve o corpo/ cabeca/bracos/pernas; o loop abaixo continua sendo
+        // responsavel apenas pelas camadas que os mods acrescentam.
+        orig(drawinfo);
         PlayerDrawLayer[] layers;
         try { layers = PlayerDrawLayerLoader.GetDrawLayers(drawinfo); }
         catch (Exception e)
         {
             ItemHooks.Report("PlayerDrawLayers", e);
-            orig(drawinfo);
-            return;
+            return; // `orig` ja foi chamado: o jogador continua desenhado.
         }
         foreach (PlayerDrawLayer layer in layers)
         {

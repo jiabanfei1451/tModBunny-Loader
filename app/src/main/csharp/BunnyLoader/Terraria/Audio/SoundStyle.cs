@@ -16,36 +16,36 @@ namespace Terraria.Audio;
 /// <c>Pointer</c> continua sendo o objeto nativo (LegacySoundStyle) que o
 /// motor usa; os outros campos são a receita gerenciada do som.
 /// </summary>
-public readonly record struct SoundStyle
+public record struct SoundStyle
 {
     static readonly Dictionary<int, GameHandle> sounds = new();
 
     /// <summary>Objeto nativo por trás do estilo (0 = só receita gerenciada).</summary>
     public readonly nint Pointer;
 
-    readonly int[]? variants;
-    readonly float volume;
+    int[]? variants;
+    float volume;
 
-    public string? SoundPath { get; init; }
+    public string? SoundPath { get; set; }
 
-    public SoundType Type { get; init; }
+    public SoundType Type { get; set; }
 
-    public string? Identifier { get; init; }
+    public string? Identifier { get; set; }
 
     public float Volume
     {
         get => volume;
-        init => volume = Math.Clamp(value, 0f, 1f);
+        set => volume = Math.Clamp(value, 0f, 1f);
     }
 
-    public float Pitch { get; init; }
+    public float Pitch { get; set; }
 
-    public float PitchVariance { get; init; }
+    public float PitchVariance { get; set; }
 
     public (float minPitch, float maxPitch) PitchRange
     {
         get => (Pitch - PitchVariance * 0.5f, Pitch + PitchVariance * 0.5f);
-        init
+        set
         {
             if (value.maxPitch < value.minPitch) throw new ArgumentException("Min pitch cannot be greater than max pitch.");
             Pitch = (value.minPitch + value.maxPitch) * 0.5f;
@@ -53,18 +53,18 @@ public readonly record struct SoundStyle
         }
     }
 
-    public int MaxInstances { get; init; }
+    public int MaxInstances { get; set; }
 
-    public SoundLimitBehavior SoundLimitBehavior { get; init; }
+    public SoundLimitBehavior SoundLimitBehavior { get; set; }
 
-    public bool IsLooped { get; init; }
+    public bool IsLooped { get; set; }
 
-    public bool PlayOnlyIfFocused { get; init; }
+    public bool PlayOnlyIfFocused { get; set; }
 
     public ReadOnlySpan<int> Variants
     {
         get => variants;
-        init => variants = value.IsEmpty ? null : value.ToArray();
+        set => variants = value.IsEmpty ? null : value.ToArray();
     }
 
     internal LegacySoundStyle Legacy => Pointer != 0 ? new(Pointer) : SoundHooks.Marker(this);

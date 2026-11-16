@@ -37,6 +37,9 @@ static class Program
     /// </summary>
     static readonly HashSet<string> PointerStructs = new(StringComparer.Ordinal);
 
+    /// <summary>Tipos cujo proxy aceita herança (`@open` em types.txt).</summary>
+    static readonly HashSet<string> OpenTypes = new(StringComparer.Ordinal);
+
     static int Main(string[] args)
     {
         string? dummy = null, outDir = null;
@@ -101,6 +104,8 @@ static class Program
                 string[] directive = line[1..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (directive.Length >= 2 && directive[0].Equals("record", StringComparison.OrdinalIgnoreCase))
                     RecordTypes.Add(directive[1]);
+                else if (directive.Length >= 2 && directive[0].Equals("open", StringComparison.OrdinalIgnoreCase))
+                    OpenTypes.Add(directive[1]);
                 continue;
             }
             if (line.StartsWith("!!"))
@@ -629,9 +634,19 @@ static class Program
             // Equals/GetHashCode/ToString/==, que não podemos emitir de novo.
             bool asRecord = RecordTypes.Contains(t.FullName ?? t.Name);
             bool asStruct = PointerStructs.Contains(t.FullName ?? t.Name);
+            // `sealed` por padrão; `@open` em types.txt libera a herança.
+            // Motivo: todo proxy de classe saía sealed, e mods que DERIVAM de
+            // classe do jogo não carregavam — `TypeLoadException: Could not
+            // load type 'FargowiltasSouls.Content.Sky.AbomSky' ... because the
+            // parent type is sealed` (pai = Terraria.Graphics.Effects.CustomSky).
+            // Não dá para simplesmente seguir o flag do dump: vários tipos têm
+            // `sealed partial class` escrito à mão (Chest, Collision, Cursor...)
+            // e o C# recusa modificadores conflitantes entre partes. Então a
+            // lista é explícita e cresce só quando um mod precisa derivar.
+            bool sealType = !OpenTypes.Contains(t.FullName ?? t.Name);
             string kind = asStruct ? "readonly partial struct"
-                : asRecord ? "sealed partial record class"
-                : "sealed partial class";
+                : asRecord ? (sealType ? "sealed partial record class" : "partial record class")
+                : (sealType ? "sealed partial class" : "partial class");
             // struct proxy não implementa IEquatable<T> aqui: o `Equals(T?)` do
             // gerador não existe para value type e o `==` com null também não.
             string ifaces = asStruct

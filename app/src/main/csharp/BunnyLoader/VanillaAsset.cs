@@ -5,7 +5,7 @@ using ReLogic.Content;
 
 namespace BunnyLoader;
 
-internal static class VanillaAsset<T> where T : class, IGameObject
+internal static class VanillaAsset<T> where T : class
 {
     static readonly Dictionary<string, Asset<T>> Requested = new(StringComparer.Ordinal);
 

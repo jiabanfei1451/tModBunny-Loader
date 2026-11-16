@@ -120,6 +120,46 @@ std::string infoValue(const std::string& txt, const std::string& key) {
     return all.empty() ? std::string() : all.front();
 }
 
+// `modReferences = FargowiltasSouls@1.4`: o `@` separa a versao MINIMA
+// exigida. Sem separar, a comparacao era feita com a string inteira contra o
+// nome do outro mod e nunca casava — Fargowiltas, FargowiltasSouls e
+// FargowiltasMusic ficavam dizendo "referencia nao instalada".
+void splitRef(const std::string& ref, std::string* name, std::string* minVersion) {
+    const size_t at = ref.find('@');
+    if (at == std::string::npos) {
+        *name = ref;
+        minVersion->clear();
+        return;
+    }
+    *name = ref.substr(0, at);
+    *minVersion = ref.substr(at + 1);
+}
+
+// Comparacao por componente numerico: "1.0.14" > "1.0.3". Comparar como texto
+// daria o contrario ("14" < "3"), que e o mesmo erro que o Luminance 1.0.14
+// apanhava do requisito Luminance@1.0.3.
+bool versionAtLeast(const std::string& have, const std::string& want) {
+    if (want.empty() || have.empty()) return true;
+    size_t i = 0;
+    size_t j = 0;
+    while (i < have.size() || j < want.size()) {
+        long a = 0;
+        long b = 0;
+        while (i < have.size() && !std::isdigit(static_cast<unsigned char>(have[i]))) ++i;
+        while (i < have.size() && std::isdigit(static_cast<unsigned char>(have[i]))) {
+            a = a * 10 + (have[i] - '0');
+            ++i;
+        }
+        while (j < want.size() && !std::isdigit(static_cast<unsigned char>(want[j]))) ++j;
+        while (j < want.size() && std::isdigit(static_cast<unsigned char>(want[j]))) {
+            b = b * 10 + (want[j] - '0');
+            ++j;
+        }
+        if (a != b) return a > b;
+    }
+    return true;
+}
+
 void readTmlInfo(LoadedMod* mod, const std::string& txt) {
     mod->internalName = infoValue(txt, "name");
     if (mod->internalName.empty()) mod->internalName = mod->id;
@@ -274,22 +314,38 @@ void loadAll(const std::string& modsDir, const std::string& tmlDir,
     for (LoadedMod& mod : listed) {
         if (!mod.tml) continue;
         for (const std::string& ref : mod.references) {
-            const bool present = std::any_of(listed.begin(), listed.end(),
-                [&ref](const LoadedMod& other) { return other.id == ref || other.internalName == ref; });
-            if (present) {
-                mod.dependencies.push_back(ref);
+            // `modReferences = FargowiltasSouls@1.4`: o `@` separa a versao
+            // MINIMA. Comparar a string inteira contra o nome do outro mod
+            // nunca casava, e os 3 mods do Fargo diziam "referencia nao
+            // instalada" mesmo com a dependencia presente.
+            std::string name;
+            std::string minVersion;
+            splitRef(ref, &name, &minVersion);
+            const LoadedMod* found = nullptr;
+            for (const LoadedMod& other : listed) {
+                if (other.id == name || other.internalName == name) { found = &other; break; }
+            }
+            if (found) {
+                mod.dependencies.push_back(name);
+                if (!versionAtLeast(found->version, minVersion)) {
+                    BL_WARN("TML %s: %s instalado (%s) e mais antigo que o exigido (%s); seguindo",
+                            mod.id.c_str(), name.c_str(), found->version.c_str(), minVersion.c_str());
+                }
             } else {
                 BL_WARN("TML %s: referencia %s nao esta instalada (seguindo sem ela)",
                         mod.id.c_str(), ref.c_str());
             }
         }
         for (const std::string& ref : mod.weakReferences) {
+            std::string name;
+            std::string ignored;
+            splitRef(ref, &name, &ignored);
             const bool present = std::any_of(listed.begin(), listed.end(),
-                [&ref](const LoadedMod& other) { return other.id == ref || other.internalName == ref; });
+                [&name](const LoadedMod& other) { return other.id == name || other.internalName == name; });
             if (present) {
                 // Ordena antes do mod que a declara; não obriga nada.
-                mod.softReferences.push_back(ref);
-                BL_DEBUG("TML %s: referencia fraca %s (ordena antes)", mod.id.c_str(), ref.c_str());
+                mod.softReferences.push_back(name);
+                BL_DEBUG("TML %s: referencia fraca %s (ordena antes)", mod.id.c_str(), name.c_str());
             } else {
                 BL_DEBUG("TML %s: referencia fraca %s", mod.id.c_str(), ref.c_str());
             }

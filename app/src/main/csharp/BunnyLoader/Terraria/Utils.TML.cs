@@ -17,11 +17,23 @@ public static partial class Utils
     // de `UtilsExtensions` continuam valendo para `rng.NextBool()`), senão o
     // C# acusa ambiguidade.
 
+    // tML 1.4.5 expõe `Utils.NextBool(rng)` como método de UM parâmetro;
+    // o shim só tinha a versão com parâmetro opcional `= 2`, que em IL é
+    // SEMPRE de dois parâmetros. O mod compila `call bool
+    // Terraria.Utils::NextBool(UnifiedRandom)`, o runtime não acha e o
+    // IlPatcher esvaziava o método inteiro (293 ocorrências no FargoSouls).
+    public static bool NextBool(Utilities.UnifiedRandom r) => r.Next(2) == 0;
+
     public static bool NextBool(Utilities.UnifiedRandom r, int chanceDenominator = 2)
         => chanceDenominator <= 1 || r.Next(chanceDenominator) == 0;
 
     public static bool NextBool(Utilities.UnifiedRandom r, int chanceNumerator, int chanceDenominator)
         => NextFloat(r, 0f, chanceDenominator) < chanceNumerator;
+
+    // Mesmo caso: `Utils.NextFloat(rng, max)` (dois parâmetros) não existe em
+    // IL quando só há `NextFloat(rng, min, max)` e `NextFloat(rng)`.
+    public static float NextFloat(Utilities.UnifiedRandom r, float max)
+        => (float)r.NextDouble() * max;
 
     public static float NextFloat(Utilities.UnifiedRandom r, float min, float max)
         => min + (float)r.NextDouble() * (max - min);

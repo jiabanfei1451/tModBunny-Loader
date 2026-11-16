@@ -110,6 +110,13 @@ public sealed partial class Recipe
         return this;
     }
 
+    /// <summary>
+    /// tML também permite passar o <c>ModTile</c> direto; o mod compila
+    /// <c>callvirt Recipe::AddTile(ModTile)</c> e sem esta sobrecarga o
+    /// IlPatcher esvaziava <c>AddRecipes</c> inteiro (55 ocorrências).
+    /// </summary>
+    public Recipe AddTile(ModTile tile) => AddTile(tile.Type);
+
     public Recipe AddCustomShimmerResult(int itemType, int itemStack = 1)
     {
         AddCustomShimmerResult_(itemType, itemStack);

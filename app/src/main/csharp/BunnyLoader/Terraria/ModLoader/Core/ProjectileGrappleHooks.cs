@@ -217,11 +217,7 @@ internal static unsafe class ProjectileGrappleHooks
         return result ?? orig(self, theTile);
     }
 
-    static int TileWidth()
-    {
-        TileData tiles = Main.tile;
-        return tiles.IsNull ? 0 : tiles._width;
-    }
+    static int TileWidth() => Main.maxTilesX;
 
     static void GrapplingForces(On_Player.orig_GetGrapplingForces orig, Player self, Vector2 fromPosition,
         out GameNullable<int> preferredPlayerDirectionToSet, out float preferedPlayerVelocityX, out float preferedPlayerVelocityY)

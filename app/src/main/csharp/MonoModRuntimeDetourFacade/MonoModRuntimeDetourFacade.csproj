@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fachada `MonoMod.RuntimeDetour.dll`.
+
+    `Hook` e `ILHook` do MonoMod são o que Luminance e FargowiltasSouls usam
+    para instalar patches (`List<ILHook>`, `new ILHook(alvo, manipulador)`,
+    `Apply()`, `Undo()`, `Dispose()`). O AssemblyRef pede este nome; o shim tem
+    os tipos, então a fachada só encaminha. Ver a irmã `MonoMod.Utils`.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>MonoMod.RuntimeDetour</AssemblyName>
+    <AssemblyVersion>0.0.0.0</AssemblyVersion>
+    <Version>0.0.0.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0436</NoWarn>
+    <ShimPath Condition="'$(ShimPath)' == ''">$(MSBuildThisFileDirectory)../../../../build/csharp/BunnyLoader/BunnyLoader.dll</ShimPath>
+    <GeneratedForwarders Condition="'$(GeneratedForwarders)' == ''">$(MSBuildThisFileDirectory)../../../../build/generated/tmlFacade/Forwarders.g.cs</GeneratedForwarders>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(GeneratedForwarders)" />
+    <Reference Include="BunnyLoader">
+      <HintPath>$(ShimPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

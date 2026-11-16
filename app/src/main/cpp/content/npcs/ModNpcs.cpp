@@ -131,6 +131,7 @@ Refs& refs() {
     r.ok = r.textures && r.names && r.frames && r.players && r.samples && r.creditIds &&
            r.noAggro >= 0 && r.type >= 0 && r.netId >= 0 && r.active >= 0 && r.width >= 0 &&
            r.height >= 0 && r.life >= 0 && r.lifeMax >= 0 && r.damage >= 0 && r.defense >= 0 &&
+           r.frame >= 0 &&
            r.defDamage >= 0 && r.defDefense >= 0 && r.defLifeMax >= 0 && r.npcCtor && r.setDefaults && r.findFrame &&
            r.playerCtor;
     if (!r.ok) {
@@ -601,10 +602,23 @@ void finishModNpc(Il2CppObject* npc, int type, void* spawnParams) {
     {
         std::lock_guard<std::mutex> l(g_mx);
         const size_t i = static_cast<size_t>(type - kVanillaNpcCount);
-        if (i < g_regs.size()) { w = g_regs[i].width; h = g_regs[i].height; }
+        if (i < g_regs.size()) {
+            w = g_regs[i].width;
+            h = g_regs[i].height;
+        }
     }
     if (field<int32_t>(npc, r.width) <= 0 && w > 0) field<int32_t>(npc, r.width) = w;
     if (field<int32_t>(npc, r.height) <= 0 && h > 0) field<int32_t>(npc, r.height) = h;
+    // NPC novo/morador restaurado herda o frame do NPC que ocupava o slot
+    // (ou nasce com a tira inteira). Sem isto o PreDraw do mod desenha um
+    // pedaco errado/todos os quadros empilhados. O primeiro quadro fica
+    // valido aqui; a IA troca a cada quadro no FindFrame dela.
+    if (r.frame >= 0 && w > 0 && h > 0) {
+        field<int32_t>(npc, r.frame) = 0;
+        field<int32_t>(npc, r.frame + 4) = 0;
+        field<int32_t>(npc, r.frame + 8) = w;
+        field<int32_t>(npc, r.frame + 12) = h;
+    }
     // O final do SetDefaults do jogo rodou ANTES do mod preencher os valores:
     // vida e bases saíram zeradas. De novo, agora com os do mod.
     field<uint8_t>(npc, r.active) = 1;

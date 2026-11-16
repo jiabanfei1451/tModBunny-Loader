@@ -7,7 +7,13 @@ using Terraria.ModLoader;
 
 namespace BunnyLoader;
 
-public sealed class ModAssets
+/// <summary>
+/// <c>Mod.Assets</c> do tML e <see cref="AssetRepository"/>; este e o
+/// repositorio concreto do shim, que resolve os assets no disco do mod.
+/// Ver <see cref="AssetRepository"/> para o porque de derivar (assinatura de
+/// <c>Mod::get_Assets</c> no IL do mod).
+/// </summary>
+public sealed class ModAssets : AssetRepository
 {
     readonly Mod mod;
 
@@ -15,7 +21,8 @@ public sealed class ModAssets
 
     internal ModAssets(Mod mod) => this.mod = mod;
 
-    public Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class, IGameObject
+    public override Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
+        where T : class
     {
         Asset<T>.CheckSupported();
         string relative = Relative(assetName);
@@ -31,7 +38,7 @@ public sealed class ModAssets
         }
     }
 
-    public bool HasAsset<T>(string assetName) where T : class, IGameObject =>
+    public override bool HasAsset<T>(string assetName) where T : class =>
         (typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont)) &&
         Find(Relative(assetName), Extension<T>()) != null;
 

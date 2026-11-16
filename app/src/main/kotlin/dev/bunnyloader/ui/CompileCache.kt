@@ -16,7 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import dev.bunnyloader.mods.TmlMod
+import dev.bunnyloader.mods.TmlMods
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -44,7 +44,7 @@ object CompileCache {
      * certeza — o caminho do assembly chega por parâmetro.
      */
     fun folders(context: Context): List<File> {
-        val mods = TmlMod.modsDir(context)
+        val mods = TmlMods.modsDir(context)
         val children = mods.listFiles() ?: return emptyList()
         return children.filter { it.isDirectory }
             .map { File(it, FOLDER) }

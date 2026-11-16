@@ -60,6 +60,8 @@
   "ClearCompileCache": "清除预编译缓存",
   "CompileCacheCleared": "缓存已清除，释放",
   "CompileCacheReading": "正在计算缓存大小…",
+  "ErrorTitle": "加载器报错",
+  "ErrorCopied": "已复制日志",
   "Developer": "开发者",
   "ModMenu": "模组菜单",
   "ModMenuDescription": "游戏内的兔子按钮：能力、物品、NPC 和增益。关闭时，上次会话的能力保持关闭。",

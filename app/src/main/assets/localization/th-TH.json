@@ -60,6 +60,8 @@
   "ClearCompileCache": "ล้างแคชการคอมไพล์",
   "CompileCacheCleared": "ล้างแคชแล้ว คืนพื้นที่",
   "CompileCacheReading": "กำลังคำนวณขนาดแคช…",
+  "ErrorTitle": "Bunny Loader — ข้อผิดพลาด",
+  "ErrorCopied": "คัดลอกบันทึกแล้ว",
   "Developer": "นักพัฒนา",
   "ModMenu": "Mod Menu",
   "ModMenuDescription": "ปุ่มกระต่ายในเกม: พลัง ไอเทม NPC และบัฟ เมื่อปิด พลังจากเซสชันก่อนจะยังคงปิดอยู่",

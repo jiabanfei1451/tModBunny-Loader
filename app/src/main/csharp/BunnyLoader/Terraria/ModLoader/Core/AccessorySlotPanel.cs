@@ -393,7 +393,7 @@ internal static unsafe class AccessorySlotPanel
     static void DrawPlaceholder(Vector2 position, float scale)
     {
         Texture2D back = TextureAssets.InventoryBack.Value;
-        Main.spriteBatch.Draw(back, position, null, new Color(30, 30, 45, 90), 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        Main.spriteBatch.Draw(back, position, (Rectangle?)null, new Color(30, 30, 45, 90), 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
     }
 
     static void EnsureTemps()
@@ -517,7 +517,7 @@ internal static unsafe class AccessorySlotPanel
             ? Main.inventoryBack
             : ItemSlot.GetColorByLoadout(column == Vanity ? AccessorySlotHooks.VanityProxySlot : AccessorySlotHooks.FunctionalProxySlot, context);
         AccessorySlotHooks.WithPlayer(player, () => modSlot.BackgroundDrawColor(type, ref color));
-        Main.spriteBatch.Draw(back, position, null, color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        Main.spriteBatch.Draw(back, position, (Rectangle?)null, color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
 
         Vector2 center = position + new Vector2(back.Width, back.Height) * scale / 2f;
         if (item.IsAir)
@@ -548,7 +548,7 @@ internal static unsafe class AccessorySlotPanel
             Equipment_Layout layout = Equipment_Layout.Instance;
             bool hidden = slots.exHideAccessory[slot];
             Texture2D eye = (hidden ? TextureAssets.InventoryTickOff : TextureAssets.InventoryTickOn).Value;
-            Main.spriteBatch.Draw(eye, position + layout.VisibilityOffset * scale, null, layout.VisibilityColour, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+            Main.spriteBatch.Draw(eye, position + layout.VisibilityOffset * scale, (Rectangle?)null, layout.VisibilityColour, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
         }
     }
 

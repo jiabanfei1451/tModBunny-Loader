@@ -28,7 +28,20 @@ public class NativeDropRule : IItemDropRule
         {
             if (chains == null)
             {
-                chains = DropRuleInterop.ReadChains(new N.IItemDropRule(Prototype).ChainedRules);
+                // `IItemDropRule.ChainedRules` é uma propriedade com implementação
+                // padrão da INTERFACE no tML. No jogo il2cpp não existe corpo
+                // nativo executável para `get_ChainedRules` — o GameInterop
+                // devolvia `sem corpo executavel` e a chamada inteira de
+                // `ModifyNPCLoot` (FargowiltasSouls / Fargowiltas) era abortada.
+                // Um rule recém-criado nunca tem cadeias, então lista vazia é
+                // o estado correto; se o jogo um dia expuser o getter, ainda
+                // tentamos ler primeiro.
+                try { chains = DropRuleInterop.ReadChains(new N.IItemDropRule(Prototype).ChainedRules); }
+                catch (Exception e)
+                {
+                    ItemHooks.Report("NativeDropRule.ChainedRules", e);
+                    chains = new List<IItemDropRuleChainAttempt>();
+                }
                 DropRuleInterop.Watch(this);
             }
             return chains;

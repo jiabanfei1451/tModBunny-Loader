@@ -60,6 +60,8 @@
   "ClearCompileCache": "Очистить кэш компиляции",
   "CompileCacheCleared": "Кэш очищен, освобождено",
   "CompileCacheReading": "Считаю размер кэша…",
+  "ErrorTitle": "Bunny Loader — ошибка",
+  "ErrorCopied": "Журнал скопирован",
   "Developer": "Разработчик",
   "ModMenu": "Меню модов",
   "ModMenuDescription": "Кнопка кролика в игре: способности, предметы, NPC и баффы. При отключении способности прошлого сеанса не включаются.",

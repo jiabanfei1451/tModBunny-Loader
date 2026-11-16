@@ -182,7 +182,12 @@ internal static unsafe class ItemHooks
         return (byte)(Original(ref call, hook, "Player.ItemCheck_CheckCanUse_Inner") & 0xFF);
     }
 
-    static bool CanUseItem(Item item, Player player)
+    /// <summary>
+    /// Dispatch de <c>CanUseItem</c> (ModPlayer + ModItem + GlobalItem).
+    /// Interno porque <c>CombinedHooks.CanUseItem</c> é o nome que o tML expõe
+    /// aos mods e precisa cair exatamente aqui.
+    /// </summary>
+    internal static bool CanUseItem(Item item, Player player)
     {
         bool allowed = PlayerLoader.All(player, nameof(ModPlayer.CanUseItem), m => m.CanUseItem(item));
         if (ModItemOf(item) is ModItem m)

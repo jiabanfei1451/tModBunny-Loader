@@ -60,6 +60,8 @@
   "ClearCompileCache": "Limpar cache de compilação",
   "CompileCacheCleared": "Cache limpo, liberados",
   "CompileCacheReading": "Calculando o tamanho do cache…",
+  "ErrorTitle": "Bunny Loader — erro",
+  "ErrorCopied": "Log copiado",
   "Developer": "Desenvolvedor",
   "ModMenu": "Mod Menu",
   "ModMenuDescription": "O botão do coelho dentro do jogo: poderes, itens, NPCs e buffs. Desligado, nenhum poder volta ligado da última partida.",

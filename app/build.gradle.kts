@@ -608,8 +608,40 @@ val writeDotnetReferences by tasks.registering {
     }
 }
 
+// Fachadas `MonoMod.Utils.dll` e `MonoMod.RuntimeDetour.dll`: mods que fazem
+// patch de IL (Luminance, FargowiltasSouls) referenciam o MonoMod que o tML
+// 1.4.5 traz em `Libraries/`. Os tipos estão no shim (Mono.Cecil por baixo),
+// mas o AssemblyRef pede esses nomes — mesma razão das fachadas acima.
+val monoModFacades = listOf(
+    "MonoMod.Utils" to "MonoModUtilsFacade",
+    "MonoMod.RuntimeDetour" to "MonoModRuntimeDetourFacade",
+)
+
+val buildMonoModFacades by tasks.registering {
+    dependsOn(generateTmlForwarders, buildBunnyLoaderCs)
+    val shim = layout.buildDirectory.file("csharp/BunnyLoader/BunnyLoader.dll")
+    val forwarded = generatedForwarders
+    val out = layout.buildDirectory.dir("csharp/tmlFacade")
+    inputs.files(forwarded, shim)
+    outputs.files(monoModFacades.map { layout.buildDirectory.file("csharp/tmlFacade/${it.first}.dll").get().asFile })
+    doLast {
+        monoModFacades.forEach { (name, project) ->
+            providers.exec {
+                commandLine(
+                    "dotnet", "build", file("src/main/csharp/$project/$project.csproj").absolutePath,
+                    "-c", "Release", "-nologo", "-v", "q",
+                    "-p:ShimPath=${shim.get().asFile.absolutePath}",
+                    "-p:GeneratedForwarders=${forwarded.get().asFile.absolutePath}",
+                    "-o", out.get().asFile.absolutePath,
+                )
+            }.result.get()
+            check(file("${out.get().asFile}/${name}.dll").isFile) { "fachada $name não foi gerada" }
+        }
+    }
+}
+
 val syncDotnetAssets by tasks.registering(Sync::class) {
-    dependsOn(fetchMonoRuntime, buildBunnyLoaderCs, buildTmlFacade, buildFnaFacade, buildReLogicFacade, buildTerrariaHooksFacade, buildLog4netFacade, writeDotnetReferences)
+    dependsOn(fetchMonoRuntime, buildBunnyLoaderCs, buildTmlFacade, buildFnaFacade, buildReLogicFacade, buildTerrariaHooksFacade, buildLog4netFacade, buildMonoModFacades, writeDotnetReferences)
     inputs.property("libs", monoShippedLibs)
     from(monoPack.map { zipTree(it) }) {
         include("runtimes/android-arm64/native/System.Private.CoreLib.dll")
@@ -634,6 +666,8 @@ val syncDotnetAssets by tasks.registering(Sync::class) {
         include("ReLogic.dll")
         include("TerrariaHooks.dll")
         include("log4net.dll")
+        include("MonoMod.Utils.dll")
+        include("MonoMod.RuntimeDetour.dll")
     }
     from(writeDotnetReferences)
     includeEmptyDirs = false

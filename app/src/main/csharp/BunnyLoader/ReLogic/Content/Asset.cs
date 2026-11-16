@@ -16,10 +16,16 @@ namespace ReLogic.Content;
 /// <c>where T : struct, IGameObject</c>, o JIT do mod lançaria
 /// <c>TypeLoadException</c> ao instanciar <c>Asset`1&lt;Texture2D&gt;</c>.
 ///
-/// A restrição extra <c>IGameObject</c> é do shim: <c>T</c> precisa expor o
-/// ponteiro nativo para virar proxy.
+/// A restrição do shim <c>IGameObject</c> foi removida (era
+/// <c>where T : class, IGameObject</c>): o Luminance pede
+/// <c>Request&lt;Effect&gt;</c> e <c>Effect</c> vem do FNA, sem a interface.
+/// Com a restrição extra o JIT do mod lançaria <c>TypeLoadException</c> só
+/// por instanciar <c>Asset`1&lt;Effect&gt;</c>. Quem precisa do ponteiro nativo
+/// é <see cref="Value"/>, que delega ao
+/// <see cref="BunnyLoader.Interop.GameObjectFactory"/> (e falha com
+/// <c>NotSupportedException</c> para tipos que não são proxies do jogo).
 /// </summary>
-public sealed unsafe class Asset<T> where T : class, IGameObject
+public sealed unsafe class Asset<T> where T : class
 {
     readonly string? file;
 

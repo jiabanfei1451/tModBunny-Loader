@@ -17,16 +17,7 @@ public sealed partial class Main
         }
     }
 
-    public static IEnumerable<Player> ActivePlayers
-    {
-        get
-        {
-            var players = player;
-            for (int i = 0; i < maxPlayers && i < players.Length; i++)
-            {
-                Player current = players[i];
-                if (!current.IsNull && current.active) yield return current;
-            }
-        }
-    }
+    // v101: idem ActiveNPCs/ActiveProjectiles (ver Main.TML.cs). O iterador
+    // clampa count em array.Length e pula slots vazios/inativos por IsActive.
+    public static Terraria.ModLoader.ActiveEntityIterator<Player> ActivePlayers => new(player, maxPlayers);
 }

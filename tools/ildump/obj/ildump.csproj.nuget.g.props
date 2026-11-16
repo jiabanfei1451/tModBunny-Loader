@@ -4,12 +4,12 @@
     <RestoreSuccess Condition=" '$(RestoreSuccess)' == '' ">True</RestoreSuccess>
     <RestoreTool Condition=" '$(RestoreTool)' == '' ">NuGet</RestoreTool>
     <ProjectAssetsFile Condition=" '$(ProjectAssetsFile)' == '' ">$(MSBuildThisFileDirectory)project.assets.json</ProjectAssetsFile>
-    <NuGetPackageRoot Condition=" '$(NuGetPackageRoot)' == '' ">D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages</NuGetPackageRoot>
-    <NuGetPackageFolders Condition=" '$(NuGetPackageFolders)' == '' ">D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages</NuGetPackageFolders>
+    <NuGetPackageRoot Condition=" '$(NuGetPackageRoot)' == '' ">d:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages</NuGetPackageRoot>
+    <NuGetPackageFolders Condition=" '$(NuGetPackageFolders)' == '' ">d:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages</NuGetPackageFolders>
     <NuGetProjectStyle Condition=" '$(NuGetProjectStyle)' == '' ">PackageReference</NuGetProjectStyle>
     <NuGetToolVersion Condition=" '$(NuGetToolVersion)' == '' ">7.0.0</NuGetToolVersion>
   </PropertyGroup>
   <ItemGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
-    <SourceRoot Include="D:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages\" />
+    <SourceRoot Include="d:\Tool\Project\Android\TerrariaModLoader\Bunny-Loader-main\.nuget-packages\" />
   </ItemGroup>
 </Project>

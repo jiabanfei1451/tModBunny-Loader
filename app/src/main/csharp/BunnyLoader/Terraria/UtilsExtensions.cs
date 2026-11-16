@@ -90,7 +90,7 @@ public static partial class UtilsExtensions
         tex.Value.Frame(horizontalFrames, verticalFrames, frameX, frameY, sizeOffsetX, sizeOffsetY);
 
     public static ReLogic.Content.Asset<T> Request<T>(this ReLogic.Content.IAssetRepository repository, string assetName, ReLogic.Content.AssetRequestMode mode = ReLogic.Content.AssetRequestMode.AsyncLoad)
-        where T : class, BunnyLoader.Interop.IGameObject =>
+        where T : class =>
         Terraria.ModLoader.ModContent.Request<T>("Terraria/" + assetName.Replace('\\', '/'), mode);
 
     public static Vector2 RotatedBy(this Vector2 spinningpoint, double radians, Vector2 center = default)

@@ -199,7 +199,18 @@ internal static class IlPatcher
                 AddName(structs, type);
                 continue;
             }
-            if (!type.IsClass || type.IsInterface) continue;
+            // INTERFACES tambem sao API que o mod chama por `callvirt`
+            // (`ITownNPCProfile.GetTextureNPCShouldUse`, `IEntitySource`...).
+            // Exclui-las fazia `IsMissingGameMethod` devolver true SEM olhar
+            // a assinatura: sobrava no NeutralizeCall, que devolvia null.
+            // Consequencia real: `Mutant.PreDraw` / `Deviantt.PreDraw`
+            // morriam em `Asset<Texture2D>.op_Explicit(null)` antes de
+            // escolher a textura e recortar o frame, e o NPC aparecia com a
+            // sprite sheet INTEIRA do mod ("textura fatiada") em vez de um
+            // unico sprite. `IndexOf` ja usa GetMethods(), que ve os metodos
+            // declarados na interface, entao basta indexa-la.
+            if (!type.IsClass && !type.IsInterface) continue;
+            if (type.IsInterface) { AddName(classes, type); continue; }
             if (type.IsAbstract && !type.IsSealed) continue;
             AddName(classes, type);
         }
@@ -298,7 +309,11 @@ internal static class IlPatcher
         string shim = "000000000000";
         try { shim = typeof(IlPatcher).Assembly.ManifestModule.ModuleVersionId.ToString("N").Substring(0, 12); }
         catch { }
-        return $"{size:x}-{ticks:x}-{hash:x16}-{shim}";
+        // Versao explicita do patcher: garante que caches de builds anteriores
+        // (por exemplo o PreAI que saia vazio/false) nunca sejam reaproveitados,
+        // mesmo que o MVID do shim coincida por algum motivo.
+        const string patcher = "v98-npcai";
+        return $"{size:x}-{ticks:x}-{hash:x16}-{shim}-{patcher}";
     }
 
     /// <summary>
@@ -530,6 +545,67 @@ internal static class IlPatcher
         }
     }
 
+    /// <summary>
+    /// Troca UM `call` para método inexistente por uma sequência que consome
+    /// os argumentos e empilha o valor padrão do retorno. O efeito líquido na
+    /// pilha é idêntico ao do `call`, então o RESTANTE do corpo continua
+    /// executando — em vez de o método inteiro ir para quarentena.
+    /// </summary>
+    static bool NeutralizeCall(ModuleDefinition module, Mono.Cecil.Cil.MethodBody body,
+        ILProcessor il, Instruction ins, MethodReference called)
+    {
+        TypeReference ret = called.ReturnType;
+        // Não há como fabricar endereço, ponteiro ou tipo genérico aberto.
+        if (ret.IsByReference || ret.IsPointer || ret is GenericParameter) return false;
+
+        int pops = called.Parameters.Count + (called.HasThis ? 1 : 0);
+        bool returns = ret.MetadataType != MetadataType.Void;
+
+        Instruction? first = null;
+        void Emit(Instruction created)
+        {
+            il.InsertBefore(ins, created);
+            first ??= created;
+        }
+
+        for (int i = 0; i < pops; i++) Emit(il.Create(OpCodes.Pop));
+        if (returns)
+        {
+            TypeReference localType = module.ImportReference(ret);
+            var local = new VariableDefinition(localType);
+            body.Variables.Add(local);
+            body.InitLocals = true;
+            Emit(il.Create(OpCodes.Ldloca, local));
+            Emit(il.Create(OpCodes.Initobj, localType));
+            Emit(il.Create(OpCodes.Ldloc, local));
+        }
+
+        // A `call` pode ser alvo de desvio: o branch precisa cair na PRIMEIRA
+        // instrução nova, senão pula os `pop` e desbalanceia a pilha.
+        if (first != null)
+        {
+            foreach (Instruction other in body.Instructions)
+            {
+                if (ReferenceEquals(other.Operand, ins)) other.Operand = first;
+                else if (other.Operand is Instruction[] many)
+                    for (int k = 0; k < many.Length; k++)
+                        if (ReferenceEquals(many[k], ins)) many[k] = first;
+            }
+            foreach (ExceptionHandler handler in body.ExceptionHandlers)
+            {
+                if (ReferenceEquals(handler.TryStart, ins)) handler.TryStart = first;
+                if (ReferenceEquals(handler.TryEnd, ins)) handler.TryEnd = first;
+                if (ReferenceEquals(handler.HandlerStart, ins)) handler.HandlerStart = first;
+                if (ReferenceEquals(handler.HandlerEnd, ins)) handler.HandlerEnd = first;
+                if (handler.FilterStart != null && ReferenceEquals(handler.FilterStart, ins)) handler.FilterStart = first;
+            }
+        }
+
+        ins.OpCode = OpCodes.Nop;
+        ins.Operand = null;
+        return true;
+    }
+
     static void PatchMethod(ModuleDefinition module, MethodDefinition method,
         Dictionary<string, Type> map, ref int rewritten, ref int missing, ref int stubbed, SortedSet<string> absent)
     {
@@ -550,6 +626,7 @@ internal static class IlPatcher
         // libmonosgen (PC +0xC8758, si_addr 0) — sem excecao gerenciada e
         // sem uma linha de log. Melhor entregar um metodo vazio.
         bool unresolved = false;
+        bool neutralized = false;
         var reasons = new List<string>();
         // Instrucao que deixa um "array do jogo" na pilha -> como ele e
         // acessado. Serve para consertar `ldelem/stelem/ldlen` depois
@@ -571,8 +648,38 @@ internal static class IlPatcher
                 // sendo propriedade de verdade no shim), a assinatura ainda
                 // precisa bater — `TeleportPylonsSystem.get_Pylons()` devolve
                 // tipo diferente e também derruba o JIT.
+                // tML 1.4.5 compila `Tile.TileFrameX`/`TileType`/`WallType`/
+                // `LiquidAmount` como getter que devolve `T&`; o shim expõe
+                // esses mesmos nomes POR VALOR (o Tile daqui é um handle de
+                // 4 bytes e o setter por valor escreve de verdade na memória
+                // nativa). Sem adaptar, `IsMissingGameMethod` classificava
+                // cada chamada como "apagada na 1.4.5" e esvaziava o método
+                // inteiro — 148 só por `get_TileType`. A pilha depois do call
+                // continua com `T&`: guarda o valor num local e devolve o
+                // endereço desse local (`ldind`/`stobj` do mod seguem válidos).
+                if (rewritten == before && RewriteByRefGetter(module, il, method, ins, called, map))
+                { rewritten++; continue; }
                 if (rewritten == before && IsMissingGameMethod(called))
-                { unresolved = true; reasons.Add($"metodo ausente {called.DeclaringType.FullName}::{called.Name}({called.Parameters.Count})"); }
+                {
+                    // Um unico `call` para uma API que o shim nao tem NAO
+                    // deve apagar o metodo inteiro. Na pratica eram avisos
+                    // inofensivos (`Main.NewText`) derrubando `UseItem` de
+                    // 14 itens de summon, e `ITownNPCProfile.GetTexture...`
+                    // apagando o `PreDraw` dos NPCs de cidade (que passavam
+                    // a aparecer comofragmentos cinza). Neutraliza so esta
+                    // instrucao e deixa o resto do corpo executar.
+                    if (NeutralizeCall(module, body, il, ins, called))
+                    {
+                        rewritten++;
+                        neutralized = true;
+                        reasons.Add($"chamada neutralizada {called.DeclaringType.FullName}::{called.Name}");
+                    }
+                    else
+                    {
+                        unresolved = true;
+                        reasons.Add($"metodo ausente {called.DeclaringType.FullName}::{called.Name}({called.Parameters.Count})");
+                    }
+                }
                 continue;
             }
             if (ins.Operand is not FieldReference field) continue;
@@ -685,7 +792,56 @@ internal static class IlPatcher
                     break;
 
                 case Code.Stfld or Code.Stsfld:
-                    if (setter == null) { missing++; if (!HasRealField(shim, field.Name)) { unresolved = true; reasons.Add($"sem setter {owner}::{field.Name}"); } continue; }
+                    if (setter == null)
+                    {
+                        // ProxyGen expõe vários campos do jogo como propriedade
+                        // SOMENTE-LEITURA com getter `ref` (`__ref_X`). O `stfld`
+                        // do mod pode muito bem escrever nesse endereço: basta
+                        // guardar o valor, obter o T& e fazer `stobj`.
+                        MethodInfo? writeAddress = byRefGetter ??
+                            (refGetter != null && refGetter.ReturnType.IsByRef ? refGetter : null);
+                        // `stsfld` não tem objeto na pilha: um getter de
+                        // instância ficaria sem `this` e geraria IL inválido.
+                        if (ins.OpCode.Code == Code.Stsfld && writeAddress != null && !writeAddress.IsStatic)
+                            writeAddress = null;
+                        if (writeAddress != null && writeAddress.ReturnType.IsByRef)
+                        {
+                            Type element = writeAddress.ReturnType.GetElementType()!;
+                            TypeReference valueType = module.ImportReference(field.FieldType);
+                            TypeReference slotType = module.ImportReference(element);
+                            if (CecilTypeName(valueType) == CecilTypeName(slotType))
+                            {
+                                var scratch = new VariableDefinition(valueType);
+                                method.Body.Variables.Add(scratch);
+                                il.InsertBefore(ins, il.Create(OpCodes.Stloc, scratch));
+                                il.InsertBefore(ins, il.Create(writeAddress.IsStatic ? OpCodes.Call : OpCodes.Callvirt,
+                                    module.ImportReference(writeAddress)));
+                                il.InsertBefore(ins, il.Create(OpCodes.Ldloc, scratch));
+                                il.InsertBefore(ins, slotType.IsValueType
+                                    ? il.Create(OpCodes.Stobj, slotType)
+                                    : il.Create(OpCodes.Stind_Ref));
+                                il.Remove(ins);
+                                rewritten++;
+                                break;
+                            }
+                        }
+                        // Ainda sem caminho de escrita: descarta SÓ esta
+                        // instrução. A versão anterior esvaziava o método
+                        // inteiro por causa de um único campo — foi isso que
+                        // sumiu com AddRecipes/SetStaticDefaults do FargoSouls
+                        // (1 268 métodos viraram `return default`). `pop` mantém
+                        // a pilha平衡: stfld tira [obj, valor], stsfld tira
+                        // [valor]; o restante do corpo continua executando
+                        // (a pilha fica balanceada).
+                        bool instanceWrite = ins.OpCode.Code == Code.Stfld;
+                        ins.OpCode = OpCodes.Pop;
+                        ins.Operand = null;
+                        if (instanceWrite) il.InsertAfter(ins, il.Create(OpCodes.Pop));
+                        missing++;
+                        if (Trace != null)
+                            Trace.WriteLine($"{method.FullName} :: escrita ignorada {owner}::{field.Name}");
+                        break;
+                    }
                     ins.OpCode = setter.IsStatic ? OpCodes.Call : OpCodes.Callvirt;
                     ins.Operand = module.ImportReference(setter);
                     rewritten++;
@@ -727,9 +883,39 @@ internal static class IlPatcher
             // por metodo esvaziado no FargowiltasSouls (1 268 metodos).
             Stub(method, announce: false);
             stubbed++;
-            Log.Warn($"il patch: {method.DeclaringType.FullName}.{method.Name}: campo sem traducao; corpo trocado por retorno padrao");
+            // O motivo vai na MESMA linha: sem ele o log so diz "campo sem
+            // traducao" e nao ha como saber qual dos 50 membros do metodo
+            // faltou no shim. Dois motivos bastam para identificar o padrao.
+            int shown = 0;
+            var why = new System.Text.StringBuilder();
+            foreach (string reason in reasons)
+            {
+                if (shown == 2) { why.Append(", ..."); break; }
+                if (shown > 0) why.Append(", ");
+                why.Append(reason);
+                shown++;
+            }
+            Log.Warn($"il patch: {method.DeclaringType.FullName}.{method.Name}: campo sem traducao [{why}]; corpo trocado por retorno padrao");
             if (Trace != null)
                 Trace.WriteLine($"{method.FullName} :: {string.Join(", ", reasons)}");
+            return;
+        }
+
+        // Hooks de PERMISSAO (PreAI / PreDraw / Can* / Check*) devolvem false
+        // para impedir a acao nativa. Se uma chamada dentro deles foi
+        // neutralizada — `TownRoomManager.HasRoom` passa a valer false — o
+        // corpo restante pode devolver false e desligar o VanillaAI de TODOS
+        // os NPCs (v95: NPCs empilhados e parados no ar de novo). Para esses
+        // hooks o Stub com `true` e mais seguro do que preservar uma logica
+        // que agora le um estado fabricado. `UseItem` e companhia NAO entram
+        // aqui: seguem com o corpo neutralizado e funcionando.
+        if (neutralized && StubAllowsVanilla(method))
+        {
+            Stub(method, announce: false);
+            stubbed++;
+            Log.Warn($"il patch: {method.DeclaringType.FullName}.{method.Name}: hook de permissao neutralizado; corpo trocado por retorno padrao");
+            if (Trace != null)
+                Trace.WriteLine($"{method.FullName} :: permissao [{string.Join(", ", reasons)}]");
             return;
         }
 
@@ -755,6 +941,22 @@ internal static class IlPatcher
     /// esvaziado custava duas linhas de log (logcat + arquivo, ~8 ms cada no
     /// aparelho) e são mais de mil por mod grande.
     /// </param>
+    /// <summary>
+    /// Hooks booleanos do tML em que <c>true</c> significa "deixe o vanilla
+    /// continuar". Consultas (<c>Is*</c>, <c>Has*</c>, <c>Should*</c>,
+    /// <c>Get*</c>) e <c>UseItem</c> ficam DE FORA: devolver true nelas
+    /// inventaria um estado que não existe (item usado sem efeito, tile
+    /// interagível, camada visível). Só os ganchos de permissão recebem true.
+    /// </summary>
+    static bool StubAllowsVanilla(MethodDefinition method)
+    {
+        if (method.ReturnType.MetadataType != MetadataType.Boolean) return false;
+        string name = method.Name;
+        return name.StartsWith("Pre", StringComparison.Ordinal)
+            || name.StartsWith("Can", StringComparison.Ordinal)
+            || name.StartsWith("Check", StringComparison.Ordinal);
+    }
+
     static void Stub(MethodDefinition method, bool announce = true)
     {
         try
@@ -773,7 +975,18 @@ internal static class IlPatcher
                 return;
             }
 
-            if (method.ReturnType.MetadataType != MetadataType.Void)
+            if (StubAllowsVanilla(method))
+            {
+                // Um hook que nao pode ser traduzido deve se comportar como se
+                // NAO existisse: deixar o jogo seguir. O default do initobj
+                // devolvia false e, em tML, false significa "impedir a acao
+                // nativa". FargoGlobalNPC.PreAI vinha sendo esvaziado por
+                // causa de TownRoomManager.HasRoom ausente e com isso
+                // NPCLoader.NPCAI pulava npc.VanillaAI() para TODOS os NPCs:
+                // nenhum NPC andava, atacava ou seguia o jogador.
+                il.Append(il.Create(OpCodes.Ldc_I4_1));
+            }
+            else if (method.ReturnType.MetadataType != MetadataType.Void)
             {
                 TypeReference ret = method.Module.ImportReference(method.ReturnType);
                 var local = new VariableDefinition(ret);
@@ -1027,7 +1240,10 @@ internal static class IlPatcher
         var stack = new List<Instruction?>();
         // produtor -> instrucao `Read<T>` inserida por ele (array por endereco)
         var materialized = new Dictionary<Instruction, Instruction>();
-        var boxed = new HashSet<Instruction>();
+        // Um mesmo produtor recebe NO MAXIMO uma adaptação: `box` (parâmetro
+        // de interface) ou `op_Implicit` (T[]). Compartilhar o set impede as
+        // duas de serem inseridas na mesma posição da pilha.
+        var adapted = new HashSet<Instruction>();
         // Profundidade da pilha em cada alvo de desvio (vista no desvio). O
         // `x ?? (x = new ...)` que o Roslyn gera para cache de delegate deixa
         // o ARRAY na pilha ATRAVES do desvio; limpar a pilha ao chegar no alvo
@@ -1048,7 +1264,7 @@ internal static class IlPatcher
                 Code.Ldlen => 0,
                 Code.Ldelem_Any or Code.Ldelem_I1 or Code.Ldelem_U1 or Code.Ldelem_I2 or Code.Ldelem_U2
                     or Code.Ldelem_I4 or Code.Ldelem_U4 or Code.Ldelem_I8 or Code.Ldelem_R4 or Code.Ldelem_R8
-                    or Code.Ldelem_Ref => 1,
+                    or Code.Ldelem_Ref or Code.Ldelema => 1,
                 Code.Stelem_Any or Code.Stelem_I or Code.Stelem_I1 or Code.Stelem_I2 or Code.Stelem_I4
                     or Code.Stelem_I8 or Code.Stelem_R4 or Code.Stelem_R8 or Code.Stelem_Ref => 2,
                 _ => -1,
@@ -1058,9 +1274,19 @@ internal static class IlPatcher
             {
                 int at = stack.Count - 1 - operands;
                 if (at >= 0 && stack[at] is Instruction producer &&
-                    arrays.TryGetValue(producer, out ArrayRef array) &&
-                    RewriteElement(module, il, current, array))
-                    arraySlot = at;
+                    !adapted.Contains(producer) &&
+                    arrays.TryGetValue(producer, out ArrayRef array))
+                {
+                    if (current.OpCode.Code == Code.Ldelema)
+                    {
+                        // `ldelema` precisa de um T[] de verdade: o endereco
+                        // do elemento so existe na copia gerenciada.
+                        CoerceToManagedArray(module, il, producer, arrays, materialized, adapted);
+                        arraySlot = at;
+                    }
+                    else if (RewriteElement(module, il, current, array))
+                        arraySlot = at;
+                }
             }
 
             // Efeito na pilha, já com o opcode novo (os deltas são os mesmos:
@@ -1090,7 +1316,8 @@ internal static class IlPatcher
                         // mais 24 metodos.
                         TypeReference? target = ParamAt(callee, now, p)
                             ?? (now != Code.Newobj && callee.HasThis && p == pops - 1 ? callee.DeclaringType : null);
-                        BoxIfReference(module, il, stack[slot], target, arrays, materialized, boxed);
+                        BoxIfReference(module, il, stack[slot], target, arrays, materialized, adapted);
+                        CoerceIfArray(module, il, stack[slot], target, arrays, materialized, adapted);
                     }
                     Pop(stack);
                 }
@@ -1108,15 +1335,24 @@ internal static class IlPatcher
                 TypeReference? target = current.OpCode.Code switch
                 {
                     Code.Ret => body.Method.ReturnType,
-                    Code.Stloc => (current.Operand as VariableDefinition)?.VariableType,
-                    Code.Starg => (current.Operand as ParameterDefinition)?.ParameterType,                    Code.Stloc_0 => body.Variables.Count > 0 ? body.Variables[0].VariableType : null,
+                    // `stloc.s`/`starg.s` são opcodes DISTINTOS de `stloc`/
+                    // `starg` no Cecil. Sem eles o alvo vinha null e o array
+                    // do jogo nunca era convertido em T[] — era o caso de
+                    // MiscRecipeSystem.PostAddRecipes (stloc.s V_5 : Recipe[]),
+                    // que seguia com InvalidProgram no JIT.
+                    Code.Stloc or Code.Stloc_S => (current.Operand as VariableDefinition)?.VariableType,
+                    Code.Starg or Code.Starg_S => (current.Operand as ParameterDefinition)?.ParameterType,
+                    Code.Stloc_0 => body.Variables.Count > 0 ? body.Variables[0].VariableType : null,
                     Code.Stloc_1 => body.Variables.Count > 1 ? body.Variables[1].VariableType : null,
                     Code.Stloc_2 => body.Variables.Count > 2 ? body.Variables[2].VariableType : null,
                     Code.Stloc_3 => body.Variables.Count > 3 ? body.Variables[3].VariableType : null,
                     _ => null,
                 };
                 if (target != null && stack.Count > 0)
-                    BoxIfReference(module, il, stack[^1], target, arrays, materialized, boxed);
+                {
+                    BoxIfReference(module, il, stack[^1], target, arrays, materialized, adapted);
+                    CoerceIfArray(module, il, stack[^1], target, arrays, materialized, adapted);
+                }
                 int delta = Delta(current) ?? 0;
                 for (int p = 0; p < delta; p++) stack.Add(current);
                 for (int p = 0; p < -delta; p++)
@@ -1208,6 +1444,64 @@ internal static class IlPatcher
             or "System.Collections.IEnumerable"
             or "System.Object"
             or "System.Array";
+    }
+
+    /// <summary>
+    /// Conversão implícita <c>GameArray&lt;T&gt;/GameRefArray&lt;T&gt; -&gt; T[]</c>.
+    /// O mod compilou contra <c>T[]</c>, mas depois da reescrita a pilha tem
+    /// a struct proxy. Sem chamar <c>op_Implicit</c> o JIT do Mono recusa o
+    /// corpo INTEIRO ("Invalid IL code") quando o array é usado por inteiro:
+    /// passado a um parâmetro <c>T[]</c>, guardado num local <c>T[]</c> ou
+    /// endereçado por <c>ldelema</c>. Era o que derrubava
+    /// BannerRecipeSystem.AddBannerToFoodRecipes, MiscRecipeSystem.PostAddRecipes,
+    /// InputManager.ProcessTriggers e FargoPlayer.PostUpdateBuffs.
+    /// </summary>
+    static MethodInfo? ManagedArrayConversion(Type clr)
+    {
+        if (!clr.IsGenericType) return null;
+        string name = clr.GetGenericTypeDefinition().Name;
+        // So GameArray<T> (elementos unmanaged) é seguro de materializar.
+        // GameRefArray<T> guarda PONTEIROS e Main.recipe tem milhares de
+        // slots vazios: converter em Recipe[] e deixar PostAddRecipes
+        // percorrer esses slots derrubou o processo com SIGSEGV nativo
+        // (v92, logo após "recipe discarded"). Lá o metodo continua sendo
+        // rejeitado pelo JIT — exceção capturada, o jogo segue.
+        if (name is not "GameArray`1") return null;
+        Type array = clr.GetGenericArguments()[0].MakeArrayType();
+        foreach (MethodInfo m in clr.GetMethods(BindingFlags.Public | BindingFlags.Static))
+        {
+            if (m.Name != "op_Implicit" || m.ReturnType != array) continue;
+            ParameterInfo[] ps = m.GetParameters();
+            if (ps.Length == 1 && ps[0].ParameterType == clr) return m;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Insere <c>call op_Implicit</c> depois do <c>Read&lt;T&gt;</c> que
+    /// empilhou o array do jogo. Uma vez só por produtor: o mesmo valor pode
+    /// ser consumido por vários caminhos da simulação de pilha. Depois disso
+    /// o <c>ldelem/stelem/ldlen</c> original volta a ser válido, por isso o
+    /// produtor sai da lista de adaptações e <see cref="RewriteElement"/>
+    /// não o troca mais por <c>Get/Set</c>.
+    /// </summary>
+    static void CoerceToManagedArray(ModuleDefinition module, ILProcessor il, Instruction producer,
+        Dictionary<Instruction, ArrayRef> arrays, Dictionary<Instruction, Instruction> materialized,
+        HashSet<Instruction> adapted)
+    {
+        if (!arrays.TryGetValue(producer, out ArrayRef info) || info.ByRef) return;
+        if (ManagedArrayConversion(info.Clr) is not MethodInfo conv) return;
+        if (!adapted.Add(producer)) return;
+        Instruction anchor = materialized.TryGetValue(producer, out Instruction? read) ? read : producer;
+        il.InsertAfter(anchor, il.Create(OpCodes.Call, module.ImportReference(conv)));
+    }
+
+    static void CoerceIfArray(ModuleDefinition module, ILProcessor il, Instruction? producer,
+        TypeReference? target, Dictionary<Instruction, ArrayRef> arrays,
+        Dictionary<Instruction, Instruction> materialized, HashSet<Instruction> adapted)
+    {
+        if (producer is null || target is not ArrayType) return;
+        CoerceToManagedArray(module, il, producer, arrays, materialized, adapted);
     }
 
     static void BoxIfReference(ModuleDefinition module, ILProcessor il, Instruction? producer,
@@ -1670,6 +1964,47 @@ internal static class IlPatcher
     /// o <c>call</c> e derruba o processo no PrepareMethod (era o crash do v30).
     /// Só comparar nome deixa esses furos passarem.
     /// </summary>
+    /// <summary>
+    /// Converte `call T&amp; get_X()` num `call T get_X()` seguido de
+    /// `stloc`/`ldloca`, quando o shim só tem a versão por valor. Devolve true
+    /// se reescreveu (o chamador não deve mais marcar `unresolved`).
+    /// </summary>
+    static bool RewriteByRefGetter(ModuleDefinition module, ILProcessor il, MethodDefinition method,
+        Instruction ins, MethodReference called, Dictionary<string, Type> map)
+    {
+        if (called.ReturnType is not ByReferenceType byRef) return false;
+        string? owner = OwnerOf(called.DeclaringType);
+        if (owner == null) return false;
+        if (!map.TryGetValue(owner, out Type? shim) && !StructMap.TryGetValue(owner, out shim)) return false;
+
+        string value = CecilTypeName(byRef.ElementType);
+        if (!IndexOf(shim).ByName.TryGetValue(called.Name, out List<Overload>? slots)) return false;
+        bool wantStatic = !called.HasThis;
+        int arity = called.Parameters.Count;
+        MethodInfo? target = null;
+        foreach (Overload slot in slots)
+        {
+            if (slot.Static != wantStatic || slot.Params.Length != arity) continue;
+            if (slot.Method.ReturnType.IsByRef) continue;
+            if (!TypeNamesMatch(value, slot.Return)) continue;
+            bool ok = true;
+            for (int i = 0; i < arity; i++)
+                if (!TypeNamesMatch(CecilTypeName(called.Parameters[i].ParameterType), slot.Params[i]))
+                { ok = false; break; }
+            if (ok) { target = slot.Method; break; }
+        }
+        if (target == null) return false;
+
+        var scratch = new VariableDefinition(module.ImportReference(byRef.ElementType));
+        method.Body.Variables.Add(scratch);
+        ins.Operand = module.ImportReference(target);
+        Instruction store = il.Create(OpCodes.Stloc, scratch);
+        Instruction address = il.Create(OpCodes.Ldloca, scratch);
+        il.InsertAfter(ins, store);
+        il.InsertAfter(store, address);
+        return true;
+    }
+
     static bool FindMethodBySignature(Type type, MethodReference method)
     {
         MemberIndex index = IndexOf(type);

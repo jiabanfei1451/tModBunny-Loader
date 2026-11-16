@@ -6,6 +6,11 @@ namespace Terraria;
 
 public sealed unsafe partial class Main
 {
+    // v100: campo estatico de verdade (o mod faz "ldsflda Main::tile").
+    // Em types.txt: "! Terraria.Main.tile" impede o ProxyGen de gerar a
+    // propriedade equivalente.
+    public static Tilemap tile;
+
     // v65: tML (Main.cs.patch) acrescenta estes dois. O mod le
     // Main.CurrentPlayer para achar o jogador "dono" do desenho atual; a
     // sobrecarga e' usada pelas telas de slot de acessorio para apontar para
@@ -147,27 +152,10 @@ public sealed unsafe partial class Main
     public static void EntitySpriteDraw(Texture2D texture, Microsoft.Xna.Framework.Vector2 position, Microsoft.Xna.Framework.Rectangle? sourceRectangle, Color color, float rotation, Microsoft.Xna.Framework.Vector2 origin, Microsoft.Xna.Framework.Vector2 scale, SpriteEffects effects, float worthless = 0f) =>
         EntitySpriteDraw(texture, position, sourceRectangle ?? new Microsoft.Xna.Framework.Rectangle(0, 0, texture.Width, texture.Height), color, rotation, origin, scale, effects, worthless);
 
-    public static IEnumerable<NPC> ActiveNPCs
-    {
-        get
-        {
-            for (int i = 0; i < maxNPCs; i++)
-            {
-                NPC n = npc[i];
-                if (n.active) yield return n;
-            }
-        }
-    }
+    // v101: o tML devolve ActiveEntityIterator<T> (o mod faz ldloca + call
+    // GetEnumerator), entao IEnumerable nao serve: o tipo de retorno tem que
+    // casar com o que o IL do mod espera.
+    public static Terraria.ModLoader.ActiveEntityIterator<NPC> ActiveNPCs => new(npc, maxNPCs);
 
-    public static IEnumerable<Projectile> ActiveProjectiles
-    {
-        get
-        {
-            for (int i = 0; i < maxProjectiles; i++)
-            {
-                Projectile p = projectile[i];
-                if (p.active) yield return p;
-            }
-        }
-    }
+    public static Terraria.ModLoader.ActiveEntityIterator<Projectile> ActiveProjectiles => new(projectile, maxProjectiles);
 }

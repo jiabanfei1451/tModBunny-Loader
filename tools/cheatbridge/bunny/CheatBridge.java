@@ -3512,8 +3512,23 @@ public class CheatBridge {
     // nenhum. Mostra o log, com OK e Copiar; com o painel ja aberto, so troca
     // o texto (um erro atras do outro nao empilha janelas).
 
-    private static AlertDialog sErrorDialog;
+
+    // Painel flutuante de erro.
+    //
+    // Era um AlertDialog: modal, escuro por cima do jogo, e um erro que
+    // repetisse a cada quadro empilhava janela. Agora e' uma tira flutuante
+    // no alto da tela — o jogo continua rodando e clicavel por baixo, ela se
+    // esconde sozinha depois de alguns segundos, e o "x" fecha na hora. Quem
+    // quer o texto inteiro usa Copiar ou Configuracoes > Ver logs.
+    private static View sErrorPanel;
+    private static TextView sErrorBody;
+    private static Activity sErrorOwner;
     private static String sErrorText = "";
+    private static final Handler sErrorUI = new Handler(Looper.getMainLooper());
+    private static Runnable sErrorHide;
+
+    /** Quanto tempo a tira fica na tela sem ninguem tocar nela. */
+    private static final long ERROR_LINGER_MS = 9000L;
 
     public static void showError(final String text) {
         final Activity act = sActivity;
@@ -3525,58 +3540,108 @@ public class CheatBridge {
         });
     }
 
-    /**
-     * O erro vai num AlertDialog, nao numa caixa nossa.
-     *
-     * O menu de cheats e desenhado a mao porque tem de parecer o Terraria. Um
-     * erro nao: quem esta lendo quer ler, e o dialogo do sistema ja traz rolagem
-     * que se ajusta a tela, botao Voltar, tema claro/escuro e o desenho que a
-     * pessoa reconhece. A caixa que havia aqui era 300x200 dp fixos — em tela
-     * de tablet sobrava borda, em tela pequena deitada cortava —, o OK so fazia
-     * setVisibility(GONE) e deixava a View pendurada na hierarquia para sempre,
-     * e Voltar nao fechava nada.
-     *
-     * Nao existe "diálogo de erro do sistema" para chamar: aquele "o app parou"
-     * e gerado pelo system server para excecao nao tratada, e nenhum app o
-     * invoca. AlertDialog e o componente padrao equivalente.
-     */
     private static void buildError(final Activity act, String text) {
         if (act.isFinishing()) return;
         sErrorText = text;
-        if (sErrorDialog != null && sErrorDialog.isShowing()) {
-            sErrorDialog.setMessage(text);
+        // A Activity muda no Reiniciar do menu: a tira antiga ficaria pendurada
+        // numa janela morta e nunca mais apareceria.
+        if (sErrorPanel != null && sErrorOwner == act) {
+            if (sErrorBody != null) sErrorBody.setText(text);
+            sErrorPanel.setVisibility(View.VISIBLE);
+            sErrorPanel.bringToFront();
+            scheduleErrorHide();
             return;
         }
+        sErrorPanel = null;
+        sErrorBody = null;
+        sErrorOwner = act;
 
-        final AlertDialog dlg = new AlertDialog.Builder(act)
-            .setTitle("Bunny Loader — error")
-            .setMessage(text)
-            .setPositiveButton("OK", null)
-            .setNeutralButton("Copy", null)
-            .create();
-        sErrorDialog = dlg;
-        dlg.show();
+        LinearLayout panel = new LinearLayout(act);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackground(panel(act, PANEL_DARK, OUTLINE));
+        panel.setPadding(px(act, 10), px(act, 6), px(act, 10), px(act, 8));
+        panel.setAlpha(0.96f);
 
-        // Fonte de largura fixa: o trecho do codigo do mod marca a coluna do
-        // erro com um ^ embaixo dela, e o texto e um log.
-        TextView message = dlg.findViewById(android.R.id.message);
-        if (message != null) {
-            message.setTypeface(Typeface.MONOSPACE);
-            message.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        }
+        LinearLayout head = new LinearLayout(act);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
 
-        // Todo botao de AlertDialog fecha o dialogo ao ser tocado, e Copiar nao
-        // pode: quem copia o log quase sempre quer continuar lendo. Trocar o
-        // ouvinte DEPOIS do show() e a forma de ter um botao que nao fecha.
-        Button copyButton = dlg.getButton(AlertDialog.BUTTON_NEUTRAL);
-        if (copyButton == null) return;
-        copyButton.setOnClickListener(new View.OnClickListener() {
+        TextView title = new TextView(act);
+        title.setText(tr("ErrorTitle"));
+        title.setTextColor(0xFFFFD479);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        head.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView copy = new TextView(act);
+        copy.setText(tr("Copy"));
+        copy.setTextColor(0xFF9FD4FF);
+        copy.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        copy.setPadding(px(act, 10), px(act, 4), px(act, 10), px(act, 4));
+        copy.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 ClipboardManager cm =
                     (ClipboardManager) act.getSystemService(Activity.CLIPBOARD_SERVICE);
                 if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("bunny", sErrorText));
-                Toast.makeText(act, "Log copied", Toast.LENGTH_SHORT).show();
+                Toast.makeText(act, tr("ErrorCopied"), Toast.LENGTH_SHORT).show();
             }
         });
+        head.addView(copy);
+
+        TextView close = new TextView(act);
+        close.setText("\u00d7");
+        close.setTextColor(0xFFE8E8F0);
+        close.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        close.setPadding(px(act, 10), px(act, 2), px(act, 6), px(act, 2));
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (sErrorPanel != null) sErrorPanel.setVisibility(View.GONE);
+                cancelErrorHide();
+            }
+        });
+        head.addView(close);
+
+        // Fonte de largura fixa: o trecho do codigo do mod marca a coluna do
+        // erro com um ^ embaixo dela, e o texto e um log.
+        TextView body = new TextView(act);
+        body.setText(text);
+        body.setTypeface(Typeface.MONOSPACE);
+        body.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        body.setTextColor(0xFFE8E8F0);
+        body.setTextIsSelectable(true);
+        body.setMaxLines(12);
+        body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        body.setPadding(0, px(act, 4), 0, 0);
+
+        panel.addView(head);
+        panel.addView(body);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.TOP;
+        lp.leftMargin = px(act, 12);
+        lp.rightMargin = px(act, 12);
+        lp.topMargin = px(act, 54);
+
+        sErrorPanel = panel;
+        sErrorBody = body;
+        act.addContentView(panel, lp);
+        scheduleErrorHide();
+    }
+
+    private static void scheduleErrorHide() {
+        cancelErrorHide();
+        sErrorHide = new Runnable() {
+            @Override public void run() {
+                if (sErrorPanel != null) sErrorPanel.setVisibility(View.GONE);
+            }
+        };
+        sErrorUI.postDelayed(sErrorHide, ERROR_LINGER_MS);
+    }
+
+    private static void cancelErrorHide() {
+        if (sErrorHide != null) {
+            sErrorUI.removeCallbacks(sErrorHide);
+            sErrorHide = null;
+        }
     }
 }

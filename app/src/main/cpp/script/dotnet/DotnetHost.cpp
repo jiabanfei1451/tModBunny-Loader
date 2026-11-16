@@ -126,6 +126,11 @@ const char* const kShimIdentities[] = {
     "tModLoader", "Terraria", "TerrariaServer", "Terraria.ModLoader",
     "ReLogic", "FNA", "Microsoft.Xna.Framework",
     "log4net", "Newtonsoft.Json", "Steamworks.NET", "Mono.Cecil",
+    // MonoMod: `ScreenShaderFixer` (Luminance) tem campos `List<ILHook>`, e o
+    // tipo do argumento genérico tem de resolver na hora de montar a vtable —
+    // a resolução acontece dentro de RuntimeModule.GetTypes(), caminho em que
+    // o evento gerenciado nem sempre dispara. Ver ShimAssembly.Identities.
+    "MonoMod.Utils", "MonoMod.RuntimeDetour",
 };
 
 /**

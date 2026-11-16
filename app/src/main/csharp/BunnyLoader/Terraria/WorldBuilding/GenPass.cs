@@ -12,7 +12,7 @@ public abstract class GenBase
 {
     protected static UnifiedRandom _random => WorldGen.genRand;
 
-    protected static TileData _tiles => Main.tile;
+    protected static Tilemap _tiles => Main.tile;
 }
 
 public abstract class GenPass : GenBase, IGameObject

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Fachada `MonoMod.Utils.dll`.
+
+    Mods compilados no PC (Luminance, FargowiltasSouls) trazem um AssemblyRef
+    para `MonoMod.Utils` — no tModLoader ela vive em `Libraries/`. Os tipos que
+    eles usam (`MonoMod.Cil.ILContext`, `ILCursor`, `MoveType`,
+    `ILPatternMatchingExt`) existem no shim, implementados sobre Mono.Cecil, mas
+    o Mono recusa devolver `BunnyLoader.dll` quando pediram outro nome simples.
+    Mesmo mecanismo das fachadas tModLoader/FNA/ReLogic.
+
+    Versão 0.0.0.0 de propósito: o MonoMod não tem nome forte, então o runtime
+    casa por nome simples e a versão que o mod gravou (21.x/22.x) é ignorada.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>MonoMod.Utils</AssemblyName>
+    <AssemblyVersion>0.0.0.0</AssemblyVersion>
+    <Version>0.0.0.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0436</NoWarn>
+    <ShimPath Condition="'$(ShimPath)' == ''">$(MSBuildThisFileDirectory)../../../../build/csharp/BunnyLoader/BunnyLoader.dll</ShimPath>
+    <GeneratedForwarders Condition="'$(GeneratedForwarders)' == ''">$(MSBuildThisFileDirectory)../../../../build/generated/tmlFacade/Forwarders.g.cs</GeneratedForwarders>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(GeneratedForwarders)" />
+    <Reference Include="BunnyLoader">
+      <HintPath>$(ShimPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

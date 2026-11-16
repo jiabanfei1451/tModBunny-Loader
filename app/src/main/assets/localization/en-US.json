@@ -60,6 +60,8 @@
   "ClearCompileCache": "Clear compile cache",
   "CompileCacheCleared": "Cache cleared, freed",
   "CompileCacheReading": "Measuring the cache…",
+  "ErrorTitle": "Bunny Loader — error",
+  "ErrorCopied": "Log copied",
   "Developer": "Developer",
   "ModMenu": "Mod Menu",
   "ModMenuDescription": "The bunny button in game: powers, items, NPCs and buffs. When off, powers from the previous session stay disabled.",

@@ -60,6 +60,8 @@
   "ClearCompileCache": "Borrar caché de compilación",
   "CompileCacheCleared": "Caché borrada, liberados",
   "CompileCacheReading": "Calculando el tamaño…",
+  "ErrorTitle": "Bunny Loader — error",
+  "ErrorCopied": "Registro copiado",
   "Developer": "Desarrollador",
   "ModMenu": "Menú de mods",
   "ModMenuDescription": "El botón del conejo en el juego: poderes, objetos, NPC y mejoras. Al desactivarlo, los poderes de la sesión anterior permanecen desactivados.",

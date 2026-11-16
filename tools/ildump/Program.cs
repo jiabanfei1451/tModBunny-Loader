@@ -77,6 +77,224 @@ internal static class Program
             return 0;
         }
 
+        if (args[1] == "--missing" && args.Length >= 3)
+        {
+            // uso: ildump <mod.dll> --missing <shim.dll>
+            //
+            // Lista os TypeRefs deste mod, escopados nos assemblies do jogo/tML,
+            // que o shim NAO define. Cada linha e' um TypeLoadException em
+            // potencial: o runtime so' descobre na hora de carregar o tipo que
+            // usa o membro, e um unico tipo quebrado derruba o assembly inteiro
+            // dentro de Mod.Autoload.
+            var shim = ModuleDefinition.ReadModule(args[2], new ReaderParameters { ReadSymbols = false });
+            var have = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (var t in shim.GetTypes()) have.Add(t.FullName.Replace('/', '+'));
+            int missing = 0;
+            foreach (var t in module.GetTypeReferences())
+            {
+                string scope = t.Scope switch
+                {
+                    AssemblyNameReference a => a.Name,
+                    _ => ""
+                };
+                if (scope != "tModLoader" && scope != "Terraria" && scope != "FNA" && scope != "ReLogic") continue;
+                string flat = t.FullName.Replace('/', '+');
+                if (have.Contains(flat)) continue;
+                Console.WriteLine($"{scope,-10} {flat}");
+                missing++;
+            }
+            Console.WriteLine($"faltando: {missing}");
+            return 0;
+        }
+
+        if (args[1] == "--hard" && args.Length >= 3)
+        {
+            // uso: ildump <mod.dll> --hard <shim.dll>
+            //
+            // Dos tipos ausentes, so' os que aparecem em posicao de CARREGAMENTO:
+            // tipo-base, interface implementada, tipo de campo (e argumento de
+            // generico). Sao esses que fazem GetTypes() estourar
+            // TypeLoadException e derrubar o assembly inteiro. Tipo ausente que
+            // so' aparece dentro de um corpo de metodo nao bloqueia a carga —
+            // aquele metodo e' quarentenado pelo reescritor.
+            var shim = ModuleDefinition.ReadModule(args[2], new ReaderParameters { ReadSymbols = false });
+            var have = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (var t in shim.GetTypes()) have.Add(t.FullName.Replace('/', '+'));
+            var seen = new System.Collections.Generic.SortedSet<string>(StringComparer.Ordinal);
+
+            bool Scoped(TypeReference tr) => tr.Scope switch
+            {
+                AssemblyNameReference a => a.Name is "tModLoader" or "Terraria" or "FNA" or "ReLogic",
+                _ => false
+            };
+
+            // Devolve o primeiro tipo ausente dentro de `tr` (recursivo em
+            // arrays, byref e genericos), ou null.
+            string? Probe(TypeReference tr)
+            {
+                switch (tr)
+                {
+                    case ArrayType at: return Probe(at.ElementType);
+                    case ByReferenceType br: return Probe(br.ElementType);
+                    case PointerType pt: return Probe(pt.ElementType);
+                    case GenericInstanceType gi:
+                        for (int i = 0; i < gi.GenericArguments.Count; i++)
+                        {
+                            string? inner = Probe(gi.GenericArguments[i]);
+                            if (inner != null) return inner;
+                        }
+                        // Compara a DEFINICAO (`Asset`1`), nao a instancia
+                        // (`Asset`1<Texture2D>`): o shim tem a definicao.
+                        tr = gi.ElementType;
+                        goto default;
+                    default:
+                        if (!Scoped(tr)) return null;
+                        string flat = tr.FullName.Replace('/', '+');
+                        return have.Contains(flat) ? null : flat;
+                }
+            }
+
+            foreach (var type in module.GetTypes())
+            {
+                string? b = type.BaseType == null ? null : Probe(type.BaseType);
+                if (b != null) seen.Add($"{b}\t<- base de {type.FullName}");
+                foreach (var iface in type.Interfaces)
+                {
+                    string? i = Probe(iface.InterfaceType);
+                    if (i != null) seen.Add($"{i}\t<- interface de {type.FullName}");
+                }
+                foreach (var f in type.Fields)
+                {
+                    string? ft = Probe(f.FieldType);
+                    if (ft != null) seen.Add($"{ft}\t<- campo {type.FullName}.{f.Name}");
+                }
+            }
+            foreach (string line in seen) Console.WriteLine(line);
+            Console.WriteLine($"bloqueantes: {seen.Count}");
+            return 0;
+        }
+
+        if (args[1] == "--verify" && args.Length >= 3)
+        {
+            // uso: ildump <mod.dll> --verify <shim.dll>
+            //
+            // Confere MEMBRO a MEMBRO se o shim tem o que o mod chama. O
+            // `--missing` olha so tipos: um tipo presente com um metodo faltando
+            // continua sendo MissingMethodException em tempo de execucao — e
+            // descobrir isso so' no aparelho custa um ciclo de build+install.
+            var shim = ModuleDefinition.ReadModule(args[2], new ReaderParameters { ReadSymbols = false });
+            var types = new System.Collections.Generic.Dictionary<string, TypeDefinition>(StringComparer.Ordinal);
+            foreach (var t in shim.GetTypes()) types[t.FullName.Replace('/', '+')] = t;
+
+            static string Norm(TypeReference tr) => tr.FullName.Replace("&", "");
+
+            int missing = 0, checkedCount = 0;
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (var mr in module.GetMemberReferences())
+            {
+                if (mr.DeclaringType == null) continue;
+                string typeName = mr.DeclaringType.FullName.Replace('/', '+');
+                if (!types.TryGetValue(typeName, out var def)) continue; // tipo ausente: --missing cobre
+                if (mr is MethodReference call)
+                {
+                    checkedCount++;
+                    bool ok = false;
+                    foreach (var candidate in def.Methods)
+                    {
+                        if (candidate.Name != call.Name) continue;
+                        if (candidate.Parameters.Count != call.Parameters.Count) continue;
+                        bool same = true;
+                        for (int i = 0; i < candidate.Parameters.Count && same; i++)
+                            same = Norm(candidate.Parameters[i].ParameterType) == Norm(call.Parameters[i].ParameterType);
+                        if (same) { ok = true; break; }
+                    }
+                    if (!ok && seen.Add("M " + call.FullName))
+                    {
+                        // Nome existe mas os parametros nao batem: e' o caso do
+                        // proxy (GameObject/GameArray<T> no lugar do tipo do PC).
+                        bool sameName = def.Methods.Any(c => c.Name == call.Name);
+                        Console.WriteLine($"{(sameName ? "ASSINATURA " : "FALTA METODO")}  {call.FullName}");
+                        missing++;
+                    }
+                }
+                else if (mr is FieldReference slot)
+                {
+                    checkedCount++;
+                    if (def.Fields.All(f => f.Name != slot.Name) && seen.Add("F " + slot.FullName))
+                    {
+                        Console.WriteLine($"FALTA CAMPO   {slot.FullName}");
+                        missing++;
+                    }
+                }
+            }
+            Console.WriteLine($"conferidos: {checkedCount}, faltando: {missing}");
+            return 0;
+        }
+
+        if (args[1] == "--uses" && args.Length >= 3)
+        {
+            // uso: ildump <dll> --uses <TypeFullName|substring>
+            //
+            // Onde exatamente o tipo e' citado: base, interface, campo, parametro,
+            // retorno, local, ou instrucao (newobj/ldtoken/castclass...). Existe
+            // porque "faltando: 1" nao diz se e' um campo (bloqueia) ou um
+            // `typeof` dentro de um corpo (nao bloqueia).
+            string want = args[2];
+            bool Hit(TypeReference? tr)
+            {
+                if (tr == null) return false;
+                try { return tr.FullName.IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0; }
+                catch { return false; }
+            }
+            foreach (var t in module.GetTypes())
+            {
+                if (Hit(t.BaseType)) Console.WriteLine($"BASE     {t.FullName} : {t.BaseType!.FullName}");
+                foreach (var i in t.Interfaces) if (Hit(i.InterfaceType)) Console.WriteLine($"IFACE    {t.FullName} : {i.InterfaceType.FullName}");
+                foreach (var f in t.Fields) if (Hit(f.FieldType)) Console.WriteLine($"CAMPO    {t.FullName}.{f.Name} : {f.FieldType.FullName} ({f.FieldType.Scope})");
+                foreach (var m in t.Methods)
+                {
+                    if (Hit(m.ReturnType)) Console.WriteLine($"RET      {t.FullName}.{m.Name} : {m.ReturnType.FullName}");
+                    foreach (var p in m.Parameters) if (Hit(p.ParameterType)) Console.WriteLine($"PARAM    {t.FullName}.{m.Name}({p.Name}) : {p.ParameterType.FullName}");
+                    if (!m.HasBody) continue;
+                    foreach (var v in m.Body.Variables) if (Hit(v.VariableType)) Console.WriteLine($"LOCAL    {t.FullName}.{m.Name} : {v.VariableType.FullName}");
+                    foreach (var ins in m.Body.Instructions)
+                    {
+                        bool hit = ins.Operand switch
+                        {
+                            TypeReference tr => Hit(tr),
+                            MethodReference mr => Hit(mr.DeclaringType),
+                            FieldReference fr => Hit(fr.DeclaringType),
+                            _ => false
+                        };
+                        if (hit) Console.WriteLine($"IL       {t.FullName}.{m.Name} @IL_{ins.Offset:X4}: {ins.OpCode} {Format(ins.Operand)}");
+                    }
+                }
+            }
+            return 0;
+        }
+
+        if (args[1] == "--refs")
+        {
+            // uso: ildump <dll> --refs <substring>
+            //
+            // Lista as referencias de MEMBRO (metodo/campo) cujo tipo declarante
+            // casa com o filtro, com a assinatura completa. Serve para montar um
+            // stub: o TypeRef diz "falta o tipo", o MemberRef diz "e falta este
+            // metodo, com estes parametros".
+            string filtro = args.Length > 2 ? args[2] : "";
+            var seen = new System.Collections.Generic.SortedSet<string>(StringComparer.Ordinal);
+            foreach (var mr in module.GetMemberReferences())
+            {
+                if (mr.DeclaringType == null) continue;
+                if (mr.DeclaringType.FullName.IndexOf(filtro, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                string kind = mr is MethodReference m2 ? (m2.HasThis ? "inst" : "stat") : "campo";
+                seen.Add($"[{kind}] {mr.FullName}");
+            }
+            foreach (string line in seen) Console.WriteLine(line);
+            Console.WriteLine($"total: {seen.Count}");
+            return 0;
+        }
+
         if (args[1] == "--calls")
         {
             // Lista todos os pontos de chamada cujo alvo contem `filtro`,

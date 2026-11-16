@@ -7,6 +7,19 @@ namespace Terraria.GameContent.ItemDropRules;
 
 public static class Conditions
 {
+    // v100: condicao puramente gerenciada do tML (nao existe no binario), por
+    // isso nao deriva de NativeDropCondition. Contrato:
+    // tmodloader/patches/tModLoader/Terraria/GameContent/ItemDropRules/Conditions.TML.cs
+    public class IsPreHardmode : IItemDropRuleCondition
+    {
+        public bool CanDrop(DropAttemptInfo info) => !Main.hardMode;
+
+        public bool CanShowItemDropInUI() => true;
+
+        public string GetConditionDescription() => null!;
+    }
+
+
     public class BeatAnyMechBoss : NativeDropCondition
     {
         internal BeatAnyMechBoss(IntPtr pointer) : base(pointer, typeof(BeatAnyMechBoss)) { }

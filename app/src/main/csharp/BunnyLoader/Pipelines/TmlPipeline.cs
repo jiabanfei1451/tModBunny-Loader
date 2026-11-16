@@ -42,7 +42,14 @@ internal sealed class TmlPipeline : ModPipeline
         {
             string? modsDir = Path.GetDirectoryName(request.Folder);
             string? tmlDir = modsDir == null ? null : Path.GetDirectoryName(modsDir);
-            if (tmlDir != null) ItemHooks.DebugDir = tmlDir;
+            if (tmlDir != null)
+            {
+                ItemHooks.DebugDir = tmlDir;
+                // Ledger dos patches de IL: <TML>/ilpatch. Sem isso o ILHook do
+                // MonoMod (Luminance/FargoSouls) só grava no log, e o log é
+                // rotativo/curto — o que interessa é o IL resultante por alvo.
+                IlPatchLedger.Dir = Path.Combine(tmlDir, "ilpatch");
+            }
         }
         catch { }
         AnnounceAll(request);

@@ -276,7 +276,16 @@ internal static unsafe class DropRuleInterop
         if (chains == null || !Syncing.Add(pointer)) return;
         try
         {
-            GameObject list = new N.IItemDropRule(pointer).ChainedRules;
+            GameObject list;
+            try { list = new N.IItemDropRule(pointer).ChainedRules; }
+            catch (Exception e)
+            {
+                // Mesmo getter sem corpo nativo: não há lista para sincronizar.
+                // As cadeias ficam só no lado managed; o importante é não
+                // abortar `ModifyNPCLoot` por causa disso.
+                ItemHooks.Report("DropRuleInterop.Sync", e);
+                return;
+            }
             Clear(list);
             var game = new GameList(list);
             foreach (IItemDropRuleChainAttempt chain in chains) game.Add(ToNative(chain).Pointer);
