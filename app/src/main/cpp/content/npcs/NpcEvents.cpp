@@ -58,8 +58,21 @@ bool wants(Il2CppObject* npc, uint32_t event) {
         (type < g_types.size() ? g_types[type].load(std::memory_order_relaxed) : 0)) & event) != 0;
 }
 
+std::atomic<uint32_t> g_aiCalls{0};
+
+int32_t npcType(Il2CppObject* npc) {
+    if (!npc || g_type < 0) return -1;
+    return static_cast<int32_t>(*reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(npc) + g_type));
+}
+
 void ai(Il2CppObject* npc, const MethodInfo* method) {
     auto callback = g_callback.load(std::memory_order_acquire);
+    // Prova de vida do detour: sem esta linha o "NPC parado" fica ambiguo entre
+    // gancho que nunca entrou e gancho que entrou mas nao achou callback.
+    const uint32_t n = g_aiCalls.fetch_add(1, std::memory_order_relaxed);
+    if (n < 3 || n % 900 == 0)
+        BL_DEBUG("npc ai detour: n=%u type=%d cb=%d wants=%d", n, npcType(npc),
+                 callback ? 1 : 0, wants(npc, Ai) ? 1 : 0);
     if (callback && wants(npc, Ai)) callback(0, npc, nullptr);
     else g_ai(npc, method);
 }
@@ -230,6 +243,8 @@ bool setNpcEvents(int32_t type, uint32_t events, NpcEventCallback callback) {
     failure.success = true;
     return true;
 }
+
+uint32_t npcAiCallCount() { return g_aiCalls.load(std::memory_order_relaxed); }
 
 bool npcFrameEvent(Il2CppObject* npc) {
     auto callback = g_callback.load(std::memory_order_acquire);

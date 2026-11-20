@@ -428,9 +428,11 @@ internal static partial class TileHooks
             return false;
         if (!force && !Collision.EmptyTile(i, j, false) && Main.tileSolid[type])
             return false;
-        WorldGen.PlaceObject(i, j, type, mute, style);
-        WorldGen.SquareTileFrame(i, j);
-        return true;
+        /** O retorno tem de refletir o que o jogo fez: devolver true sempre fazia
+         *  o item ser consumido mesmo quando nada era colocado. */
+        bool placed = WorldGen.PlaceObject(i, j, type, mute, style);
+        if (placed) WorldGen.SquareTileFrame(i, j);
+        return placed;
     }
 
     static bool PlaceObject(On_TileObjectData.orig_CallPostPlacementPlayerHook orig, int i, int j, int type, int style, int dir, int alternate, TileObject data)

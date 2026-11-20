@@ -91,7 +91,7 @@ namespace Terraria.Graphics.Shaders
     /// fora de propósito: quem os chama já é quarentenado pelo reescritor, e um
     /// método vazio aqui daria a impressão de que o shader foi aplicado.
     /// </summary>
-    public struct MiscShaderData
+    public class MiscShaderData
     {
     }
 }

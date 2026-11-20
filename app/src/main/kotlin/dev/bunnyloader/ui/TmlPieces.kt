@@ -73,28 +73,32 @@ fun TmlModRow(
     val fill = if (enabled) Bl.EnabledPanel else Bl.DisabledPanel
     PixelCard(modifier.fillMaxWidth(), fill = fill, onClick = onClick) {
         Row(
-            Modifier.padding(10.dp).fillMaxWidth(),
+            Modifier.padding(horizontal = 6.dp, vertical = 5.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TmlIcon(mod, 64.dp)
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                PixelText(
-                    mod.label, size = Ts.Item, color = Bl.Text,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+            TmlIcon(mod, 44.dp)
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PixelText(
+                        mod.label, size = Ts.Body, color = Bl.Text,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    PixelText(" (tml)", size = Ts.Tiny, color = Bl.TextDim, maxLines = 1)
+                }
                 PixelText(
                     tr("ByAuthor", mod.author.ifBlank { tr("UnknownAuthor") }),
-                    size = Ts.Small, color = Bl.TextFaint,
+                    size = Ts.Tiny, color = Bl.TextFaint,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     PixelTag(if (mod.version.isBlank()) "TML" else "v${mod.version}", Bl.TextDim)
                     PixelText(
-                        mod.sizeLabel, size = Ts.Small, color = Bl.TextFaint,
-                        modifier = Modifier.padding(start = 12.dp),
+                        mod.sizeLabel, size = Ts.Tiny, color = Bl.TextFaint,
+                        modifier = Modifier.padding(start = 8.dp),
                     )
                     if (!mod.clientSide) {
-                        PixelTag(tr("TmlServerOnly"), Bl.Bad, Modifier.padding(start = 8.dp))
+                        PixelTag(tr("TmlServerOnly"), Bl.Bad, Modifier.padding(start = 6.dp))
                     }
                 }
                 // Dependências na própria linha: quem olha a lista precisa
@@ -102,16 +106,16 @@ fun TmlModRow(
                 // instalado; apagado = instalado mas desligado.
                 if (mod.modReferences.isNotEmpty()) {
                     Row(
-                        Modifier.padding(top = 5.dp),
+                        Modifier.padding(top = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PixelText(tr("TmlDependsOn"), size = Ts.Small, color = Bl.TextFaint)
+                        PixelText(tr("TmlDependsOn"), size = Ts.Tiny, color = Bl.TextFaint)
                         mod.modReferences.forEachIndexed { index, ref ->
                             val missing = installed.isNotEmpty() && ref !in installed
                             val off = !missing && enabledSet.isNotEmpty() && ref !in enabledSet
                             PixelText(
                                 (if (index == 0) " " else ", ") + ref,
-                                size = Ts.Small,
+                                size = Ts.Tiny,
                                 color = when {
                                     missing -> Bl.Bad
                                     off -> Bl.TextFaint

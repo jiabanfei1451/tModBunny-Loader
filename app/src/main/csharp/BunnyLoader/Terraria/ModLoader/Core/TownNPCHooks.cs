@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using BunnyLoader;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -398,7 +399,14 @@ internal static class TownNPCHooks
             if (own == null) return;
             string shopName = "";
             own.OnChatButtonClicked(first, ref shopName);
-            if (!string.IsNullOrEmpty(shopName)) NPCShopDatabase.OpenShop(NPCShopDatabase.GetShopName(npc.type, shopName));
+            Log.Info($"[shop] botao npc={npc.type} mod={own.FullName} primeiro={first} loja=\"{shopName}\"");
+            if (string.IsNullOrEmpty(shopName)) return;
+            string full = NPCShopDatabase.GetShopName(npc.type, shopName);
+            Log.Info($"[shop] chamando OpenShop '{full}'");
+            // Log cru, sem dedupe: o Report() engole a segunda ocorrencia do mesmo
+            // erro, e foi assim que a falha da loja ficou invisivel no log.
+            try { NPCShopDatabase.OpenShop(full); }
+            catch (Exception e) { Log.Error($"[shop] abrir '{full}' estourou: {e}"); }
         }
     }
 }

@@ -13,16 +13,36 @@ public static unsafe partial class NPCLoader
     static bool Has(GlobalNPC? global, NPCMethod method) => global != null && (global.Hooks & method) != 0;
 
     static readonly bool[] aiReported = new bool[65536];
+    static bool aiFirst;
+    static int aiCalls;
 
     public static void NPCAI(NPC npc)
     {
         ModNPC? own = InstanceOf(npc);
         GlobalNPC?[] globals = Slots(npc);
         bool allowed = PreAI(npc, own, globals);
+        // Uma linha a cada ~10 s (600 quadros) com posicao e velocidade: e o que
+        // separa "AI roda mas o NPC e imovel" de "AI nem e chamada".
+        int call = System.Threading.Interlocked.Increment(ref aiCalls);
+        if (call % 600 == 0)
+        {
+            Log.Info($"[npc ai] tique={call} type={npc.type} own={(own == null ? "-" : own.FullName)} " +
+                     $"pos={npc.position.X:0},{npc.position.Y:0} vel={npc.velocity.X:0.00},{npc.velocity.Y:0.00}");
+        }
+        // Uma linha na PRIMEIRA chamada, seja qual for o NPC: e a prova de que o
+        // gancho nativo de AI chegou ao shim. Sem ela, "NPC parado" e ambíguo
+        // entre gancho ausente e ModNPC sem instancia.
+        if (!aiFirst)
+        {
+            aiFirst = true;
+            Log.Info($"[npc ai] primeiro: type={npc.type} own={(own == null ? "-" : own.FullName)} " +
+                     $"aiStyle={npc.aiStyle} pre={allowed} vel={npc.velocity.X:0.0},{npc.velocity.Y:0.0}");
+        }
         if (own != null && npc.type < aiReported.Length && !aiReported[npc.type])
         {
             aiReported[npc.type] = true;
-            Log.Info($"[npc ai] type={npc.type} {own.FullName} aiStyle={npc.aiStyle} hooksAI={Has(own, NPCMethod.AI)} pre={allowed} frame={npc.frame.X},{npc.frame.Y},{npc.frame.Width},{npc.frame.Height}");
+            Log.Info($"[npc ai] type={npc.type} {own.FullName} aiStyle={npc.aiStyle} " +
+                     $"hooksAI={Has(own, NPCMethod.AI)} pre={allowed} frame={npc.frame.X},{npc.frame.Y},{npc.frame.Width},{npc.frame.Height}");
         }
         if (allowed)
         {
@@ -55,10 +75,14 @@ public static unsafe partial class NPCLoader
             try { allowed &= global!.PreAI(npc); }
             catch (Exception e) { ItemHooks.Report($"{global!.FullName}.PreAI", e); }
         }
-        if (allowed && Has(own, NPCMethod.PreAI))
+        // Para o ModNPC a base e inofensiva (PreAI => true, AI/PostAI vazios),
+        // entao chamar sempre e mais seguro do que confiar no mapa de overrides:
+        // um bit perdido ali deixava o NPC sem AI nenhuma — parado, sem gravidade
+        // e sem quadro novo — e nao havia como distinguir de "mod sem AI".
+        if (allowed && own != null)
         {
-            try { allowed = own!.PreAI(); }
-            catch (Exception e) { ItemHooks.Report($"{own!.FullName}.PreAI", e); }
+            try { allowed = own.PreAI(); }
+            catch (Exception e) { ItemHooks.Report($"{own.FullName}.PreAI", e); }
         }
         return allowed;
     }
@@ -67,10 +91,10 @@ public static unsafe partial class NPCLoader
 
     static void AI(NPC npc, ModNPC? own, GlobalNPC?[] globals)
     {
-        if (Has(own, NPCMethod.AI))
+        if (own != null)
         {
-            try { own!.AI(); }
-            catch (Exception e) { ItemHooks.Report($"{own!.FullName}.AI", e); }
+            try { own.AI(); }
+            catch (Exception e) { ItemHooks.Report($"{own.FullName}.AI", e); }
         }
         foreach (GlobalNPC? global in globals)
         {
@@ -84,10 +108,10 @@ public static unsafe partial class NPCLoader
 
     static void PostAI(NPC npc, ModNPC? own, GlobalNPC?[] globals)
     {
-        if (Has(own, NPCMethod.PostAI))
+        if (own != null)
         {
-            try { own!.PostAI(); }
-            catch (Exception e) { ItemHooks.Report($"{own!.FullName}.PostAI", e); }
+            try { own.PostAI(); }
+            catch (Exception e) { ItemHooks.Report($"{own.FullName}.PostAI", e); }
         }
         foreach (GlobalNPC? global in globals)
         {
@@ -110,10 +134,10 @@ public static unsafe partial class NPCLoader
             if (actsLike) npc.townNPC = false;
             NPCEventHooks.Borrowing = previous;
         }
-        if (Has(own, NPCMethod.FindFrame))
+        if (own != null)
         {
-            try { own!.FindFrame(frameHeight); }
-            catch (Exception e) { ItemHooks.Report($"{own!.FullName}.FindFrame", e); }
+            try { own.FindFrame(frameHeight); }
+            catch (Exception e) { ItemHooks.Report($"{own.FullName}.FindFrame", e); }
         }
         foreach (GlobalNPC? global in Slots(npc))
         {

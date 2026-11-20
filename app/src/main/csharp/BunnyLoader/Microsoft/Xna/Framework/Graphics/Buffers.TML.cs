@@ -73,6 +73,12 @@ public class VertexBuffer : IDisposable
     {
     }
 
+    // FNA tem o overload com SetDataOptions; o Luminance usa este (o de 3
+    // argumentos nao bastava) e o DynamicVertexBuffer herda daqui.
+    public void SetData<T>(T[] data, int startIndex, int elementCount, SetDataOptions options) where T : struct
+    {
+    }
+
     public void Dispose()
     {
         // Nada do lado nativo (ver o comentário do topo).
@@ -120,6 +126,10 @@ public class IndexBuffer : IDisposable
     }
 
     public void SetData<T>(T[] data, int startIndex, int elementCount) where T : struct
+    {
+    }
+
+    public void SetData<T>(T[] data, int startIndex, int elementCount, SetDataOptions options) where T : struct
     {
     }
 

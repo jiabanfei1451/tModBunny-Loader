@@ -136,6 +136,32 @@ class GameActivity : Activity() {
         // fonte do proprio menu. A View ficava por cima do SurfaceView, com
         // escala e posicao diferentes do que o jogo desenha.
         BootLog.add(this, "=== UnityPlayer no ar ===")
+        watchSurface()
+    }
+
+    /**
+     * O SurfaceView da Unity e o unico lugar onde se ve o contexto GL ir
+     * embora: o Android destroi e recria a superficie quando o app volta do
+     * segundo plano, e com ela morrem texturas, programas e alvos de render.
+     * Sem estas linhas, um quadro quebrado depois de voltar do segundo plano
+     * parecia bug de mod (relato da v115).
+     */
+    private fun watchSurface() {
+        runCatching {
+            host?.surfaceView()?.holder?.addCallback(object : android.view.SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+                    BootLog.add(this@GameActivity, "superficie: criada")
+                }
+
+                override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
+                    BootLog.add(this@GameActivity, "superficie: ${width}x${height}, formato $format")
+                }
+
+                override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                    BootLog.add(this@GameActivity, "superficie: DESTRUIDA (o contexto GL vai embora com ela)")
+                }
+            })
+        }.onFailure { Log.w(TAG, "superficie: sem callback ($it)") }
     }
 
     /**
@@ -400,8 +426,19 @@ class GameActivity : Activity() {
     // --- ciclo de vida (espelha a UnityPlayerActivity) -----------------------
 
     override fun onStart() { super.onStart(); host?.start() }
-    override fun onResume() { super.onResume(); host?.resume(); ModAudio.resumeAll() }
-    override fun onPause() { super.onPause(); host?.pause(); ModAudio.pauseAll() }
+    override fun onResume() {
+        BootLog.add(this, "atividade: volta do segundo plano")
+        super.onResume()
+        host?.resume()
+        ModAudio.resumeAll()
+    }
+
+    override fun onPause() {
+        BootLog.add(this, "atividade: vai para o segundo plano")
+        super.onPause()
+        host?.pause()
+        ModAudio.pauseAll()
+    }
     override fun onStop() { super.onStop(); host?.stop() }
 
     override fun onDestroy() {

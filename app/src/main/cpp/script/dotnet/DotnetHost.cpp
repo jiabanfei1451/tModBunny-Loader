@@ -125,7 +125,9 @@ MonoAssembly* g_shimAssembly = nullptr;
 const char* const kShimIdentities[] = {
     "tModLoader", "Terraria", "TerrariaServer", "Terraria.ModLoader",
     "ReLogic", "FNA", "Microsoft.Xna.Framework",
-    "log4net", "Newtonsoft.Json", "Steamworks.NET", "Mono.Cecil",
+    // Mono.Cecil NAO entra: e' um DLL de verdade (usado pelo IlPatcher), e o
+    // lado C# ja' documenta que responder pelo Cecil quebraria o propio Cecil.
+    "log4net", "Newtonsoft.Json", "Steamworks.NET",
     // MonoMod: `ScreenShaderFixer` (Luminance) tem campos `List<ILHook>`, e o
     // tipo do argumento genérico tem de resolver na hora de montar a vtable —
     // a resolução acontece dentro de RuntimeModule.GetTypes(), caminho em que

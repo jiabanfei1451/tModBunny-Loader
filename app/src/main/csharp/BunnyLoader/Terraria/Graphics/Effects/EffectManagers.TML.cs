@@ -82,41 +82,97 @@ internal static unsafe class EffectManagerCalls
     }
 }
 
-public sealed partial class FilterManager
+/// <summary>
+/// O tModLoader expoe FilterManager/SkyManager/OverlayManager como subclasses
+/// de `EffectManager&lt;T&gt;`, e o IL dos mods faz
+/// `callvirt EffectManager`1&lt;CustomSky&gt;::set_Item(string, !0)` com receiver
+/// SkyManager. Sem este tipo base o metodo do mod nao JITa. A implementacao e
+/// a mesma que ja existia nos tres managers, mais um dicionario managed para
+/// os efeitos registrados por mod (que nao tem objeto nativo).
+/// </summary>
+public abstract class EffectManager<T> where T : class
 {
-    public Filter this[string key]
+    static readonly ConcurrentDictionary<string, T> Local = new();
+
+    protected abstract IntPtr ManagerPointer { get; }
+
+    protected abstract T Wrap(IntPtr pointer);
+
+    static IntPtr PointerOf(T value) => value is IGameObject o ? o.Pointer : IntPtr.Zero;
+
+    static bool IsLocal(T value)
     {
-        get => new(EffectManagerCalls.Get(Pointer, key));
-        set => EffectManagerCalls.Set(Pointer, key, value.Pointer);
+        IntPtr pointer = PointerOf(value);
+        return pointer == IntPtr.Zero || ManagedEffects.IsManaged(pointer);
     }
 
-    public Filter Activate(string name, Vector2 position = default, params object[] args) => new(EffectManagerCalls.Activate(Pointer, name, position, args));
+    public T this[string key]
+    {
+        get
+        {
+            if (key != null && Local.TryGetValue(key, out T local)) return local;
+            return Wrap(EffectManagerCalls.Get(ManagerPointer, key));
+        }
+        set
+        {
+            if (key == null) throw new ArgumentNullException(nameof(key));
+            if (value == null)
+            {
+                Local.TryRemove(key, out _);
+                EffectManagerCalls.Set(ManagerPointer, key, IntPtr.Zero);
+                return;
+            }
+            // Efeito de mod: fica so no dicionario managed. Mandar o ponteiro
+            // falso (bloco do ManagedEffects) para o Dictionary nativo faria o
+            // jogo ler lixo como CustomSky.
+            if (IsLocal(value))
+            {
+                Local[key] = value;
+                return;
+            }
+            Local.TryRemove(key, out _);
+            EffectManagerCalls.Set(ManagerPointer, key, PointerOf(value));
+        }
+    }
 
-    public void Deactivate(string name, params object[] args) => EffectManagerCalls.Deactivate(Pointer, name, args);
+    public T Activate(string name, Vector2 position = default, params object[] args)
+    {
+        if (name != null && Local.TryGetValue(name, out T local))
+        {
+            (local as IManagedEffect)?.ManagedActivate(position, args ?? Array.Empty<object>());
+            return local;
+        }
+        return Wrap(EffectManagerCalls.Activate(ManagerPointer, name, position, args ?? Array.Empty<object>()));
+    }
+
+    public void Deactivate(string name, params object[] args)
+    {
+        if (name != null && Local.TryGetValue(name, out T local))
+        {
+            (local as IManagedEffect)?.ManagedDeactivate(args ?? Array.Empty<object>());
+            return;
+        }
+        EffectManagerCalls.Deactivate(ManagerPointer, name, args ?? Array.Empty<object>());
+    }
 }
 
-public sealed partial class SkyManager
+public sealed partial class FilterManager : EffectManager<Filter>
 {
-    public CustomSky this[string key]
-    {
-        get => new(EffectManagerCalls.Get(Pointer, key));
-        set => EffectManagerCalls.Set(Pointer, key, value.Pointer);
-    }
+    protected override IntPtr ManagerPointer => Pointer;
 
-    public CustomSky Activate(string name, Vector2 position = default, params object[] args) => new(EffectManagerCalls.Activate(Pointer, name, position, args));
-
-    public void Deactivate(string name, params object[] args) => EffectManagerCalls.Deactivate(Pointer, name, args);
+    protected override Filter Wrap(IntPtr pointer) => new(pointer);
 }
 
-public sealed partial class OverlayManager
+public sealed partial class SkyManager : EffectManager<CustomSky>
 {
-    public Overlay this[string key]
-    {
-        get => new(EffectManagerCalls.Get(Pointer, key));
-        set => EffectManagerCalls.Set(Pointer, key, value.Pointer);
-    }
+    protected override IntPtr ManagerPointer => Pointer;
 
-    public Overlay Activate(string name, Vector2 position = default, params object[] args) => new(EffectManagerCalls.Activate(Pointer, name, position, args));
+    protected override CustomSky Wrap(IntPtr pointer) => new(pointer);
+}
 
-    public void Deactivate(string name, params object[] args) => EffectManagerCalls.Deactivate(Pointer, name, args);
+public sealed partial class OverlayManager : EffectManager<Overlay>
+{
+    protected override IntPtr ManagerPointer => Pointer;
+
+    protected override Overlay Wrap(IntPtr pointer) => new(pointer);
 }

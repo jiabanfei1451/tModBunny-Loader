@@ -1835,6 +1835,11 @@ void setPower(int id, int level) {
     g_level[id].store(level, std::memory_order_relaxed);
 }
 
+int powerLevel(int id) {
+    if (id < 0 || id >= kPowerCount) return 0;
+    return g_level[id].load(std::memory_order_relaxed);
+}
+
 void setTimeOfDay(int request) {
     const bool button = request >= 0 && request < static_cast<int>(std::size(kTimesOfDay));
     const bool clock = request >= kClockRequest && request < kClockRequest + 1440;

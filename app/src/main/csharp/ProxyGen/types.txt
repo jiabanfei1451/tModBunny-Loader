@@ -308,6 +308,14 @@ Terraria.DataStructures.EntitySource_Parent
 !Terraria.GameContent.TextureAssets.Item
 Microsoft.Xna.Framework.Graphics.SpriteFont
 Terraria.GameContent.FontAssets
+# As fontes do jogo sao ReLogic.Graphics.DynamicSpriteFont no 1.4: o mod faz
+# 'Asset`1<DynamicSpriteFont>' + MeasureString. O ProxyGen gerava essas tres
+# como 'Asset<SpriteFont>' (tipo errado no campo => MissingFieldException) e
+# por isso elas sao escritas em Terraria/GameContent/FontAssets.TML.cs.
+# 'CombatText' continua gerado: nenhum mod o usa.
+!Terraria.GameContent.FontAssets.ItemStack
+!Terraria.GameContent.FontAssets.MouseText
+!Terraria.GameContent.FontAssets.DeathText
 !Terraria.GameContent.TextureAssets.PlayerHair
 !Terraria.GameContent.TextureAssets.PlayerHairAlt
 Terraria.GameContent.HairstyleUnlocksHelper
@@ -635,6 +643,15 @@ GUIStatusMenu
 # impede o ProxyGen de gerar a propriedade homonima.
 !Terraria.Main.tile
 
+# ---- v104: Main.Assets virou CAMPO escrito a mao ----
+# O jogo declara "public static AssetRepository Assets;" (campo, nao
+# propriedade). O mod le com ldsfld, e ld para o ProxyGen gerar get_Assets e
+# falhar (ildump --verify em FargowiltasSouls: "FALTA CAMPO
+# ReLogic.Content.IAssetRepository Terraria.Main::Assets"). O campo esta em
+# Terraria/Main.TML.cs; os membros Request/HasAsset do proxy estao em
+# ReLogic/Content/IAssetRepository.TML.cs.
+!Terraria.Main.Assets
+
 # v99: tipos do JOGO que os mods referenciam e o shim nao tinha. Todos
 # existem em refs/DummyDll/Assembly-CSharp.dll, entao saem do proxy normal
 # (assinatura fiel + encaminhamento nativo); a lista veio de
@@ -655,3 +672,7 @@ Microsoft.Xna.Framework.Graphics.EffectPassCollection
 Microsoft.Xna.Framework.Graphics.EffectParameterCollection
 Microsoft.Xna.Framework.Graphics.SamplerStateCollection
 Microsoft.Xna.Framework.Graphics.RenderTargetBinding
+
+# EffectTechnique.Passes: escrito a mao em EffectTechnique.TML.cs (Pointer==0 tem de
+# devolver a colecao gerenciada; o gerado lancava NullReferenceException).
+!Microsoft.Xna.Framework.Graphics.EffectTechnique.Passes

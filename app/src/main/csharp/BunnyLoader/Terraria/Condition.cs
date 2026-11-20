@@ -226,6 +226,14 @@ public sealed record Condition(LocalizedText Description, Func<bool> Predicate)
 
     public static readonly Condition Multiplayer = new("Conditions.InMultiplayer", () => Main.netMode != NetmodeID.SinglePlayer);
     public static readonly Condition AnotherTownNPCNearby = new("Conditions.AnotherTownNPCNearby", () => GameContent.TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, Me.Center.ToTileCoordinates16()));
+    /// <summary>
+    /// Usado por praticamente toda loja de mod que vende pilar de teletransporte
+    /// (Fargo usa em Mutant/Deviantt/Abominationn). Faltando aqui, o IlPatcher
+    /// nao tinha para onde reescrever o `ldsfld` e esvaziava o AddShops INTEIRO:
+    /// a loja deixava de existir e o botao "Loja" nao abria nada.
+    /// </summary>
+    public static readonly Condition HappyEnoughToSellPylons = new("Conditions.HappyEnoughToSellPylons",
+        () => Me.currentShoppingSettings.PriceAdjustment <= 0.85f && !NPC.AnyNPCs(NPCID.OldMan));
     public static readonly Condition IsNpcShimmered = new("Conditions.IsNpcShimmered", () => TalkingToNpc && Main.npc[Me.talkNPC].IsShimmerVariant);
     public static readonly Condition NotIsNpcShimmered = new("Conditions.NotIsNpcShimmered", () => !IsNpcShimmered.IsMet());
     public static readonly Condition IsNpcHomeless = new("Conditions.IsNpcHomeless", () => TalkingToNpc && Main.npc[Me.talkNPC].homeless);

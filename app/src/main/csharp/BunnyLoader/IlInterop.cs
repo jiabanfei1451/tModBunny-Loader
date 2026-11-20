@@ -36,4 +36,39 @@ public static class IlInterop
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void ArraySet<TArray, T>(ref TArray array, int index, T value) where TArray : struct
         => Unsafe.Add(ref Unsafe.As<TArray, T>(ref array), index) = value;
+
+    /// <summary>
+    /// Instancia GERENCIADA vazia para um slot do jogo que o dump do il2cpp
+    /// perdeu (o ProxyGen so conseguiu emitir <c>Interop.GameObject</c>).
+    ///
+    /// O caso concreto: <c>NPCID.Sets.BossBestiaryPriority</c> e
+    /// <c>List&lt;int&gt;</c> no contrato do tModLoader e uma lista NATIVA do
+    /// il2cpp no jogo — nenhum objeto do jogo implementa a vtable do
+    /// <c>List&lt;T&gt;</c> do Mono, entao o <c>callvirt Add</c> do mod nunca
+    /// verificaria (era InvalidProgram nos 20 bosses do FargowiltasSouls).
+    /// Devolver uma lista vazia deixa o metodo do mod COMPLETO; o que ele
+    /// escreve aqui nao chega ao jogo (so a ordenacao do bestiario).
+    ///
+    /// A chave e o nome do slot: o mesmo mod que guarda a referencia e
+    /// compara identidade continua vendo o mesmo objeto.
+    /// </summary>
+    public static T? ManagedSlot<T>(string key) where T : class
+    {
+        lock (ManagedSlots)
+        {
+            if (ManagedSlots.TryGetValue(key, out object? cached)) return (T?)cached;
+            object? made;
+            try { made = System.Activator.CreateInstance(typeof(T)); }
+            catch (System.Exception e)
+            {
+                Log.Warn("il patch: slot " + key + " sem construtor vazio (" + e.GetType().Name + "); mod recebe null");
+                made = null;
+            }
+            ManagedSlots[key] = made;
+            return (T?)made;
+        }
+    }
+
+    /// <summary>Cache dos slots fabricados, por <c>Dono::Campo</c>.</summary>
+    static readonly System.Collections.Generic.Dictionary<string, object?> ManagedSlots = new();
 }

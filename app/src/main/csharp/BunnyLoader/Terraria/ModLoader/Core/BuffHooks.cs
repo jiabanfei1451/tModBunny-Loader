@@ -68,7 +68,7 @@ internal static unsafe class BuffHooks
     static void DrawBuffTooltip(On_Main.orig_MouseText_DrawBuffTooltip orig, Main self, string? cursorText, string? buffString, ref int X, ref int Y)
     {
         string tip = buffString ?? "";
-        SpriteFont font = FontAssets.MouseText.Value;
+        ReLogic.Graphics.DynamicSpriteFont font = FontAssets.MouseText.Value;
         var sizes = new System.Collections.Generic.List<Vector2> { font.MeasureString(tip), font.MeasureString(cursorText ?? "") };
         int fixedSizes = sizes.Count;
         foreach (GlobalBuff g in BuffLoader.Globals)

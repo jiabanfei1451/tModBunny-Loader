@@ -341,6 +341,20 @@ class Catalog(private val context: Context) {
         else runCatching { context.assets.open(path).close() }.isSuccess
     }
 
+    /**
+     * Se o pacote é BL, JS ou C# — o rótulo "(C#)" da lista.
+     *
+     * Lê o disco (ou os assets), então é chamado fora da thread da interface:
+     * a lista de pacotes pode ter dezenas de pastas.
+     */
+    fun kindOf(entry: Entry): ModKind {
+        if (entry.manifest.packType != PackType.MOD) return ModKind.BL
+        val id = entry.manifest.id
+        if (exists(entry, "$id.dll") || exists(entry, "$id.cs")) return ModKind.CSHARP
+        if (exists(entry, "main.js") || exists(entry, "content/main.js")) return ModKind.JS
+        return ModKind.BL
+    }
+
     /** O texto de um arquivo do pacote (UTF-8), ou null se ele não existe. */
     fun readText(entry: Entry, rel: String): String? {
         val path = resolve(entry, rel) ?: return null

@@ -1024,12 +1024,23 @@ public class CheatBridge {
         int n = 0;
         for (int id = 0; id < sPowerLevels.length; id++) {
             if (!isSaved(id)) continue;
+            // O tempo parado NAO volta sozinho. Ele pula o NPC.UpdateNPC inteiro,
+            // e com isso o AI dos NPCs — inclusive o dos mods — deixa de rodar:
+            // o NPC fica plantado, a animacao congela e parece que o carregador
+            // perdeu o AI. Um poder salvo ha semanas nao pode armar essa
+            // armadilha em todo inicio de jogo, calado.
+            if (id == P_TIME_STOP) continue;
             int lv = p.getInt(prefKey(id), 0);
             if (lv < 0 || lv > maxLevel(id)) lv = 0;
             sPowerLevels[id] = lv;
             if (lv > 0) { nSetPower(id, lv); n++; }
         }
-        if (n > 0) Log.i("BunnyLoader", "menu: " + n + " poder(es) salvo(s) religado(s)");
+        if (n > 0) {
+            Log.i("BunnyLoader", "menu: " + n + " poder(es) salvo(s) religado(s)");
+            // Antes era calado: quem tinha cheats salvos abria o jogo com eles
+            // ligados e sem saber, e o primeiro sintoma era "o mod quebrou".
+            try { toast(act, tr("PowersRestored") + " " + n); } catch (Throwable t) { /* sem toast */ }
+        }
     }
 
     private static void savePowers(Activity act) {

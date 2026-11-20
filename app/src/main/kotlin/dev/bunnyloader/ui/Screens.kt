@@ -77,7 +77,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal val EdgePad = 14.dp
+internal val EdgePad = 10.dp
 
 // =============================== Início ===============================
 
@@ -507,9 +507,9 @@ private fun RemoteStatusLine(shell: Shell, modifier: Modifier = Modifier) {
 @Composable
 private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().pixelPanel(fill = Bl.Select, raised = false)
-        .padding(horizontal = 12.dp, vertical = 10.dp)) {
+        .padding(horizontal = 10.dp, vertical = 6.dp)) {
         if (value.isEmpty()) {
-            PixelText(tr("SearchPlaceholder"), size = Ts.Body, color = Bl.TextMuted)
+            PixelText(tr("SearchPlaceholder"), size = Ts.Small, color = Bl.TextMuted)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             BasicTextField(
@@ -517,7 +517,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit, modifier: Mod
                 onValueChange = onChange,
                 singleLine = true,
                 textStyle = TextStyle(
-                    fontFamily = PixelFont, fontSize = Ts.Body.sp, color = Bl.Text,
+                    fontFamily = PixelFont, fontSize = Ts.Small.sp, color = Bl.Text,
                 ),
                 cursorBrush = SolidColor(Bl.PressedText),
                 modifier = Modifier.weight(1f),
@@ -548,9 +548,13 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var type by rememberSaveable { mutableStateOf(PackType.MOD) }
     val context = LocalContext.current
-    // A lista de `.tmod` sai do disco, não do índice em memória: relê ao abrir
-    // a aba e depois de cada import (um `.tmod` pode ter entrado pela pasta).
-    LaunchedEffect(type) { if (type == PackType.TML) shell.reloadTml() }
+    // A lista de `.tmod` sai do disco, não do índice em memória. Agora ela
+    // entra na lista de Mods, então é relida ao abrir a aba: o contador de
+    // ligados já sai certo, sem o usuário precisar visitar outra aba.
+    LaunchedEffect(Unit) { shell.reloadTml() }
+    // Uma versão anterior guardava a aba "TML mods" no estado salvo: ela não
+    // existe mais, e cair nela abriria uma lista vazia sem aba acesa.
+    LaunchedEffect(Unit) { if (type == PackType.TML) type = PackType.MOD }
     var tmlOpen by remember { mutableStateOf<dev.bunnyloader.mods.TmlMod?>(null) }
     var logOpen by remember { mutableStateOf(false) }
     val search = rememberPackageSearchIndex(shell.packages)
@@ -558,9 +562,30 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
         filterPackages(shell.packages, shell.enabled, PackageStatus.ALL, PackageSort.LOAD, type, query, index = search)
     }
     val counts = remember(shell.packages, shell.tmlMods) {
-        shell.packages.groupingBy { it.manifest.packType }.eachCount() +
-            (PackType.TML to shell.tmlMods.size)
+        val byType = shell.packages.groupingBy { it.manifest.packType }.eachCount()
+        byType + (PackType.MOD to ((byType[PackType.MOD] ?: 0) + shell.tmlMods.size))
     }
+    // Os `.tmod` filtrados pela mesma busca, com os ligados primeiro — a mesma
+    // leitura da lista dos pacotes.
+    val tmlShown = remember(shell.tmlMods, shell.tmlEnabled, query) {
+        val found = if (query.isBlank()) shell.tmlMods else shell.tmlMods.filter {
+            it.label.contains(query, true) || it.name.contains(query, true) ||
+                it.author.contains(query, true)
+        }
+        found.sortedWith(
+            compareBy<dev.bunnyloader.mods.TmlMod>({ it.name !in shell.tmlEnabled }, { it.label.lowercase() })
+        )
+    }
+    // "BL", "JS" ou "C#": o tipo do pacote é o que está no disco, lido fora da
+    // thread da interface (a lista pode ter dezenas de pastas).
+    var kinds by remember { mutableStateOf(emptyMap<String, dev.bunnyloader.mods.ModKind>()) }
+    LaunchedEffect(shell.packages) {
+        val catalog = shell.catalog
+        val all = shell.packages
+        kinds = withContext(Dispatchers.IO) { all.associate { it.uid to catalog.kindOf(it) } }
+    }
+    val enabledAll = shell.enabled.size + shell.tmlMods.count { it.name in shell.tmlEnabled }
+    val installedAll = shell.installed.size + shell.tmlMods.size
     val manualOrder = query.isBlank()
     val state = rememberLazyListState()
     LaunchedEffect(type, query) { state.scrollToItem(0) }
@@ -581,6 +606,28 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
     var aviso by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var asking by remember { mutableStateOf(false) }
     val importing = shell.importProgress != null || shell.pendingUpdate != null
+    // Uma lista só para os dois formatos. A chave leva a origem no prefixo
+    // ("p:" pacote, "t:" `.tmod`): as duas nunca colidem, e a ordem de carga
+    // continua sendo a dos pacotes.
+    val rows: List<PacotesRow> = remember(packages, tmlShown, type) {
+        val packs = packages.map { PacotesRow.Pack(it) }
+        if (type == PackType.MOD) packs + tmlShown.map { PacotesRow.Tml(it) } else packs
+    }
+    val enabledKeys = remember(shell.enabled, shell.tmlEnabled) {
+        shell.enabled.mapTo(HashSet()) { "p:$it" } + shell.tmlEnabled.map { "t:$it" }
+    }
+    val tmlInstalled = remember(shell.tmlMods) { shell.tmlMods.mapTo(HashSet()) { it.name } }
+    // Soltar um cartão sobre um `.tmod` não tem alvo na ordem dos pacotes:
+    // o vizinho mais próximo decide.
+    val dropMod: (String, String) -> Unit = { from, target ->
+        val moving = rows.firstOrNull { it.key == from } as? PacotesRow.Pack
+        val at = rows.indexOfFirst { it.key == target }
+        val dest = (rows.getOrNull(at) as? PacotesRow.Pack)
+            ?: (at - 1 downTo 0).firstNotNullOfOrNull { rows[it] as? PacotesRow.Pack }
+        if (moving != null && dest != null && dest.entry.uid != moving.entry.uid) {
+            shell.moveModTo(moving.entry.uid, dest.entry.uid)
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -631,21 +678,20 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        // Deitado, as abas e o "importar" cabem na mesma linha: a lista fica
+        // com a altura toda, que é justamente o que falta num celular de lado.
         Row(
-            Modifier.fillMaxWidth().padding(start = EdgePad, end = EdgePad, top = 12.dp),
+            Modifier.fillMaxWidth().padding(start = EdgePad, end = EdgePad, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            PixelText(tr("Packages"), size = Ts.Big, modifier = Modifier.weight(1f))
-            PixelText(tr("EnabledOfTotal", shell.enabled.size, shell.installed.size),
-                size = Ts.Body, color = Bl.TextFaint)
-        }
-
-        Box(Modifier.padding(start = EdgePad, end = EdgePad, top = 10.dp)) {
+            PackTypeTabs(type, counts, { type = it }, Modifier.weight(1f))
             PixelButton(
                 if (importing) tr("Importing") else tr("ImportPackage"),
                 { if (!importing) asking = true },
-                Modifier.fillMaxWidth(),
+                Modifier.width(150.dp),
                 icon = R.drawable.ic_folder,
+                fontSize = Ts.Tiny,
             )
         }
         if (asking) {
@@ -674,82 +720,113 @@ fun PacotesTab(shell: Shell, onOpen: (String) -> Unit) {
         shell.packageError?.let {
             PixelText(it, size = Ts.Small, color = Bl.Bad, modifier = Modifier.padding(horizontal = EdgePad))
         }
-        SearchField(query, { query = it }, Modifier.padding(start = EdgePad, end = EdgePad, top = 10.dp))
-        PackTypeTabs(type, counts, { type = it }, Modifier.padding(start = EdgePad, end = EdgePad, top = 8.dp))
-        if (type == PackType.TML) {
-            val shown = remember(shell.tmlMods, query) {
-                if (query.isBlank()) shell.tmlMods
-                else shell.tmlMods.filter {
-                    it.label.contains(query, true) || it.name.contains(query, true) ||
-                        it.author.contains(query, true)
-                }
-            }
-            FilterResultLine(shown.size, query.isNotBlank(), { query = "" },
-                Modifier.padding(start = EdgePad, end = EdgePad, top = 6.dp)) {
-                Box(Modifier.pixelClickable { logOpen = true }.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    PixelText(tr("ImportLog"), size = Ts.Small, color = Bl.PressedText)
-                }
-            }
-            shell.tmlMessage?.let {
-                PixelText(it, size = Ts.Small, color = Bl.TextDim,
-                    modifier = Modifier.padding(start = EdgePad, end = EdgePad, top = 4.dp))
-            }
-            TmlModList(
-                mods = shown,
-                enabled = shell.tmlEnabled,
-                onOpen = { tmlOpen = it },
-                onToggle = { mod, on -> shell.setTmlEnabled(mod.name, on) },
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                empty = { Empty(if (shell.tmlMods.isEmpty()) tr("TmlEmpty") else tr("NoPackagesInThisFilter")) },
-            )
-            return@Column
+        // Busca e contador na mesma linha: o "已启用 X/Y" é a primeira coisa que
+        // se olha, e agora ele conta também os `.tmod` ligados.
+        Row(
+            Modifier.fillMaxWidth().padding(start = EdgePad, end = EdgePad, top = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SearchField(query, { query = it }, Modifier.weight(1f))
+            PixelText(tr("EnabledOfTotal", enabledAll, installedAll),
+                size = Ts.Tiny, color = Bl.TextFaint, maxLines = 1)
         }
-        FilterResultLine(packages.size, query.isNotBlank(), { query = "" },
-            Modifier.padding(start = EdgePad, end = EdgePad, top = 6.dp))
+        FilterResultLine(rows.size, query.isNotBlank(), { query = "" },
+            Modifier.padding(start = EdgePad, end = EdgePad, top = 3.dp)) {
+            if (type == PackType.MOD) {
+                Box(Modifier.pixelClickable { logOpen = true }.padding(horizontal = 6.dp, vertical = 2.dp)) {
+                    PixelText(tr("ImportLog"), size = Ts.Tiny, color = Bl.PressedText)
+                }
+            }
+        }
+        shell.tmlMessage?.let {
+            PixelText(it, size = Ts.Small, color = Bl.TextDim,
+                modifier = Modifier.padding(start = EdgePad, end = EdgePad, top = 4.dp))
+        }
         PixelText(if (manualOrder) tr("ReorderHint")
-                  else tr("ClearSearchToReorder"), size = Ts.Small, color = Bl.TextFaint,
-            modifier = Modifier.padding(start = EdgePad, end = EdgePad, top = 8.dp))
+                  else tr("ClearSearchToReorder"), size = Ts.Tiny, color = Bl.TextFaint,
+            modifier = Modifier.padding(start = EdgePad, end = EdgePad, top = 4.dp))
 
         DraggablePackageList(
             state = state,
-            uids = packages.map { it.uid },
-            enabledUids = shell.enabled,
+            uids = rows.map { it.key },
+            enabledUids = enabledKeys,
             reorderEnabled = manualOrder,
-            onDrop = shell::moveModTo,
+            onDrop = dropMod,
             animateMoves = animateMoves,
             raisedUid = movedUid,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             empty = { Empty(if (shell.refreshingPackages && shell.packages.isEmpty()) tr("ReadingPackages")
-                           else if (shell.installed.isEmpty()) tr("PackagesEmpty")
+                           else if (shell.installed.isEmpty() && shell.tmlMods.isEmpty()) tr("PackagesEmpty")
                            else tr("NoPackagesInThisFilter")) },
         ) { index, modifier, preview ->
-            val e = packages[index]
-            // Ligado: o cartão inteiro fica verde, e a lista se lê de longe.
-            val fill = if (e.uid in shell.enabled) Bl.EnabledPanel else Bl.DisabledPanel
-            // As setas movem em relação ao vizinho VISÍVEL: com o filtro de
-            // tipo, o vizinho na ordem completa pode ser de outra lista.
-            ModRow(e, shell.catalog, { if (!preview) onOpen(e.uid) }, modifier, fill = fill, besideIcon = if (manualOrder) ({
-                val canMoveUp = index > 0 && (packages[index - 1].uid in shell.enabled) == (e.uid in shell.enabled)
-                val canMoveDown = index < packages.lastIndex && (packages[index + 1].uid in shell.enabled) == (e.uid in shell.enabled)
-                ModOrderButtons(e.manifest.nameFor(UiLocalization.language), canMoveUp, canMoveDown,
-                    { if (!preview) { animateNextMove(e.uid); shell.moveModTo(e.uid, packages[index - 1].uid) } },
-                    { if (!preview) { animateNextMove(e.uid); shell.moveModTo(e.uid, packages[index + 1].uid) } })
-            }) else null) {
-                SwitchSprite(e.uid in shell.enabled) {
-                    if (!preview) {
-                        // O LazyColumn ancora a rolagem na chave do primeiro item visível.
-                        // No topo, a âncora é o item vazio da lista e o cartão desliza;
-                        // rolada até este cartão, ela o seguiria e levaria a tela junto:
-                        // aí a rolagem fica fixa, e o cartão troca de lugar sem animação.
-                        if (state.anchoredAt(e.uid)) {
-                            state.requestScrollToItem(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+            when (val row = rows[index]) {
+                is PacotesRow.Pack -> {
+                    val e = row.entry
+                    // Ligado: o cartão inteiro fica verde, e a lista se lê de longe.
+                    val fill = if (e.uid in shell.enabled) Bl.EnabledPanel else Bl.DisabledPanel
+                    // As setas movem em relação ao vizinho VISÍVEL que é pacote:
+                    // entre dois deles pode estar um `.tmod`, que não tem lugar
+                    // na ordem de carga do launcher.
+                    val up = (index - 1 downTo 0).firstNotNullOfOrNull { rows[it] as? PacotesRow.Pack }
+                    val down = (index + 1..rows.lastIndex).firstNotNullOfOrNull { rows[it] as? PacotesRow.Pack }
+                    ModRow(
+                        e, shell.catalog, { if (!preview) onOpen(e.uid) }, modifier, fill = fill,
+                        // Textura e fonte não têm "BL/JS/C#": o rótulo é só de mod.
+                        kind = if (e.manifest.packType == PackType.MOD) kinds[e.uid] else null,
+                        besideIcon = if (manualOrder) ({
+                            val canMoveUp = up != null &&
+                                (up.entry.uid in shell.enabled) == (e.uid in shell.enabled)
+                            val canMoveDown = down != null &&
+                                (down.entry.uid in shell.enabled) == (e.uid in shell.enabled)
+                            ModOrderButtons(e.manifest.nameFor(UiLocalization.language), canMoveUp, canMoveDown,
+                                { if (!preview && up != null) { animateNextMove(e.uid); shell.moveModTo(e.uid, up.entry.uid) } },
+                                { if (!preview && down != null) { animateNextMove(e.uid); shell.moveModTo(e.uid, down.entry.uid) } })
+                        }) else null,
+                    ) {
+                        SwitchSprite(e.uid in shell.enabled) {
+                            if (!preview) {
+                                // O LazyColumn ancora a rolagem na chave do primeiro item visível.
+                                // No topo, a âncora é o item vazio da lista e o cartão desliza;
+                                // rolada até este cartão, ela o seguiria e levaria a tela junto:
+                                // aí a rolagem fica fixa, e o cartão troca de lugar sem animação.
+                                if (state.anchoredAt(row.key)) {
+                                    state.requestScrollToItem(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+                                }
+                                animateNextMove(e.uid)
+                                shell.setEnabled(e.uid, e.uid !in shell.enabled)
+                            }
                         }
-                        animateNextMove(e.uid)
-                        shell.setEnabled(e.uid, e.uid !in shell.enabled)
                     }
+                }
+                is PacotesRow.Tml -> Box(modifier) {
+                    TmlModRow(
+                        mod = row.mod,
+                        enabled = row.mod.name in shell.tmlEnabled,
+                        onClick = { if (!preview) tmlOpen = row.mod },
+                        onToggle = { on -> if (!preview) shell.setTmlEnabled(row.mod.name, on) },
+                        installed = tmlInstalled,
+                        enabledSet = shell.tmlEnabled,
+                    )
                 }
             }
         }
+    }
+}
+
+/**
+ * Uma linha da lista de Mods: um pacote do launcher ou um `.tmod`.
+ *
+ * A chave leva a origem no prefixo para as duas nunca colidirem na lista — é
+ * ela que o arraste e as animações usam.
+ */
+private sealed interface PacotesRow {
+    val key: String
+    data class Pack(val entry: Catalog.Entry) : PacotesRow {
+        override val key: String get() = "p:${entry.uid}"
+    }
+    data class Tml(val mod: dev.bunnyloader.mods.TmlMod) : PacotesRow {
+        override val key: String get() = "t:${mod.name}"
     }
 }
 
@@ -767,11 +844,11 @@ private fun FilterResultLine(
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        PixelText(tr(if (count == 1) "PackageCountOne" else "PackageCountOther", count), size = Ts.Small,
+        PixelText(tr(if (count == 1) "PackageCountOne" else "PackageCountOther", count), size = Ts.Tiny,
             color = Bl.TextFaint, modifier = Modifier.weight(1f))
         if (active) {
-            Box(Modifier.pixelClickable(onReset).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                PixelText(tr("ClearSearch"), size = Ts.Small, color = Bl.PressedText)
+            Box(Modifier.pixelClickable(onReset).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                PixelText(tr("ClearSearch"), size = Ts.Tiny, color = Bl.PressedText)
             }
         }
         trailing?.invoke()
@@ -829,17 +906,23 @@ private fun SortButton(sort: ExploreSort, onSort: (ExploreSort) -> Unit) {
 }
 
 /**
- * O interruptor OFF/ON do próprio Terraria: dois quadros empilhados.
- * O recorte vem do tamanho real do drawable (metade da altura por quadro):
- * números fixos erram quando o PNG muda de resolução e o interruptor sai
- * cortado/torto.
+ * O interruptor do Material 3: trilho arredondado, bolinha que desliza e as
+ * cores do esquema (a do sistema no Android 12+). Substituiu o sprite OFF/ON
+ * do jogo — é o mesmo controle que o usuário vê em Configurações do Android.
  */
 @Composable
 fun SwitchSprite(on: Boolean, onToggle: () -> Unit) {
-    val sheet = ImageBitmap.imageResource(R.drawable.ic_switch)
-    Box(Modifier.pixelClickable(onToggle).padding(4.dp)) {
-        SpriteFrame(R.drawable.ic_switch, sheet.width, sheet.height / 2, if (on) 1 else 0, 52.dp)
-    }
+    androidx.compose.material3.Switch(
+        checked = on,
+        onCheckedChange = { onToggle() },
+        colors = androidx.compose.material3.SwitchDefaults.colors(
+            checkedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
+            checkedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+            uncheckedThumbColor = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+            uncheckedTrackColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest,
+            uncheckedBorderColor = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+        ),
+    )
 }
 
 // =========================== Configurações ===========================

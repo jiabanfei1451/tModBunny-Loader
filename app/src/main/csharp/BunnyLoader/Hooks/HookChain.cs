@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -106,5 +107,34 @@ internal static unsafe class HookGate
 
 public static class HookErrors
 {
-    public static void Report(string method, Exception error) => Log.Error($"hook {method}: {error}");
+    // Um gancho que estoura a cada quadro enche o log: a v115 gastou 589 linhas
+    // com a mesma frase. A primeira, a segunda e a terceira ocorrencia contam
+    // (a ordem importa: a primeira costuma ser a que tem pilha util), depois
+    // so a cada 300a, com o total.
+    static readonly ConcurrentDictionary<string, int> counts = new(StringComparer.Ordinal);
+
+    public static void Report(string method, Exception error)
+    {
+        try
+        {
+            string key = method + " | " + error.GetType().Name + " | " + FirstLine(error.Message);
+            int n = counts.AddOrUpdate(key, 1, (_, v) => v + 1);
+            if (n <= 3)
+                Log.Error($"hook {method}: {error}");
+            else if (n % 300 == 0)
+                Log.Error($"hook {method}: {error} (repetido {n}x)");
+        }
+        catch (Exception)
+        {
+            Log.Error($"hook {method}: {error}");
+        }
+    }
+
+    static string FirstLine(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return string.Empty;
+        int cut = message.IndexOf('\n');
+        string line = cut > 0 ? message[..cut] : message;
+        return line.Length <= 160 ? line : line[..160];
+    }
 }

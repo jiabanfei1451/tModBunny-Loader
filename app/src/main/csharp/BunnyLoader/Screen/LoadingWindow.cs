@@ -167,7 +167,13 @@ internal static class LoadingWindow
 
     static void DoDraw(On_Main.orig_DoDraw orig, Main self, GameTime gameTime)
     {
+        // Um gancho de mod que estoura entre Begin e End deixa o lote aberto e o
+        // Begin do jogo passa a falhar em todo quadro (tela preta da v115). Na
+        // virada do quadro fechar e sempre correto, e e a unica forma de o jogo
+        // voltar a desenhar sem reiniciar.
+        SpriteBatchGuard.Unstick();
         orig(self, gameTime);
+        Heartbeat();
         if (!visible) return;
         try { Render(gameTime); }
         catch (Exception e)
@@ -178,6 +184,19 @@ internal static class LoadingWindow
     }
 
     static int frames;
+
+    // Quadros que chegaram ao fim do desenho. O log de erro nao serve para
+    // isso: o `__n` do HookGen engole a excecao de todo quadro e o jogo segue
+    // rodando sem desenhar nada. Um numero que sobe diz que o quadro fecha.
+    static int drawn;
+
+    static void Heartbeat()
+    {
+        if (++drawn % 600 != 0) return;
+        SpriteBatch batch = Main.spriteBatch;
+        bool open = batch != null && batch._beginCalled;
+        Log.Info($"desenho: {drawn} quadros completos; lote aberto={open}; {Main.screenWidth}x{Main.screenHeight}");
+    }
 
     static void Render(GameTime gameTime)
     {

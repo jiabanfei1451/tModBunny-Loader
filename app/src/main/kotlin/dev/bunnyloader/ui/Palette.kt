@@ -21,8 +21,35 @@ import dev.bunnyloader.R
  * repinta a interface inteira sem cada tela saber dele.
  */
 object Bl {
-    /** A paleta do tema atual. Quem escreve é o launcher, ao resolver o cenário. */
-    var palette by mutableStateOf(UiPalette.CLASSIC)
+    /** A paleta escolhida pelo cenário (quem escreve é o launcher). */
+    private var themePalette by mutableStateOf(UiPalette.CLASSIC)
+
+    /** A paleta que o Material 3 derivou do sistema, quando existe. */
+    private var materialPalette: UiPalette? by mutableStateOf(null)
+
+    /**
+     * A paleta em uso: a do Material quando o tema está aplicado, senão a do
+     * cenário. As duas convivem porque o cenário também é uma opção de quem
+     * gosta do visual do jogo.
+     */
+    var palette: UiPalette
+        get() = materialPalette ?: themePalette
+        set(value) { themePalette = value }
+
+    /**
+     * Os tons fixos, quando o Material 3 manda outros.
+     *
+     * A interface inteira fala com o `Bl` (Painel, Botão, Texto…), e são ~300
+     * chamadas espalhadas por doze arquivos. Em vez de cada uma perguntar ao
+     * MaterialTheme, o tema escreve aqui o esquema do sistema de uma vez: o
+     * app fica com as cores do Android 12 sem nenhuma peça saber disso.
+     */
+    private var scheme: MaterialColors? by mutableStateOf(null)
+
+    internal fun applyMaterial(c: MaterialColors, p: UiPalette) {
+        scheme = c
+        materialPalette = p
+    }
 
     /** Fundo de painel, cartão e linha de lista. */
     val Panel get() = palette.panel
@@ -42,59 +69,70 @@ object Bl {
     val TitleFill get() = palette.titleFill
 
     /** Toque: a borda de qualquer botão e o texto de botão sem caixa. */
-    val PressedBorder = Color(0xFFEBE27F)
-    val PressedText = Color(0xFFF9E141)
+    val PressedBorder get() = scheme?.pressedBorder ?: Color(0xFFEBE27F)
+    val PressedText get() = scheme?.pressedText ?: Color(0xFFF9E141)
 
     /** Cartão selecionado para arrastar. */
-    val DragBorder = Color(0xFF74E65B)
+    val DragBorder get() = scheme?.dragBorder ?: Color(0xFF74E65B)
 
     /** Contorno de todo painel. */
-    val Outline = Color(0xFF131625)
-    val Night = Color(0xFF0D0F1A)
+    val Outline get() = scheme?.outline ?: Color(0xFF131625)
+    val Night get() = scheme?.night ?: Color(0xFF0D0F1A)
 
     /** Contorno do texto. Preto puro: qualquer cinza some sobre o fundo. */
-    val Ink = Color(0xFF000000)
+    val Ink get() = scheme?.night ?: Color(0xFF000000)
 
     /** A barra de baixo: o painel de dentro do jogo. */
     val GamePanel get() = palette.gamePanel
 
     /** A aba atual no rodapé: o slot dourado do item selecionado na barra do jogo. */
-    val SlotGold = Color(0xFFE9B43A)
-    val SlotGoldOutline = Color(0xFF3A2608)
+    val SlotGold get() = scheme?.slotGold ?: Color(0xFFE9B43A)
+    val SlotGoldOutline get() = scheme?.slotGoldOutline ?: Color(0xFF3A2608)
 
     // --- texto ---
     // Branco puro na frente, porque todo texto da interface leva contorno
     // preto (ver PixelText); os secundários puxam para o azul da paleta.
-    val Text = Color.White
-    val TextDim = Color(0xFFD5DAF2)
-    val TextFaint = Color(0xFFA6AED6)
-    val TextMuted = Color(0xFF7C85B6)
+    val Text get() = scheme?.text ?: Color.White
+    val TextDim get() = scheme?.textDim ?: Color(0xFFD5DAF2)
+    val TextFaint get() = scheme?.textFaint ?: Color(0xFFA6AED6)
+    val TextMuted get() = scheme?.textMuted ?: Color(0xFF7C85B6)
     /** Recusa e erro. O vermelho de dano do Terraria. */
-    val Bad = Color(0xFFE0603F)
+    val Bad get() = scheme?.bad ?: Color(0xFFE0603F)
     /** Novidade boa: a etiqueta de atualização disponível. */
-    val Good = Color(0xFF3F8F4E)
+    val Good get() = scheme?.good ?: Color(0xFF3F8F4E)
 
     /** Fundo do cartão de um pacote ligado, em Pacotes: o verde do "Ligado" do jogo, escurecido. */
-    val EnabledPanel = Color(0xFF2B5A3A)
+    val EnabledPanel get() = scheme?.enabledPanel ?: Color(0xFF2B5A3A)
     val DisabledPanel get() = palette.disabledPanel
 
     /** Mod recém-publicado no topo do Explorar: o dourado de item raro, escurecido. */
-    val NewPanel = Color(0xFF5A4A2B)
-    val NewTitleFill = Color(0xFFA9822C)
+    val NewPanel get() = scheme?.newPanel ?: Color(0xFF5A4A2B)
+    val NewTitleFill get() = scheme?.newTitleFill ?: Color(0xFFA9822C)
 
     /**
      * O convite do Discord: o azul da marca, o único cartão fora da família de
      * azuis do Terraria — é ele que tem que saltar aos olhos.
      */
-    val Discord = Color(0xFF5865F2)
-    val DiscordDeep = Color(0xFF3B44A8)
-    val DiscordText = Color(0xFFE3E6FF)
+    val Discord get() = scheme?.discord ?: Color(0xFF5865F2)
+    val DiscordDeep get() = scheme?.discord?.let { Color(it.red * 0.7f, it.green * 0.7f, it.blue * 0.75f, 1f) } ?: Color(0xFF3B44A8)
+    val DiscordText get() = scheme?.text ?: Color(0xFFE3E6FF)
 
     /** As três primeiras posições de Populares. */
     val Gold = Color(0xFFB8902C)
     val Silver = Color(0xFF8790A8)
     val Bronze = Color(0xFF9C5F32)
 }
+
+/**
+ * Os tons que o Material 3 manda para o `Bl`: o tema escreve, a interface lê.
+ */
+class MaterialColors(
+    val text: Color, val textDim: Color, val textFaint: Color, val textMuted: Color,
+    val bad: Color, val good: Color, val outline: Color, val night: Color,
+    val pressedBorder: Color, val pressedText: Color, val dragBorder: Color,
+    val slotGold: Color, val slotGoldOutline: Color, val enabledPanel: Color,
+    val newPanel: Color, val newTitleFill: Color, val discord: Color,
+)
 
 /**
  * Os tons que cada tema troca. O clássico é o azul dos painéis do Terraria;

@@ -184,39 +184,49 @@ fun ModRow(
     modifier: Modifier = Modifier,
     fill: Color = Bl.Panel,
     downloads: Long? = null,
+    /** "BL", "JS" ou "C#": o tipo do pacote, ao lado do nome. */
+    kind: dev.bunnyloader.mods.ModKind? = null,
     besideIcon: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
 ) {
     PixelCard(modifier.fillMaxWidth(), fill = fill, onClick = onClick) {
         Row(
-            Modifier.padding(10.dp).fillMaxWidth(),
+            Modifier.padding(horizontal = 6.dp, vertical = 5.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             besideIcon?.invoke()
-            ModIcon(entry, catalog, 64.dp)
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                PixelText(
-                    entry.manifest.nameFor(UiLocalization.language),
-                    size = Ts.Item, color = Bl.Text,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+            ModIcon(entry, catalog, 44.dp)
+            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                // O nome cede espaço ao tipo: "(C#)" fica sempre visível, e o
+                // nome corta com reticências quando não cabe.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PixelText(
+                        entry.manifest.nameFor(UiLocalization.language),
+                        size = Ts.Body, color = Bl.Text,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (kind != null) {
+                        PixelText(" (${kind.label})", size = Ts.Tiny, color = Bl.TextDim, maxLines = 1)
+                    }
+                }
                 PixelText(
                     tr("ByAuthor", entry.manifest.authorLine),
-                    size = Ts.Small, color = Bl.TextFaint,
+                    size = Ts.Tiny, color = Bl.TextFaint,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Row(
-                    Modifier.padding(top = 5.dp),
+                    Modifier.padding(top = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PixelTag(entry.manifest.category, categoryColor(entry.manifest.category))
                     if (entry.manifest.isOutdated) {
-                        PixelTag(tr("LegacyFormat"), Bl.Bad, Modifier.padding(start = 8.dp))
+                        PixelTag(tr("LegacyFormat"), Bl.Bad, Modifier.padding(start = 6.dp))
                     }
                     PixelText(
                         formatSize(entry.sizeBytes),
-                        size = Ts.Small, color = Bl.TextFaint,
-                        modifier = Modifier.padding(start = 12.dp),
+                        size = Ts.Tiny, color = Bl.TextFaint,
+                        modifier = Modifier.padding(start = 8.dp),
                     )
                     if (downloads != null) DownloadCount(downloads, Modifier.padding(start = 10.dp))
                 }
@@ -228,7 +238,7 @@ fun ModRow(
 
 @Composable
 fun ModOrderButtons(name: String, canUp: Boolean, canDown: Boolean, onUp: () -> Unit, onDown: () -> Unit) {
-    Column(Modifier.padding(end = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.padding(end = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         ModOrderArrow(tr("MoveUp", name), true, canUp, onUp)
         ModOrderArrow(tr("MoveDown", name), false, canDown, onDown)
     }
@@ -238,12 +248,12 @@ fun ModOrderButtons(name: String, canUp: Boolean, canDown: Boolean, onUp: () -> 
 private fun ModOrderArrow(description: String, up: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(30.dp).pixelPanel(fill = Bl.Select, raised = enabled)
+        Modifier.size(24.dp).pixelPanel(fill = Bl.Select, raised = enabled)
             .semantics { contentDescription = description }
             .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PixelIcon(R.drawable.ic_seta_esq, 18.dp,
+        PixelIcon(R.drawable.ic_seta_esq, 14.dp,
             Modifier.rotate(if (up) 90f else 270f), alpha = if (enabled) 1f else 0.3f)
     }
 }
@@ -255,14 +265,17 @@ private fun ModOrderArrow(description: String, up: Boolean, enabled: Boolean, on
  */
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, icon: Int? = null) {
+    // Título de seção do Material: texto solto, sem a faixa colorida atrás.
     Box(modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp)) {
         Row(
-            Modifier.pixelPanel(fill = Bl.TitleFill)
-                .padding(horizontal = 12.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
             if (icon != null) PixelIcon(icon, 20.dp, Modifier.padding(end = 8.dp))
-            PixelText(text, size = Ts.Head, color = Bl.Text)
+            PixelText(
+                text, size = Ts.Head,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -304,9 +317,12 @@ fun RankBadge(position: Int, modifier: Modifier = Modifier) {
 }
 
 /**
- * Mods, Texturas e Fontes: as três listas do launcher, como as abas da ficha
- * de um mod. Cada aba mostra quantos pacotes tem; a vazia continua tocável
- * (a lista diz que não há nada) para o seletor não mudar de forma.
+ * Mods, Texturas e Fontes: as três abas do acervo, como as abas da ficha de um
+ * mod. Cada aba mostra quantos pacotes tem; a vazia continua tocável (a lista
+ * diz que não há nada) para o seletor não mudar de forma.
+ *
+ * `TML` não é aba: os `.tmod` entram na lista de Mods, misturados com os
+ * pacotes do launcher e marcados "(tml)".
  */
 @Composable
 fun PackTypeTabs(
@@ -315,14 +331,14 @@ fun PackTypeTabs(
     onSelect: (dev.bunnyloader.mods.PackType) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (type in dev.bunnyloader.mods.PackType.entries) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        for (type in PACK_TABS) {
             val on = type == selected
             Box(
                 Modifier.weight(1f)
                     .pixelPanel(fill = if (on) Bl.TitleFill else Bl.Select, raised = on)
                     .pixelClickable { onSelect(type) }
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 PixelText("${tr(type.label)} ${counts[type] ?: 0}", size = Ts.Small,
@@ -331,3 +347,10 @@ fun PackTypeTabs(
         }
     }
 }
+
+/** As abas do acervo, na ordem. Fora daqui: `TML`, que vive dentro de Mods. */
+private val PACK_TABS = listOf(
+    dev.bunnyloader.mods.PackType.MOD,
+    dev.bunnyloader.mods.PackType.TEXTURE,
+    dev.bunnyloader.mods.PackType.FONT,
+)

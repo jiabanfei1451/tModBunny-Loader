@@ -17,6 +17,7 @@
 #include "content/textures/TexturePacks.h"
 #include "content/items/ModItems.h"
 #include "content/npcs/ModNpcs.h"
+#include "content/npcs/NpcEvents.h"
 #include "content/buffs/ModBuffs.h"
 #include "content/dusts/ModDusts.h"
 #include "content/tiles/ModTiles.h"
@@ -932,6 +933,31 @@ void allowDeprecatedItems() {
     if (deprecated) std::memset(arrayData(deprecated), 0, deprecated->length);
 }
 
+/**
+ * Prova de vida do NPC.AI, uma vez a cada 600 quadros de mundo.
+ *
+ * O detour pode nao entrar por dois motivos muito diferentes: o gancho nao
+ * pegou (a reescrita do comeco de AI() nao vale), ou o NPC.UpdateNPC inteiro
+ * esta sendo pulado — e o Tempo Parado faz exatamente isso. Sem separar os
+ * dois, "NPC parado" sempre parecia mod quebrado.
+ */
+void npcAiDiag() {
+    if (!g_inWorld.load(std::memory_order_relaxed)) return;
+    static uint32_t frames = 0;
+    static uint32_t last = 0;
+    static bool said_stop = false;
+    const uint32_t now = npcAiCallCount();
+    const int stop = powerLevel(static_cast<int>(Power::TimeStop));
+    if (stop > 0 && !said_stop) {
+        said_stop = true;
+        BL_INFO("tempo parado ligado: NPC.UpdateNPC pulado, o AI dos NPCs nao roda");
+    } else if (stop == 0) said_stop = false;
+    if (++frames < 600) return;
+    frames = 0;
+    BL_DEBUG("npc ai: chamadas=%u (+%u em 600 quadros) tempo-parado=%d", now, now - last, stop);
+    last = now;
+}
+
 void hkDoUpdate(Il2CppObject* self, Il2CppObject* gt, const MethodInfo* m) {
     // Marcos de uma vez so. Com o log parando no meio, eles respondem a unica
     // pergunta que importa: o processo morreu DURANTE a instalacao, depois
@@ -948,6 +974,7 @@ void hkDoUpdate(Il2CppObject* self, Il2CppObject* gt, const MethodInfo* m) {
     updateInWorld();
     readNamesSlice();
     tickPowers();
+    npcAiDiag();
     tickModLanguage();
     if (gameInitialized()) {
         tickModItems();

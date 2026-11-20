@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using BunnyLoader;
 
 namespace Terraria.ModLoader;
 
@@ -11,7 +12,11 @@ public class NPCShop : AbstractNPCShop
     protected override IEnumerable<AbstractNPCShop.Entry> AllEntries => entries;
     public bool FillLastSlot { get; private set; }
     internal bool Vanilla, Modified;
-    public NPCShop(int npcType, string name = "Shop") : base(npcType, name) { }
+    public NPCShop(int npcType, string name = "Shop") : base(npcType, name)
+    {
+        Log.Info($"[shop] ctor npc={npcType} nome='{name}' auto={NPCShopDatabase.RegisteringShops}");
+        AutoRegister();
+    }
     public Entry GetEntry(int item) => entries.First(e => e.Item.type == item);
     public bool TryGetEntry(int item, out Entry entry) { entry = entries.FirstOrDefault(e => e.Item.type == item)!; return entry != null; }
     public NPCShop AllowFillingLastSlot() { FillLastSlot = true; return this; }

@@ -426,7 +426,7 @@ sealed class Emitter
         sb.Append(inner).Append("}\n");
     }
 
-    public void EmitMethod(StringBuilder sb, string ind, MethodModel m, string classExpr, string name, string access = "public")
+    public void EmitMethod(StringBuilder sb, string ind, MethodModel m, string classExpr, string name, string access = "public", bool markVirtual = false)
     {
         int id = uid++;
         Methods++;
@@ -458,7 +458,11 @@ sealed class Emitter
             return;
         }
         string unsafeRet = RetCs(m);
-        sb.Append(ind).Append($"{access} {isStatic}{unsafeRet} {name}({ParamList(m, true)})\n");
+        // @open: mods derivam do proxy e fazem override. Sem virtual no
+        // membro base volta o TypeLoadException (no suitable method found to
+        // override). So em tipos nao-sealed, nunca em struct/sealed.
+        string virt = markVirtual ? "virtual " : "";
+        sb.Append(ind).Append($"{access} {virt}{isStatic}{unsafeRet} {name}({ParamList(m, true)})\n");
         sb.Append(ind).Append("{\n");
         string bb = ind + "    ";
         sb.Append(bb).Append($"ref readonly var __m = ref {G}.Method(ref __m{id}, {classExpr}, {sig}, {LayoutLiteral(m.Layout)});\n");

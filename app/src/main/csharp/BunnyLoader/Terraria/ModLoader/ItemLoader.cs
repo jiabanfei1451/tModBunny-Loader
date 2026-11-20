@@ -255,6 +255,22 @@ public static unsafe partial class ItemLoader
         return index < (uint)all.Length ? all[index] : null;
     }
 
+    /// <summary>
+    /// tML grava o tipo e o `ModItem` no proprio template em
+    /// <c>ModItem.Register</c> (<c>Item.ResetStats(ItemLoader.Register(this));
+    /// Item.ModItem = this;</c>, ModItem.cs:66-71). Aqui o template nasce em
+    /// <c>InitTemplateInstance</c> e ninguem escrevia o `type`: dentro do
+    /// SetStaticDefaults o mod lia <c>Item.type == 0</c> e indexava
+    /// `ItemID.Sets.*`/`ItemID.Search` na posicao 0.
+    /// </summary>
+    internal static void PrepareTemplate(ModItem item)
+    {
+        Item template = item.Entity;
+        if (template == null || template.IsNull) return;
+        if (template.type != item.Type) template.type = item.Type;
+        Instances.Set(template.Pointer, item);
+    }
+
     internal static void Register(ModItem item)
     {
         string texture = ResolveTextureOrMissing(item, item.Texture);
@@ -262,6 +278,7 @@ public static unsafe partial class ItemLoader
         if (type == -1) throw new InvalidOperationException($"{item.FullName}: the mod already has an item named '{item.Name}'");
         if (type < 0) throw new InvalidOperationException($"{item.FullName}: registration failed ({type})");
         item.Type = type;
+        PrepareTemplate(item);
         if (type + 1 > Volatile.Read(ref itemCount)) Volatile.Write(ref itemCount, type + 1);
 
         EnsureHooked();
@@ -657,6 +674,9 @@ public static unsafe partial class ItemLoader
         {
             ModItem? item = Get(type);
             if (item == null) continue;
+            SetupResume.Prime(item.Mod);
+            string resumeKey = "ITEM:" + item.FullName;
+            bool resumeSkip = SetupResume.Skip(item.Mod, resumeKey);
             try
             {
                 if (item.Entity.IsNull)
@@ -666,7 +686,14 @@ public static unsafe partial class ItemLoader
                     template.SetDefaults(type, default);
                     item.Entity = template;
                 }
-                item.SetupContent();
+                PrepareTemplate(item);
+                if (resumeSkip) Log.Warn($"item {type} {resumeKey}: SetStaticDefaults pulado (crash anterior)");
+                else
+                {
+                    SetupResume.Enter(item.Mod, resumeKey);
+                    item.SetupContent();
+                    SetupResume.Leave(item.Mod);
+                }
             }
             catch (Exception e)
             {

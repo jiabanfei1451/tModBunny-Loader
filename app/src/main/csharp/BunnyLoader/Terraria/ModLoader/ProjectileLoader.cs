@@ -64,6 +64,21 @@ public static unsafe class ProjectileLoader
         return instance;
     }
 
+    /// <summary>
+    /// tML grava <c>Projectile.type = ProjectileLoader.Register(this)</c> no
+    /// template (ModProjectile.cs:65). O template nasce em
+    /// <c>InitTemplateInstance</c> com <c>type == 0</c>; sem esta linha o mod
+    /// lia <c>Projectile.type == 0</c> dentro do SetStaticDefaults e escrevia
+    /// `Main.projFrames`/`ProjectileID.Sets.*` na posicao 0.
+    /// </summary>
+    internal static void PrepareTemplate(ModProjectile projectile)
+    {
+        Projectile template = projectile.Entity;
+        if (template == null || template.IsNull) return;
+        if (template.type != projectile.Type) template.type = projectile.Type;
+        Instances.Set(template.Pointer, projectile);
+    }
+
     internal static void Register(ModProjectile projectile)
     {
         string texture = ItemLoader.ResolveTextureOrMissing(projectile, projectile.Texture);
@@ -81,6 +96,7 @@ public static unsafe class ProjectileLoader
         if (type == -1) throw new InvalidOperationException($"{projectile.FullName}: the mod already has a projectile named '{projectile.Name}'");
         if (type < 0) throw new InvalidOperationException($"{projectile.FullName}: registration failed ({type})");
         projectile.Type = type;
+        PrepareTemplate(projectile);
         lock (Gate)
         {
             int index = type - VanillaCount;
@@ -872,6 +888,9 @@ public static unsafe class ProjectileLoader
         {
             ModProjectile? projectile = GetProjectile(type);
             if (projectile == null) continue;
+            SetupResume.Prime(projectile.Mod);
+            string resumeKey = "PROJ:" + projectile.FullName;
+            bool resumeSkip = SetupResume.Skip(projectile.Mod, resumeKey);
             try
             {
                 if (projectile.Entity.IsNull)
@@ -881,7 +900,14 @@ public static unsafe class ProjectileLoader
                     template.SetDefaults(type);
                     projectile.Entity = template;
                 }
-                projectile.SetupContent();
+                PrepareTemplate(projectile);
+                if (resumeSkip) Log.Warn($"projectile {type} {resumeKey}: SetStaticDefaults pulado (crash anterior)");
+                else
+                {
+                    SetupResume.Enter(projectile.Mod, resumeKey);
+                    projectile.SetupContent();
+                    SetupResume.Leave(projectile.Mod);
+                }
                 if (ItemHooks.Overrides(projectile.GetType(), typeof(ModProjectile), nameof(ModProjectile.Colliding)) || ProjectileID.Sets.IsAWhip[type])
                     ProjectileID.Sets.IsAComplexCollision[type] = true;
                 Host.Native()->SetProjectileFrames(type, Main.projFrames[type]);

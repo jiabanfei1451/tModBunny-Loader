@@ -11,6 +11,14 @@ public sealed unsafe partial class Main
     // propriedade equivalente.
     public static Tilemap tile;
 
+    // v104: "public static AssetRepository Assets;" e um CAMPO no jogo (o mod
+    // le com ldsfld). Em types.txt "! Terraria.Main.Assets" impede a
+    // propriedade equivalente. O valor nao carrega ponteiro nativo: quem
+    // responde ao Request<T> e o proxy escrito a mao em
+    // ReLogic/Content/IAssetRepository.TML.cs, que resolve no conteudo vanilla
+    // do proprio jogo.
+    public static ReLogic.Content.IAssetRepository Assets = new(0);
+
     // v65: tML (Main.cs.patch) acrescenta estes dois. O mod le
     // Main.CurrentPlayer para achar o jogador "dono" do desenho atual; a
     // sobrecarga e' usada pelas telas de slot de acessorio para apontar para

@@ -88,7 +88,16 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
 
     public sealed override void SetupContent()
     {
+        // tML: `NPCLoader.SetDefaults(NPC, createModNPC: false)` antes do
+        // AutoStaticDefaults — sincroniza `NPC.type`/template e cresce
+        // `buffImmune` ate BuffLoader.BuffCount.
+        NPCLoader.PrepareTemplate(this);
+        // Duas linhas de trilha: o crash nativo de 17/11 morreu dentro do
+        // SetupContent sem dizer qual dos dois passos era. Com isso a ultima
+        // linha do log aponta AutoStaticDefaults (shim) ou SetStaticDefaults (mod).
+        BunnyLoader.Log.Info($"NPC {Type} {FullName}: auto static defaults");
         AutoStaticDefaults();
+        BunnyLoader.Log.Info($"NPC {Type} {FullName}: auto static defaults ok; SetStaticDefaults do mod");
         SetStaticDefaults();
         if (!Terraria.ID.NPCID.Search.ContainsName(FullName)) Terraria.ID.NPCID.Search.Add(FullName, Type);
     }

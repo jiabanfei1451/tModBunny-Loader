@@ -657,6 +657,14 @@ static class Program
             sb.Append(i1).Append($"public static readonly {RT}.GameClass Class = {NewClass(t)};\n");
             sb.Append(i1).Append("public readonly nint Pointer;\n");
             sb.Append(i1).Append($"public {name}(nint pointer) => Pointer = pointer;\n");
+            // @open: o mod faz newobj do tipo dele e o ctor chama base..ctor().
+            // Sem ctor sem parametros o metodo do mod nao JITa (MissingMethod:
+            // Terraria.Graphics.Effects.CustomSky::.ctor). O Pointer e um bloco
+            // zerado alugado (Interop/ManagedEffects): os campos-proxy
+            // (Opacity, _priority) nao estouram e o EffectManager reconhece a
+            // instancia como managed.
+            if (!sealType && !asStruct)
+                sb.Append(i1).Append($"public {name}() : this({RT}.ManagedEffects.New()) {{ }}\n");
             sb.Append(i1).Append($"nint {RT}.IGameObject.Pointer => Pointer;\n");
             sb.Append(i1).Append("public bool IsNull => Pointer == 0;\n");
             if (!asRecord && !asStruct)
@@ -865,7 +873,8 @@ static class Program
             sb.Append(ind).Append("}\n");
         }
 
-        foreach (MethodModel m in plan.Methods) emitter.EmitMethod(sb, ind, m, cls, m.Name);
+        bool openMethods = !t.IsValueType && OpenTypes.Contains(t.FullName ?? t.Name);
+        foreach (MethodModel m in plan.Methods) emitter.EmitMethod(sb, ind, m, cls, m.Name, "public", openMethods && !m.IsStatic);
         foreach (EventModel e in plan.Events) emitter.EmitEvent(sb, ind, e.Name, e.Key, e.IsStatic, e.Add, e.Remove, e.Invoke, e.Delegate, cls);
         foreach (MethodModel m in plan.Ctors) emitter.EmitMethod(sb, ind, m, cls, "New");
     }

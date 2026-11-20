@@ -97,11 +97,19 @@ public static class ModContent
     {
         Asset<T>.CheckSupported();
         (string modName, string path) = SplitName(name);
-        if (modName == "Terraria") return typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) ? (Asset<T>)(object)VanillaFont(path) : VanillaAsset<T>.Get(path);
+        if (modName == "Terraria")
+        {
+            // As fontes do jogo sao DynamicSpriteFont no 1.4; um Request<SpriteFont>
+            // de "Terraria/Fonts/..." nao tem equivalente nativo aqui.
+            if (typeof(T) == typeof(ReLogic.Graphics.DynamicSpriteFont)) return (Asset<T>)(object)VanillaFont(path);
+            if (typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont))
+                throw new NotSupportedException($"ModContent.Request: on mobile the game fonts are ReLogic.Graphics.DynamicSpriteFont, not SpriteFont ('{name}')");
+            return VanillaAsset<T>.Get(path);
+        }
         return ModOf(modName, name).Assets.Request<T>(path, mode);
     }
 
-    static Asset<Microsoft.Xna.Framework.Graphics.SpriteFont> VanillaFont(string path)
+    static Asset<ReLogic.Graphics.DynamicSpriteFont> VanillaFont(string path)
     {
         string font = path.Replace('\\', '/').TrimStart('/');
         if (font.StartsWith("Images/", StringComparison.Ordinal)) font = font["Images/".Length..];
@@ -130,7 +138,9 @@ public static class ModContent
         (string modName, string path) = SplitName(assetName);
         if (modName != "Terraria")
             return Host.FindMod(modName) is Mod mod &&
-                (mod.Assets.HasAsset<Microsoft.Xna.Framework.Graphics.Texture2D>(path) || mod.Assets.HasAsset<Microsoft.Xna.Framework.Graphics.SpriteFont>(path));
+                (mod.Assets.HasAsset<Microsoft.Xna.Framework.Graphics.Texture2D>(path) ||
+                 mod.Assets.HasAsset<ReLogic.Graphics.DynamicSpriteFont>(path) ||
+                 mod.Assets.HasAsset<Microsoft.Xna.Framework.Graphics.SpriteFont>(path));
         try
         {
             VanillaAsset<Microsoft.Xna.Framework.Graphics.Texture2D>.Get(path).Wait();

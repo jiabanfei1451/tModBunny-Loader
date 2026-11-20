@@ -14,10 +14,12 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -109,9 +111,11 @@ class LauncherActivity : ComponentActivity() {
         window.setBackgroundDrawableResource(R.color.splash_background)
         setContent {
             var splash by rememberSaveable { mutableStateOf(true) }
-            Box(Modifier.fillMaxSize()) {
-                LauncherScreen(model.shell, showDialogs = !splash)
-                if (splash) AppSplash({ !model.shell.refreshingPackages }) { splash = false }
+            dev.bunnyloader.ui.BunnyTheme {
+                Box(Modifier.fillMaxSize()) {
+                    LauncherScreen(model.shell, showDialogs = !splash)
+                    if (splash) AppSplash({ !model.shell.refreshingPackages }) { splash = false }
+                }
             }
         }
     }
@@ -228,24 +232,39 @@ private fun LauncherScreen(shell: Shell, showDialogs: Boolean) {
         LocalRemoteFiles provides requestFiles,
         LocalRemoteMedia provides mediaEntry,
     ) {
-    Box(Modifier.fillMaxSize()) {
-        Scenery(biome, { pan }, { fxTime.floatValue }, Modifier.fillMaxSize(), effects = themeEffects)
+    Box(Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.background)) {
         // A ficha aberta pode trazer o fundo do mod (theme.background).
         openMod?.let { shell.entry(it) }?.let { entry ->
             androidx.compose.runtime.key(entry.uid) { ModBackdrop(entry, shell.catalog, Modifier.fillMaxSize()) }
         }
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // Teto de largura: o layout foi pensado para um celular em pé. Solto num
-            // tablet ou no emulador deitado, uma linha de mod com 1600px vira uma
-            // faixa vazia com um ícone perdido na esquerda.
-            Box(
-                Modifier.weight(1f).fillMaxWidth().graphicsLayer {
-                    translationY = -size.height * hide
-                    alpha = 1f - hide
+        Row(Modifier.fillMaxSize().statusBarsPadding()) {
+            LauncherRail(
+                current = tab,
+                onSelect = { tab = it; openMod = null },
+                onStart = {
+                    val status = Eligibility.check(ctx)
+                    if (status == Eligibility.Status.OK) ctx.startActivity(dev.bunnyloader.compile.CompileActivity.gameIntent(ctx))
+                    else blocked = status
                 },
+                modifier = Modifier.fillMaxHeight()
+                    .padding(start = 8.dp, top = 8.dp, bottom = 8.dp)
+                    .graphicsLayer {
+                        translationX = -size.width * hide
+                        alpha = 1f - hide
+                    },
+            )
+            // Teto de largura: solto num tablet ou no emulador, uma linha de
+            // mod com 1600px vira uma faixa vazia com um ícone perdido na
+            // esquerda. Deitado num celular (~900dp) o teto quase não aparece.
+            Box(
+                Modifier.weight(1f).fillMaxHeight()
+                    .padding(end = 8.dp).graphicsLayer {
+                        translationY = -size.height * hide
+                        alpha = 1f - hide
+                    },
                 contentAlignment = Alignment.TopCenter,
             ) {
-                Box(Modifier.widthIn(max = 560.dp).fillMaxSize()) {
+                Box(Modifier.widthIn(max = 980.dp).fillMaxSize()) {
                     val detail = openMod?.let { shell.entry(it) }
                     if (detail != null) {
                         ModDetail(detail, shell) { openMod = null }
@@ -271,17 +290,6 @@ private fun LauncherScreen(shell: Shell, showDialogs: Boolean) {
                         }
                     }
                 }
-            }
-            Box(Modifier.graphicsLayer { translationY = size.height * hide }) {
-                NavBar(
-                    current = tab,
-                    onSelect = { tab = it; openMod = null },
-                    onStart = {
-                        val status = Eligibility.check(ctx)
-                        if (status == Eligibility.Status.OK) ctx.startActivity(dev.bunnyloader.compile.CompileActivity.gameIntent(ctx))
-                        else blocked = status
-                    },
-                )
             }
         }
         if (immersive) ImmersiveOverlay { immersive = false }
@@ -330,112 +338,73 @@ private fun ImmersiveOverlay(onRestore: () -> Unit) {
     }
 }
 
-// ------------------------------- rodapé -------------------------------
+// ------------------------------- lateral -------------------------------
 
 /**
- * A barra de baixo, montada como a barra de itens do Terraria: cada aba é um
- * slot do inventário (o canto em degrau do Inventory_Back), a aba atual é o
- * slot dourado do item selecionado e sobe um pouco. O botão de jogar é um
- * disco em pixel de arte erguido no meio.
+ * A navegação do launcher deitado: uma coluna de slots à esquerda, como a
+ * barra de itens do Terraria em pé, com o botão de jogar no pé da coluna.
  *
- * A cor da barra e dos slots vem do tema (Bl.GamePanel, Bl.Select); só o
- * dourado da seleção é fixo, como no jogo.
+ * Deitado, uma barra de rodapé comeria a altura que a lista de pacotes mais
+ * precisa — e a coluna ainda deixa o polegar esquerdo alcançar tudo.
  */
 @Composable
-private fun NavBar(current: Tab, onSelect: (Tab) -> Unit, onStart: () -> Unit) {
-    Box(Modifier.fillMaxWidth().height(112.dp)) {
-        Row(
-            Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(88.dp)
-                .drawBehind {
-                    val u = 2.dp.toPx()
-                    val bar = Bl.GamePanel
-                    // Contorno, uma linha de luz e o corpo; embaixo, um tom mais
-                    // fundo dá peso à barra sem sombra projetada.
-                    drawRect(Bl.Outline, size = Size(size.width, u * 2))
-                    drawRect(bar, Offset(0f, u * 2), Size(size.width, size.height))
-                    drawRect(bar.mix(Color.White, 0.18f), Offset(0f, u * 2), Size(size.width, u))
-                    drawRect(bar.mix(Bl.Night, 0.22f), Offset(0f, size.height * 0.62f),
-                        Size(size.width, size.height * 0.38f))
-                    drawRect(bar.mix(Bl.Night, 0.12f), Offset(0f, size.height * 0.62f - u),
-                        Size(size.width, u))
-                }
-                .navigationBarsPadding(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TabButton(Tab.INICIO, current, onSelect)
-            TabButton(Tab.EXPLORAR, current, onSelect)
-            Spacer(Modifier.width(92.dp))
-            TabButton(Tab.PACOTES, current, onSelect)
-            TabButton(Tab.CONFIG, current, onSelect)
-        }
-        PlayButton(onStart, Modifier.align(Alignment.TopCenter))
-    }
-}
-
-/**
- * O disco de jogar, desenhado pixel a pixel (43 de lado, 2 dp cada): contorno,
- * aro com luz em cima e sombra embaixo, miolo na cor de título do tema e um
- * brilho curto no alto. No toque, o contorno fica amarelo e o miolo clareia.
- */
-@Composable
-private fun PlayButton(onStart: () -> Unit, modifier: Modifier = Modifier) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val fill = if (pressed) Bl.ButtonPressed else Bl.TitleFill
-    val disk = remember(fill, pressed) {
-        dev.bunnyloader.ui.pixelDisk(
-            43, outline = if (pressed) Bl.PressedBorder else Bl.Outline, fill = fill,
-            light = fill.mix(Color.White, 0.3f), dark = fill.mix(Bl.Night, 0.45f),
-        )
-    }
-    Box(
-        modifier.size(86.dp)
-            .clip(CircleShape)
-            .clickable(interaction, indication = null, onClick = onStart),
-        contentAlignment = Alignment.Center,
-    ) {
-        androidx.compose.foundation.Image(disk, tr("Play"), Modifier.size(86.dp),
-            filterQuality = androidx.compose.ui.graphics.FilterQuality.None)
-        // Centro ótico, não geométrico: o triângulo tem a massa na base
-        // (à esquerda) e a arte traz a sombra embaixo à direita.
-        PixelIcon(R.drawable.ic_start, 44.dp, Modifier.offset(x = 3.dp, y = if (pressed) 3.dp else 1.dp))
-    }
-}
-
-@Composable
-private fun TabButton(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
-    val selected = tab == current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val lift by animateFloatAsState(if (selected) -5f else 0f, tween(180), label = "slot")
+private fun LauncherRail(
+    current: Tab,
+    onSelect: (Tab) -> Unit,
+    onStart: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // A coluna do Material: superfície arredondada, sem moldura pixelada.
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(interaction, indication = null) { onSelect(tab) }
-            .padding(horizontal = 2.dp),
+        modifier.width(112.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(24.dp))
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainer)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            Modifier.offset(y = lift.dp).size(54.dp, 46.dp)
-                .pixelPanel(
-                    fill = if (selected) Bl.SlotGold else Bl.Select,
-                    outline = when {
-                        pressed -> Bl.PressedBorder
-                        selected -> Bl.SlotGoldOutline
-                        else -> Bl.Outline
-                    },
-                    corner = PixelCorner.LARGE,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            PixelIcon(tab.icon, if (selected) 32.dp else 28.dp, alpha = if (selected || pressed) 1f else 0.85f)
-        }
+        for (tab in Tab.entries) RailButton(tab, current, onSelect)
+        Spacer(Modifier.weight(1f))
+        RailStart(onStart)
+    }
+}
+
+/** Um destino da navegação: pílula do Material quando é o atual. */
+@Composable
+private fun RailButton(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
+    val selected = tab == current
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+            .background(if (selected) scheme.secondaryContainer else Color.Transparent)
+            .clickable(onClick = { onSelect(tab) })
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PixelIcon(tab.icon, 20.dp, alpha = if (selected) 1f else 0.8f)
         PixelText(
             tr(tab.label),
-            size = Ts.Small,
-            color = if (selected || pressed) Bl.PressedText else Bl.TextDim,
-            modifier = Modifier.padding(top = 3.dp),
+            size = Ts.Tiny,
+            color = if (selected) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(start = 6.dp),
+        )
+    }
+}
+
+/** O "jogar": o botão principal do Material, na largura da coluna. */
+@Composable
+private fun RailStart(onStart: () -> Unit) {
+    androidx.compose.material3.Button(
+        onClick = onStart,
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.material3.MaterialTheme.shapes.medium,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 10.dp),
+    ) {
+        PixelIcon(R.drawable.ic_start, 14.dp)
+        PixelText(
+            tr("Play"), size = Ts.Tiny, maxLines = 1,
+            modifier = Modifier.padding(start = 6.dp),
         )
     }
 }

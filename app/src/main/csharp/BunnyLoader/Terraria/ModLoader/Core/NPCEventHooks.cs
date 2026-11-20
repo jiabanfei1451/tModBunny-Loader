@@ -50,6 +50,15 @@ internal static unsafe class NPCEventHooks
         NPCMethod flags = 0;
         foreach (NPCMethod method in Enum.GetValues<NPCMethod>())
             if (ItemHooks.Overrides(type, baseType, method.ToString())) flags |= method;
+        // AI/PreAI/PostAI e FindFrame sao virtuais na base (PreAI => true, os
+        // outros vazios), e o dispatcher agora chama os tres sem consultar o
+        // mapa de overrides. O bit do evento, porem, continua vindo daquele
+        // mapa: se ele falha, o nativo nunca chama o callback e o NPC fica
+        // parado sem gravidade. Como a chamada e inofensiva, o evento entra
+        // sempre para NPC de mod e para GlobalNPC.
+        if (baseType == typeof(ModNPC) || baseType == typeof(GlobalNPC))
+            flags |= NPCMethod.PreAI | NPCMethod.AI | NPCMethod.PostAI;
+        if (baseType == typeof(ModNPC)) flags |= NPCMethod.FindFrame;
         uint events = 0;
         if ((flags & (NPCMethod.PreAI | NPCMethod.AI | NPCMethod.PostAI)) != 0) events |= 1;
         if ((flags & NPCMethod.FindFrame) != 0) events |= 2;
@@ -108,6 +117,9 @@ internal static unsafe class NPCEventHooks
                 }
                 wanted[type] |= events;
             }
+            // Sem isto, "NPC parado" nao distingue evento nao registrado de
+            // gancho nativo que nunca chama de volta.
+            Log.Info($"NPC events: type={type} 0x{events:X} registrado");
         }
     }
 

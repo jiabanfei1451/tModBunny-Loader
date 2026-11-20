@@ -49,6 +49,19 @@ public sealed partial class Item : IEntityWithGlobals<GlobalItem>
         createTile = tileIDToPlace;
     }
 
+    /**
+     * tModLoader/vanilla expõem `new Item()` (item vazio). Sem esse construtor o
+     * mod compila mas estoura MissingMethodException em runtime no meio da
+     * rotina — ex.: FargoGlobalTile.FindChestTopLeft, chamado pelo InstaBridge:
+     * os blocos saiam do inventario e nada era construido.
+     */
+    public Item()
+    {
+        Item item = New();
+        ItemLoader.KeepAlive(item);
+        Pointer = item.Pointer;
+    }
+
     public Item(int setDefaultsToType, int stack = 1, int prefix = 0)
     {
         Item item = New();

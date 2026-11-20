@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -28,6 +30,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Rect
@@ -137,25 +140,24 @@ fun SpriteFrame(res: Int, frameW: Int, frameH: Int, index: Int, size: Dp,
 fun PixelText(
     text: String,
     size: Int = Ts.Body,
-    color: Color = Color.White,
+    color: Color = Color.Unspecified,
     modifier: Modifier = Modifier,
-    outline: Color = Bl.Ink,
+    outline: Color = Color.Unspecified,
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     align: TextAlign? = null,
 ) {
-    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // O contorno preto e a fonte pixelada saíram: texto do Material não tem
+    // relevo. Sem cor declarada, herda a do recipiente — é o que faz o texto
+    // de um botão ficar legível sobre o botão.
     Text(
-        text, color = color,
-        modifier = modifier.drawBehind {
-            val measured = layout ?: return@drawBehind
-            for ((dx, dy) in OUTLINE_OFFSETS) {
-                drawText(measured, color = outline, topLeft = Offset(dx.dp.toPx(), dy.dp.toPx()))
-            }
-        },
-        fontFamily = PixelFont, fontSize = size.sp,
-        maxLines = maxLines, overflow = overflow, textAlign = align,
-        onTextLayout = { layout = it },
+        text,
+        color = if (color == Color.Unspecified) androidx.compose.material3.LocalContentColor.current else color,
+        modifier = modifier,
+        fontSize = size.sp,
+        maxLines = maxLines,
+        overflow = overflow,
+        textAlign = align,
     )
 }
 
@@ -236,68 +238,41 @@ fun Modifier.pixelPanel(
     dark: Color = fill.mix(Bl.Night, 0.45f),
     gradient: Boolean = false,
     corner: PixelCorner = PixelCorner.SMALL,
-): Modifier = drawWithCache {
-    val b = ArtPixel.toPx()
-    val shape = if (corner == PixelCorner.NONE) null else steppedOutline(size, b, corner)
-    val stroke = Stroke(b * 2)
-    onDrawBehind {
-        val w = size.width
-        val h = size.height
-        val body: DrawScope.() -> Unit = {
-            if (shape == null) drawRect(outline)
-            val inner = Size(w - 2 * b, h - 2 * b)
-            if (gradient) {
-                drawRect(
-                    Brush.verticalGradient(
-                        listOf(fill.mix(light, 0.22f), fill, fill.mix(Bl.Night, 0.18f)),
-                        startY = b, endY = h - b,
-                    ),
-                    Offset(b, b), inner,
-                )
-            } else {
-                drawRect(fill, Offset(b, b), inner)
-            }
-            val top = if (raised) light else dark
-            val bottom = if (raised) dark else light
-            // Luz em cima e à esquerda; sombra embaixo e à direita.
-            drawRect(top, Offset(b, b), Size(w - 2 * b, b))
-            drawRect(top, Offset(b, b), Size(b, h - 2 * b))
-            drawRect(bottom, Offset(b, h - 2 * b), Size(w - 2 * b, b))
-            drawRect(bottom, Offset(w - 2 * b, b), Size(b, h - 2 * b))
-            if (shape != null) drawPath(shape, outline, style = stroke)
-        }
-        if (shape == null) body() else clipPath(shape) { body() }
+): Modifier = composed {
+    // Material 3: superfície arredondada com contorno de 1dp. O bisel pixelado
+    // saiu daqui — quem chama continua pedindo "um painel", só que agora ele
+    // é o cartão do sistema. Os parâmetros antigos ficam para não mexer nos
+    // ~300 pontos de uso.
+    val shape = when (corner) {
+        PixelCorner.NONE -> androidx.compose.ui.graphics.RectangleShape
+        PixelCorner.SMALL -> androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+        PixelCorner.LARGE -> androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
     }
+    this
+        .clip(shape)
+        .background(if (gradient) fill.mix(Bl.Night, 0.18f) else fill, shape)
+        .border(1.dp, outline, shape)
 }
 
 /**
- * Moldura de imagem: borda lisa e fundo escuro, sem bisel. Um bisel em volta
- * de uma arte compete com ela; a moldura só a separa do painel.
+ * Moldura de imagem: mesma superfície, canto menor, sem contorno forte.
  */
 fun Modifier.framePanel(
     border: Color = Bl.FrameBorder,
     fill: Color = Bl.FrameFill,
-): Modifier = drawBehind {
-    val b = 2.dp.toPx()
-    drawRect(border)
-    drawRect(fill, Offset(b, b), Size(size.width - 2 * b, size.height - 2 * b))
+): Modifier = composed {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+    this.clip(shape).background(fill, shape).border(1.dp, border, shape)
 }
 
 /**
- * Clique com a borda amarela do toque, desenhada POR CIMA do conteúdo: assim
- * vale para cartão, moldura e botão sem cada um saber disso. O `corner` é o do
- * painel por baixo, para a borda amarela seguir o mesmo degrau.
+ * Clique com a ondulação do Material (a antiga borda amarela do toque saiu
+ * com o bisel: a indicação de toque agora é a do sistema).
  */
 fun Modifier.pixelClickable(onClick: () -> Unit): Modifier = pixelClickable(PixelCorner.SMALL, onClick)
 
-fun Modifier.pixelClickable(corner: PixelCorner, onClick: () -> Unit): Modifier = composed {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    drawWithContent {
-        drawContent()
-        if (pressed) drawPressBorder(corner)
-    }.clickable(interaction, indication = null, onClick = onClick)
-}
+fun Modifier.pixelClickable(corner: PixelCorner, onClick: () -> Unit): Modifier =
+    this.clickable(onClick = onClick)
 
 fun DrawScope.drawPressBorder(corner: PixelCorner = PixelCorner.NONE) {
     val b = ArtPixel.toPx()
@@ -353,14 +328,10 @@ fun PixelCard(
     onClick: (() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    // O efeito do tema (ThemeFx): o balanço vem por fora de tudo; chuva,
-    // bolhas e neve, por cima do conteúdo e recortadas pelo canto.
-    val fx = LocalThemeFx.current
-    val seed = androidx.compose.runtime.currentCompositeKeyHash
-    val base = modifier.cardSway(fx, seed).pixelPanel(fill = fill, corner = PixelCorner.LARGE)
-    Box(if (onClick != null) base.pixelClickable(PixelCorner.LARGE, onClick) else base) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+    val base = modifier.clip(shape).background(fill, shape)
+    Box(if (onClick != null) base.clickable(onClick = onClick) else base) {
         content()
-        CardFxOverlay(fx, seed)
     }
 }
 
@@ -379,43 +350,39 @@ fun PixelButton(
     fontSize: Int = Ts.Item,
     pressedFill: Color = Bl.ButtonPressed,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    Box(
-        modifier
-            .pixelPanel(
-                fill = if (pressed) pressedFill else fill,
-                raised = !pressed,
-                outline = if (pressed) Bl.PressedBorder else Bl.Outline,
-            )
-            .clickable(interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
+    androidx.compose.material3.Button(
+        onClick = onClick,
+        modifier = modifier,
+        shape = androidx.compose.material3.MaterialTheme.shapes.medium,
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            containerColor = fill,
+            contentColor = textColor,
+        ),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 10.dp),
     ) {
-        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
-                PixelIcon(icon, 18.dp, Modifier.padding(end = 8.dp))
-            }
-            Text(
-                text,
-                fontFamily = PixelFont,
-                fontSize = fontSize.sp,
-                fontWeight = FontWeight.Normal,
-                color = textColor,
-            )
+        if (icon != null) {
+            PixelIcon(icon, 18.dp, Modifier.padding(end = 8.dp))
         }
+        Text(
+            text,
+            fontSize = fontSize.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+        )
     }
 }
 
-/** Etiqueta de categoria (Textura, Armas, Cheat...). */
+/** Etiqueta de categoria (Textura, Armas, Cheat...): pílula do Material. */
 @Composable
 fun PixelTag(text: String, fill: Color = Bl.TitleFill, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .pixelPanel(fill = fill)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Text(text, fontFamily = PixelFont, fontSize = Ts.Small.sp, color = Color.White)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(50)
+    androidx.compose.material3.Surface(color = fill, shape = shape, modifier = modifier) {
+        Text(
+            text,
+            fontSize = Ts.Tiny.sp,
+            color = androidx.compose.material3.LocalContentColor.current,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
     }
 }
 
@@ -494,8 +461,13 @@ private fun Scrollbar(
 @Composable
 fun PixelSelect(value: String, onPrev: () -> Unit, onNext: () -> Unit,
                 modifier: Modifier = Modifier, label: String? = null) {
+    val shape = androidx.compose.material3.MaterialTheme.shapes.medium
     androidx.compose.foundation.layout.Row(
-        modifier.fillMaxWidth().pixelPanel(fill = Bl.Select, raised = false).padding(4.dp),
+        modifier.fillMaxWidth()
+            .clip(shape)
+            .background(Bl.Select, shape)
+            .border(1.dp, Bl.Outline, shape)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.then(if (label != null) Modifier.semantics { contentDescription = tr("PreviousNamed", label) } else Modifier)

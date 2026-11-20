@@ -368,6 +368,7 @@
   "Apply": "应用",
   "Get": "获取",
   "TurnOffAll": "全部关闭",
+  "PowersRestored": "开局自动恢复的作弊：",
   "EnterWorld": "进入一个世界",
   "ActionDone": "完成！",
   "EnabledCountOne": "已启用 %1$s",

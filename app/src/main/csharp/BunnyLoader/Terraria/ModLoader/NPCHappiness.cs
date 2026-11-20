@@ -88,6 +88,10 @@ public readonly struct NPCHappiness
     public NPCHappiness SetBiomeAffection(ModBiome biome, AffectionLevel affectionLevel) =>
         SetBiomeAffection(BiomeLoader.ShoppingOf(biome), affectionLevel);
 
+    /// <summary>NPCs que ja tiveram a falha de afinidade reportada (ver o catch).</summary>
+    static readonly System.Collections.Generic.HashSet<int> warned = new();
+    static int silenced;
+
     public unsafe NPCHappiness SetBiomeAffection(AShoppingBiome biome, AffectionLevel affectionLevel)
     {
         // v75: o Mono entrega UM quadro de pilha, entao "NullReferenceException em
@@ -157,7 +161,19 @@ public readonly struct NPCHappiness
         }
         catch (Exception e)
         {
-            Log.Warn($"SetBiomeAffection({NpcType}) @{stage}: {e.GetType().Name}: {e.Message}; ignorado");
+            // v113: cada NPC que pedia afinidade de bioma gravava a mesma falha
+            // varias vezes (1600 linhas de "NullReferenceException @GetByNPCID"
+            // na carga do v112, num log de 4.7 MB). O primeiro aviso de cada
+            // NPC basta: a repeticao nao traz informacao e o custo da excecao
+            // aparece na hora do carregamento.
+            if (warned.Add(NpcType))
+            {
+                Log.Warn($"SetBiomeAffection({NpcType}) @{stage}: {e.GetType().Name}: {e.Message}; ignorado (repeticoes deste NPC ficam em silencio)");
+            }
+            else if (++silenced % 200 == 0)
+            {
+                Log.Info($"SetBiomeAffection: {silenced} repeticao(oes) silenciada(s); {warned.Count} NPC(s) afetado(s)");
+            }
             return this;
         }
     }

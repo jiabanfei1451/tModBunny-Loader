@@ -30,6 +30,17 @@ public sealed class ModAssets : AssetRepository
         lock (requested)
         {
             if (requested.TryGetValue(relative + extension, out object? have)) return (Asset<T>)have;
+            if (Asset<T>.IsEffectType(typeof(T)))
+            {
+                // Shader (.xnb / D3D9 bytecode): este port nao tem runtime de
+                // HLSL (o jogo desenha pelo Unity). Devolver o stub mantem o
+                // mod carregando; sem isso o ShaderManager.LoadShaders do
+                // Luminance morria em FileNotFoundException e levava o
+                // assembly inteiro junto.
+                var stub = new Asset<T>($"{mod.Name}/{relative}", null);
+                requested[relative + extension] = stub;
+                return stub;
+            }
             string? file = Find(relative, extension);
             if (file == null) throw new FileNotFoundException($"{mod.Name}: asset '{assetName}' not found in {mod.Folder}");
             var asset = new Asset<T>($"{mod.Name}/{relative}", file);
@@ -39,15 +50,26 @@ public sealed class ModAssets : AssetRepository
     }
 
     public override bool HasAsset<T>(string assetName) where T : class =>
-        (typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont)) &&
-        Find(Relative(assetName), Extension<T>()) != null;
+        Asset<T>.IsEffectType(typeof(T)) ||
+        ((typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || IsFont(typeof(T))) &&
+         Find(Relative(assetName), Extension<T>()) != null);
 
-    static string Extension<T>() => typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) ? ".json" : ".png";
+    /// <summary>
+    /// As fontes do 1.4 sao <c>DynamicSpriteFont</c> (arquivo <c>.ttf</c> no
+    /// mod); o <c>.json</c> fica para o <c>SpriteFont</c> do resto do shim.
+    /// </summary>
+    static bool IsFont(Type type) =>
+        type == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) || type == typeof(ReLogic.Graphics.DynamicSpriteFont);
+
+    static string Extension<T>() where T : class =>
+        typeof(T) == typeof(ReLogic.Graphics.DynamicSpriteFont) ? ".ttf" :
+        typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) ? ".json" :
+        Asset<T>.IsEffectType(typeof(T)) ? ".xnb" : ".png";
 
     static string Relative(string assetName)
     {
         string name = assetName.Replace('\\', '/').TrimStart('/');
-        foreach (string extension in new[] { ".png", ".json" })
+        foreach (string extension in new[] { ".png", ".json", ".ttf" })
             if (name.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) return name[..^extension.Length];
         return name;
     }

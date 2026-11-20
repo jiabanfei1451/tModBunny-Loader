@@ -1,5 +1,6 @@
 #pragma warning disable CS0067 // eventos nunca disparados: gancho de menu não existe neste shim
 
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Terraria.UI;
 
@@ -39,6 +40,27 @@ namespace Terraria.GameContent.UI.Elements
         public delegate void hook_DrawSelf(orig_DrawSelf orig, UIWorldListItem self, SpriteBatch spriteBatch);
 
         public static event hook_DrawSelf? DrawSelf
+        {
+            add { }
+            remove { }
+        }
+    }
+
+    /// <summary>
+    /// O `TerrariaHooks` do 1.4.4.9 publica <c>GetDifficulty(out string, out Color)</c>
+    /// em <c>AWorldListItem</c>; o FargoChinese assina para reescrever o nome da
+    /// dificuldade (<c>WorldDifficulty.AWorldListItem_GetDifficulty</c>). O dump do
+    /// Android não tem o método (nem o tipo), então a dupla de delegates é escrita
+    /// à mão: assinar JITA, mas o evento nunca dispara — perde-se o rótulo
+    /// traduzido da dificuldade na lista de mundos, não o mod.
+    /// </summary>
+    public static partial class On_AWorldListItem
+    {
+        public delegate void orig_GetDifficulty(AWorldListItem self, ref string text, ref Color color);
+
+        public delegate void hook_GetDifficulty(orig_GetDifficulty orig, AWorldListItem self, ref string text, ref Color color);
+
+        public static event hook_GetDifficulty? GetDifficulty
         {
             add { }
             remove { }

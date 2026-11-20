@@ -66,6 +66,9 @@ enum class Power : int {
 /** Muda o nivel de um poder. THREAD-SAFE: vem da UI thread, pelo menu. */
 void setPower(int id, int level);
 
+/** Nivel atual de um poder (0 desligado). THREAD-SAFE, so leitura. */
+int powerLevel(int id);
+
 /**
  * Pedido de um cliente (ver NetRequests): so aceita os poderes de MUNDO
  * (tempo parado, chuva, vento, sem inimigos, hardmode, dificuldade, eventos,

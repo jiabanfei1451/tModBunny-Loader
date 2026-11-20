@@ -61,9 +61,16 @@
             </intent-filter>
         </provider>
 
+        <!-- O launcher é deitado: a barra de navegação vira uma coluna à
+             esquerda e a lista de pacotes ganha a altura toda. As mudanças de
+             configuração ficam por conta do Compose (o estado das abas é
+             `rememberSaveable`), então giros e mudanças de tema não recriam a
+             Activity no meio de um import. -->
         <activity
             android:name=".LauncherActivity"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|layoutDirection|fontScale|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

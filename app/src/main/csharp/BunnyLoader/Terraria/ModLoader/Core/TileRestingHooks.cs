@@ -67,9 +67,22 @@ internal static partial class TileHooks
 
     static bool CheckSpawn(On_Player.orig_CheckSpawn orig, int x, int y)
     {
-        Tile tile = Main.tile[x, y - 1];
+        // O jogo chama CheckSpawn enquanto o player ainda esta sendo posicionado e
+        // passa coordenadas fora do mundo (o log da v115 mostrou o Tilemap
+        // estourando em (-1,-2) e o gancho derrubando o spawn). Em vez de deixar o
+        // indexador do shim lancar, sai pelo original: sem mundo valido nao ha
+        // rede para transformar nesta altura.
+        int ty = y - 1;
+        if (Main.maxTilesX <= 0 || Main.maxTilesY <= 0 || x < 0 || ty < 0 || x >= Main.maxTilesX || ty >= Main.maxTilesY)
+            return orig(x, y);
+
+        Tile tile = Main.tile[x, ty];
         int type = tile.type;
-        if (!tile.active() || TileLoader.GetTile(type) == null || !TileID.Sets.IsValidSpawnPoint[type])
+        if (!tile.active() || TileLoader.GetTile(type) == null)
+            return orig(x, y);
+
+        bool[] valid = TileID.Sets.IsValidSpawnPoint;
+        if (type < 0 || type >= valid.Length || !valid[type])
             return orig(x, y);
         tile.type = TileID.Beds;
         try
@@ -78,7 +91,7 @@ internal static partial class TileHooks
         }
         finally
         {
-            Tile restore = Main.tile[x, y - 1];
+            Tile restore = Main.tile[x, ty];
             restore.type = (ushort)type;
         }
     }

@@ -67,7 +67,10 @@ public abstract class ModTile : ModBlockType
 {
     public float MineResist = 1f;
 
-    public int MinPick;
+    // Contrato 1.4.4.9: `public int MinPick { get; set; }`. Como CAMPO so
+    // existe `stfld`; o .tmod chama `set_MinPick(int)` e levava
+    // MissingMethodException (CrackedSandstoneBricks do FargowiltasSouls).
+    public int MinPick { get; set; }
 
     // Contrato 1.4.4.9 (`ModTile.cs:40`): `public int[] AdjTiles { get; set; }`.
     // Como CAMPO só existe `stfld AdjTiles`; um `.tmod` compilado no PC chama

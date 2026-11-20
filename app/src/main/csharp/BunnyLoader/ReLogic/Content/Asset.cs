@@ -134,6 +134,12 @@ public sealed unsafe class Asset<T> where T : class
     {
         get
         {
+            // Effect (shader) nao existe neste port: o jogo desenha com o
+            // Unity por baixo e o dump nao tem compilador de HLSL nenhum.
+            // Devolver um stub gerenciado mantem o mod vivo (ele so escreve
+            // parametros e chama Apply) em vez de estourar em
+            // GameObjectFactory. Ver Effect.TML.cs.
+            if (IsEffectType(typeof(T))) return (T)(object)Effect.CreateManaged();
             Wait();
             return (T)GameObjectFactory.Create(typeof(T), ValuePointer());
         }
@@ -170,11 +176,20 @@ public sealed unsafe class Asset<T> where T : class
     public void Wait()
     {
         if (Volatile.Read(ref asset) != IntPtr.Zero) return;
+        // Effect: nao ha arquivo .xnb para carregar (o port nao tem runtime de
+        // shader). Marca como carregado e sai; quem le o valor recebe o stub.
+        if (IsEffectType(typeof(T)))
+        {
+            Volatile.Write(ref asset, (IntPtr)1);
+            return;
+        }
         NativeApi* api = Host.Native();
         if (api->IsGameThread() == 0)
             throw new InvalidOperationException($"asset {Name}: textures only load on the game thread (SetStaticDefaults, hooks, drawing), not while the mod loads");
         IntPtr loaded;
-        if (typeof(T) == typeof(SpriteFont))
+        // As fontes do 1.4 sao ReLogic.Graphics.DynamicSpriteFont; o SpriteFont
+        // continua aceito porque o Asset<SpriteFont> antigo ainda existe no shim.
+        if (IsFontType(typeof(T)))
         {
             if (file == null) throw new InvalidOperationException($"asset {Name}: no game font with this name");
             byte* f = Host.Utf8(file);
@@ -208,9 +223,23 @@ public sealed unsafe class Asset<T> where T : class
         Volatile.Write(ref asset, loaded);
     }
 
+    /// <summary>
+    /// <c>Asset&lt;DynamicSpriteFont&gt;</c> (tML 1.4.4.9) e
+    /// <c>Asset&lt;SpriteFont&gt;</c> (resto do shim) carregam fonte.
+    /// </summary>
+    internal static bool IsFontType(Type type) =>
+        type == typeof(SpriteFont) || type == typeof(ReLogic.Graphics.DynamicSpriteFont);
+
+    /// <summary>
+    /// <c>Asset&lt;Effect&gt;</c> e o que o Luminance pede em
+    /// <c>ShaderManager.LoadShaders</c>. O tipo existe no shim (stub), entao o
+    /// pedido passa a ser aceito e o valor sai de <see cref="Effect.CreateManaged"/>.
+    /// </summary>
+    internal static bool IsEffectType(Type type) => type == typeof(Effect);
+
     internal static void CheckSupported()
     {
-        if (typeof(T) != typeof(Texture2D) && typeof(T) != typeof(SpriteFont))
-            throw new NotSupportedException($"Asset<{typeof(T).Name}>: only Texture2D and SpriteFont can be requested");
+        if (typeof(T) != typeof(Texture2D) && !IsFontType(typeof(T)) && !IsEffectType(typeof(T)))
+            throw new NotSupportedException($"Asset<{typeof(T).Name}>: only Texture2D, a font (DynamicSpriteFont/SpriteFont) and Effect can be requested");
     }
 }

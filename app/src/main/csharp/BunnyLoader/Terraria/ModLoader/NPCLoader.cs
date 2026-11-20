@@ -51,6 +51,36 @@ public static unsafe partial class NPCLoader
         return instance;
     }
 
+    /// <summary>
+    /// Alinha o template com o tipo registrado, como o tML faz em
+    /// <c>ModNPC.Register</c> (<c>NPC.type = NPCLoader.Register(this)</c>) e em
+    /// <c>NPCLoader.SetDefaults(npc, createModNPC: false)</c> — que so
+    /// redimensiona <c>buffImmune</c> e deixa o resto para o mod.
+    ///
+    /// O template nasce em <c>InitTemplateInstance</c> (antes do Register), com
+    /// <c>type</c> zerado. No aparelho isso deixava <c>ModNPC.NPC.type == 0</c>,
+    /// <c>NPC.ModNPC == null</c> e <c>NPCID.Sets.SpecificDebuffImmunity[0]</c>
+    /// como destino de todo <c>AddDebuffImmunities</c>.
+    /// </summary>
+    internal static void PrepareTemplate(ModNPC npc)
+    {
+        NPC template = npc.Entity;
+        if (template == null || template.IsNull) return;
+        if (template.type != npc.Type) template.type = npc.Type;
+        // tML: CreateTemplateEntity() => new NPC() { ModNPC = this }
+        Instances.Set(template.Pointer, npc);
+        // tML cresce a tabela do template so ate BuffCount (NPCLoader.cs:208-221,
+        // ramo createModNPC:false). `Length` le o cabecalho do array nativo e
+        // estoura com ponteiro nulo, e `Resized` devolve nulo se o array de
+        // origem tambem for: nos dois casos o certo e deixar como esta.
+        int count = BuffLoader.BuffCount;
+        if (count > 0 && !template.buffImmune.IsNull && template.buffImmune.Length < count)
+        {
+            GameArray<bool> grown = template.buffImmune.Resized(count);
+            if (!grown.IsNull) template.buffImmune = grown;
+        }
+    }
+
     internal static void Register(ModNPC npc)
     {
         string texture = ItemLoader.ResolveTexture(npc, npc.Texture, true);
@@ -68,6 +98,12 @@ public static unsafe partial class NPCLoader
         if (type == -1) throw new InvalidOperationException($"{npc.FullName}: the mod already has an NPC named '{npc.Name}'");
         if (type < 0) throw new InvalidOperationException($"{npc.FullName}: registration failed ({type})");
         npc.Type = type;
+        // tML grava o id registrado no PROPRIO template: `NPC.type =
+        // NPCLoader.Register(this)` (ModNPC.cs:124). Sem isso todo mod lia
+        // `NPC.type == 0` dentro de SetStaticDefaults e escrevia as tabelas
+        // (Main.npcFrameCount, NPCID.Sets.*, NPCBestiaryDrawOffset) na linha 0
+        // — era dai que vinha o "same key has already been added. Key: 0".
+        PrepareTemplate(npc);
         npc.Hooks = NPCEventHooks.Install(npc.GetType(), typeof(ModNPC), type);
         npc.Extra = NPCExtraHooks.Install(npc.GetType(), typeof(ModNPC));
         NPCHappinessHooks.Want(npc.GetType(), typeof(ModNPC));
@@ -220,7 +256,12 @@ public static unsafe partial class NPCLoader
             // O SetupContent do mod pode derrubar o processo (AV); o proxy de
             // textura, o `NPC.frame` e o `SetDefaults` vem depois, cada um com
             // a sua linha, para a ultima do arquivo apontar o passo exato.
-            Log.Info($"NPCs de mod: {type} {npc.FullName}: SetStaticDefaults");
+            // E, se ele derrubou numa carga anterior, o SetupResume pula este
+            // tipo para o proximo poder rodar (ver Interop/SetupResume.cs).
+            SetupResume.Prime(npc.Mod);
+            string resumeKey = "NPC:" + npc.FullName;
+            bool resumeSkip = SetupResume.Skip(npc.Mod, resumeKey);
+            Log.Info($"NPCs de mod: {type} {npc.FullName}: SetStaticDefaults" + (resumeSkip ? " (PULADO: crash anterior)" : ""));
             try
             {
                 if (npc.Entity.IsNull)
@@ -230,7 +271,14 @@ public static unsafe partial class NPCLoader
                     npc.Entity = template;
                     template.SetDefaults(type, default);
                 }
-                npc.SetupContent();
+                PrepareTemplate(npc);
+                if (resumeSkip) Log.Warn($"NPCs de mod: {type} {resumeKey}: SetStaticDefaults pulado");
+                else
+                {
+                    SetupResume.Enter(npc.Mod, resumeKey);
+                    npc.SetupContent();
+                    SetupResume.Leave(npc.Mod);
+                }
                 int frames = Math.Max(1, Main.npcFrameCount[type]);
                 Host.Native()->SetNPCFrames(type, frames);
                 var texture = TextureAssets.Npc[type].Value;

@@ -39,6 +39,14 @@ public abstract class AbstractNPCShop
         Name = name;
     }
     public void Register() => NPCShopDatabase.AddShop(this);
+    /**
+     * Registro automatico: o AddShops de alguns mods (Fargo) cria as lojas com
+     * `new NPCShop(tipo, nome)` e so chama Register() no fim; nesse binario a
+     * cauda do metodo nao roda, entao nada era registrado e a loja abria vazia.
+     * Enquanto o AddShops de um NPC de mod esta rodando, construir a loja ja a
+     * registra — as entradas continuam sendo adicionadas no mesmo objeto.
+     */
+    protected void AutoRegister() { if (NPCShopDatabase.RegisteringShops) Register(); }
     public abstract void FillShop(ICollection<Item> items, NPC npc);
     public abstract void FillShop(Item[] items, NPC npc, out bool overflow);
     public virtual void FinishSetup() { }

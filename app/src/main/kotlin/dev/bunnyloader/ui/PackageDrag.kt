@@ -209,8 +209,8 @@ internal fun DraggablePackageList(
                     )
                 } else Modifier),
                 // O espaço de cima soma o item vazio e o espaçamento depois dele.
-                contentPadding = PaddingValues(start = EdgePad, end = EdgePad, top = 1.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(start = EdgePad, end = EdgePad, top = 1.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
                 userScrollEnabled = active == null,
             ) {
                 item(key = HEAD_KEY, contentType = "head") { Spacer(Modifier.fillMaxWidth().height(1.dp)) }
