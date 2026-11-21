@@ -15,6 +15,10 @@ sealed class ArgPlan
     public int X = -1, XCount;
     public int D = -1, DCount;
     public List<(string Type, string Name)> Raw = new();
+
+    // Parametro out/ref de uma classe-embrulho (IGameObject): o slot nativo guarda um
+    // Il2CppObject*, nao uma referencia gerenciada, entao precisa de um nint no meio.
+    public bool HandleByRef;
 }
 
 sealed class RetPlan

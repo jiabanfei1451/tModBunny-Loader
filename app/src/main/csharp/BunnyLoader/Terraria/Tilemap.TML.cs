@@ -1,4 +1,5 @@
 using System;
+using BunnyLoader;
 using Microsoft.Xna.Framework;
 
 namespace Terraria;
@@ -26,7 +27,10 @@ public readonly struct Tilemap
                 return Tile.s_Null;
             if ((uint)x >= (uint)width || (uint)y >= (uint)height)
                 throw new IndexOutOfRangeException($"Tilemap index ({x}, {y}) is out of bounds ({width}x{height})");
-            return TileData.Scratch(width * y + x);
+            AssetTrace.Tile(0, 5);
+            Tile tile = TileData.Scratch(width * y + x);
+            AssetTrace.Tile(0, 6);
+            return tile;
         }
     }
 

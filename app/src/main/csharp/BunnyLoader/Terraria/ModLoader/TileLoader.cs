@@ -281,7 +281,16 @@ public static unsafe partial class TileLoader
         if (GetTile(type) is not ModTile tile)
             return;
         TileObjectData data = TileObjectData.GetTileData(type, 0);
-        if (data.IsNull)
+        // GetTileData devolve REFERENCIA NULA (nao so' `IsNull`) quando o tile
+        // nao registrou TileObjectData — pylons de mod, por exemplo. Chamar
+        // `.IsNull` nesse null derrubava o ProvideCandidate inteiro com
+        // "hook TileSmartInteractCandidateProvider.ProvideCandidate threw".
+        if (data is null || data.IsNull)
+            return;
+        // TileObjectData montado por mod sem coordenadas (CoordinateHeights vazio) estourava
+        // NullReferenceException aqui dentro e derrubava o SmartCandidate inteiro
+        // (log v156: hook TileSmartInteractCandidateProvider.ProvideCandidate threw).
+        if (data.CoordinateHeights.Length == 0)
             return;
         width = data.Width;
         height = data.Height;

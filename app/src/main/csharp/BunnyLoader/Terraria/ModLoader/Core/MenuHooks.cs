@@ -35,7 +35,6 @@ internal static unsafe class MenuHooks
     static readonly List<LogoDraw> Captured = new();
     static GUIOpenUIButtonSetting entry;
     static GameHandle? entryRoot;
-    static Hook? getOption, getCaption, openUI;
 
     internal static void Install(Type type)
     {
@@ -43,9 +42,9 @@ internal static unsafe class MenuHooks
         {
             On_GUILogo.Draw += DrawLogo;
             On_GUISettingsOverlay.SetCategory += SetCategory;
-            getOption = ItemHooks.Raw("", "GUIOpenUIButtonSetting", "string GetOption()", (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr>)&GetOption);
-            getCaption = ItemHooks.Raw("", "GUIOpenUIButtonSetting", "string GetButtonCaption()", (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr>)&GetButtonCaption);
-            openUI = ItemHooks.Raw("", "GUIOpenUIButtonSetting", "void OpenUI()", (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OpenUI);
+            On_GUIOpenUIButtonSetting.GetOption += GetOption;
+            On_GUIOpenUIButtonSetting.GetButtonCaption += GetButtonCaption;
+            On_GUIOpenUIButtonSetting.OpenUI += OpenUI;
             MusicHooks.Install();
         });
         if (ItemHooks.Overrides(type, typeof(ModMenu), "get_SunTexture") || ItemHooks.Overrides(type, typeof(ModMenu), "get_MoonTexture"))
@@ -210,11 +209,13 @@ internal static unsafe class MenuHooks
         if (!Main.gameMenu || (int)overlay.Selected != GeneralCategory || MenuLoader.All.Count == 0) return;
         var list = new GameList(overlay._categorySettings);
         if (list.IsNull) return;
-        if (entry.IsNull)
+        if (entry == null || entry.IsNull)
         {
-            entry = GUIOpenUIButtonSetting.New((GUISettingID)SettingNone);
-            entry._category = (SettingsOverlayOptionCategories_Layout.Category)GeneralCategory;
-            entryRoot = new GameHandle(entry.Pointer);
+            GUIOpenUIButtonSetting created = GUIOpenUIButtonSetting.New((GUISettingID)SettingNone);
+            if (created == null || created.IsNull) return;
+            created._category = (SettingsOverlayOptionCategories_Layout.Category)GeneralCategory;
+            entry = created;
+            entryRoot = new GameHandle(created.Pointer);
         }
         if (list.IndexOf(entry.Pointer) >= 0) return;
         int at = 0;
@@ -257,46 +258,31 @@ internal static unsafe class MenuHooks
         }
     }
 
-    static IntPtr Original(Hook? hook, IntPtr self, IntPtr method, string what)
+    static bool Ours(GUIOpenUIButtonSetting self) =>
+        entry != null && !entry.IsNull && self.Pointer == entry.Pointer;
+
+    static string? GetOption(On_GUIOpenUIButtonSetting.orig_GetOption orig, GUIOpenUIButtonSetting self)
     {
-        if (hook == null) return IntPtr.Zero;
-        var call = GameCall.Returning(RetKind.Int);
-        call.Arg(self);
-        call.Arg(method);
-        return (IntPtr)ItemHooks.Original(ref call, hook, what);
+        if (!Ours(self)) return orig(self);
+        try { return Label(); }
+        catch (Exception e) { ItemHooks.Report("ModMenu (settings label)", e); return orig(self); }
     }
 
-    [UnmanagedCallersOnly]
-    static IntPtr GetOption(IntPtr self, IntPtr method)
+    static string? GetButtonCaption(On_GUIOpenUIButtonSetting.orig_GetButtonCaption orig, GUIOpenUIButtonSetting self)
     {
-        if (self != IntPtr.Zero && self == entry.Pointer)
-        {
-            try { return ((GameString)Label()).Pointer; }
-            catch (Exception e) { ItemHooks.Report("ModMenu (settings label)", e); }
-        }
-        return Original(getOption, self, method, "GUIOpenUIButtonSetting.GetOption");
+        if (!Ours(self)) return orig(self);
+        try { return Caption(); }
+        catch (Exception e) { ItemHooks.Report("ModMenu (settings caption)", e); return orig(self); }
     }
 
-    [UnmanagedCallersOnly]
-    static IntPtr GetButtonCaption(IntPtr self, IntPtr method)
+    static void OpenUI(On_GUIOpenUIButtonSetting.orig_OpenUI orig, GUIOpenUIButtonSetting self)
     {
-        if (self != IntPtr.Zero && self == entry.Pointer)
+        if (!Ours(self))
         {
-            try { return ((GameString)Caption()).Pointer; }
-            catch (Exception e) { ItemHooks.Report("ModMenu (settings caption)", e); }
-        }
-        return Original(getCaption, self, method, "GUIOpenUIButtonSetting.GetButtonCaption");
-    }
-
-    [UnmanagedCallersOnly]
-    static void OpenUI(IntPtr self, IntPtr method)
-    {
-        if (self != IntPtr.Zero && self == entry.Pointer)
-        {
-            try { MenuLoader.Next(); }
-            catch (Exception e) { ItemHooks.Report("ModMenu (next theme)", e); }
+            orig(self);
             return;
         }
-        Original(openUI, self, method, "GUIOpenUIButtonSetting.OpenUI");
+        try { MenuLoader.Next(); }
+        catch (Exception e) { ItemHooks.Report("ModMenu (next theme)", e); }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BunnyLoader;
 using BunnyLoader.Interop;
 using Terraria.ModLoader.Core;
 using N = BunnyLoader.Interop.DropRules;
@@ -21,6 +22,7 @@ public class NativeDropRule : IItemDropRule
     internal IntPtr Prototype => handle.Target;
     internal bool UsesNativeImplementation => GetType() == nativeType;
     internal List<IItemDropRuleChainAttempt>? EditedChains => chains;
+    static bool ChainsUnavailable;
 
     public List<IItemDropRuleChainAttempt> ChainedRules
     {
@@ -39,7 +41,14 @@ public class NativeDropRule : IItemDropRule
                 try { chains = DropRuleInterop.ReadChains(new N.IItemDropRule(Prototype).ChainedRules); }
                 catch (Exception e)
                 {
-                    ItemHooks.Report("NativeDropRule.ChainedRules", e);
+                    // ja' documentado acima: no il2cpp este getter nao tem corpo.
+                    // Reportar em toda regra enchia o log (25 mil linhas) sem
+                    // informacao nova, entao avisa uma vez e segue com lista vazia.
+                    if (!ChainsUnavailable)
+                    {
+                        ChainsUnavailable = true;
+                        Log.Info($"NativeDropRule: 'IItemDropRule.ChainedRules' sem corpo nativo ({e.GetType().Name}); usando lista vazia");
+                    }
                     chains = new List<IItemDropRuleChainAttempt>();
                 }
                 DropRuleInterop.Watch(this);

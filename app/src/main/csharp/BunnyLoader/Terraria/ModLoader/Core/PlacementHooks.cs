@@ -33,7 +33,12 @@ internal static class PlacementHooks
         try
         {
             TileObjectData tileData = TileObjectData.GetTileData(type, style, data.alternate);
-            if (tileData.IsNull) return result;
+
+            // GetTileData devolve null gerenciado quando o tipo nao registrou dados
+            // (aprendido com o SiblingPylon): sem o "is null" o IsNull estoura NRE e
+            // o Hook_AfterPlacement do mod nunca roda (fica sem tile entity, sem
+            // icone no mapa e sem teleporte).
+            if (tileData is null || tileData.IsNull) return result;
             PlacementHook hook = tileData.HookPostPlaceMyPlayer;
             int index = hook.badReturn - Marker;
             Func<int, int, int, int, int, int, int>? call;

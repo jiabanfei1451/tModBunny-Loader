@@ -3540,6 +3540,7 @@ public class CheatBridge {
 
     /** Quanto tempo a tira fica na tela sem ninguem tocar nela. */
     private static final long ERROR_LINGER_MS = 9000L;
+    private static boolean sErrorExpanded = false;
 
     public static void showError(final String text) {
         final Activity act = sActivity;
@@ -3557,15 +3558,26 @@ public class CheatBridge {
         // A Activity muda no Reiniciar do menu: a tira antiga ficaria pendurada
         // numa janela morta e nunca mais apareceria.
         if (sErrorPanel != null && sErrorOwner == act) {
-            if (sErrorBody != null) sErrorBody.setText(text);
+            if (sErrorBody != null) {
+                sErrorBody.setText(text);
+                if (sErrorExpanded) {
+                    sErrorBody.setMaxLines(Integer.MAX_VALUE);
+                    sErrorBody.setEllipsize(null);
+                    sErrorBody.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
+                } else {
+                    sErrorBody.setMaxLines(12);
+                    sErrorBody.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                }
+            }
             sErrorPanel.setVisibility(View.VISIBLE);
             sErrorPanel.bringToFront();
-            scheduleErrorHide();
+            if (!sErrorExpanded) scheduleErrorHide();
             return;
         }
         sErrorPanel = null;
         sErrorBody = null;
         sErrorOwner = act;
+        sErrorExpanded = false;
 
         LinearLayout panel = new LinearLayout(act);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -3606,6 +3618,7 @@ public class CheatBridge {
         close.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (sErrorPanel != null) sErrorPanel.setVisibility(View.GONE);
+                sErrorExpanded = false;
                 cancelErrorHide();
             }
         });
@@ -3626,6 +3639,14 @@ public class CheatBridge {
         panel.addView(head);
         panel.addView(body);
 
+        // Toque na tira para expandir o texto completo (rolavel); expandida,
+        // ela nao se auto-esconde. Toque de novo para recolher ao resumo.
+        panel.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                toggleErrorExpand(act, panel, body);
+            }
+        });
+
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
         lp.gravity = Gravity.TOP;
@@ -3637,6 +3658,23 @@ public class CheatBridge {
         sErrorBody = body;
         act.addContentView(panel, lp);
         scheduleErrorHide();
+    }
+
+    private static void toggleErrorExpand(Activity act, View panel, TextView body) {
+        sErrorExpanded = !sErrorExpanded;
+        cancelErrorHide();
+        if (sErrorExpanded) {
+            body.setMaxLines(Integer.MAX_VALUE);
+            body.setEllipsize(null);
+            body.setMaxHeight((int) (act.getResources().getDisplayMetrics().heightPixels * 0.55f));
+            body.setMovementMethod(android.text.method.ScrollingMovementMethod.getInstance());
+        } else {
+            body.setMaxLines(12);
+            body.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            body.setMaxHeight(Integer.MAX_VALUE);
+            body.setMovementMethod(null);
+            scheduleErrorHide();
+        }
     }
 
     private static void scheduleErrorHide() {

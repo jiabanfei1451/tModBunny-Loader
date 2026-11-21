@@ -189,7 +189,8 @@ sealed class Emitter
             string ident = TypeMap.Ident(name);
             while (!names.Add(ident)) ident += "_";
             sigParts.Add(prefix + use.Sig + " " + (p.Name ?? ""));
-            var plan = new ArgPlan { Name = ident, Use = use, Mode = mode };
+            bool handle = mode != ArgMode.Value && (pt.IsClass || pt.IsInterface) && NativeHandle(use);
+            var plan = new ArgPlan { Name = ident, Use = use, Mode = mode, HandleByRef = handle };
             args.Add(plan);
             model.Params.Add(plan);
             model.Defaults.Add(DefaultOf(p, use, mode));
@@ -245,6 +246,15 @@ sealed class Emitter
         model.Fast = !forHook && IsLeaf(m, model);
         return model;
     }
+
+    // Tipo-embrulho de referencia (classe gerada com Pointer). Um parametro out/ref assim
+    // chega como Il2CppObject*: escrever uma referencia gerenciada ali derruba o jogo no
+    // despacho de interface do nativo. Os espelhos struct (GameObject, GameString, arrays)
+    // tem o mesmo layout de um ponteiro e continuam com o caminho antigo.
+    static bool NativeHandle(TypeUse use) =>
+        use.Abi == AbiClass.Int && !use.IsString && !use.Converted &&
+        use.Cs.StartsWith("global::", StringComparison.Ordinal) &&
+        !use.Cs.StartsWith("global::BunnyLoader.", StringComparison.Ordinal);
 
     static bool IsLeaf(MethodBase m, MethodModel model)
     {
@@ -331,7 +341,17 @@ sealed class Emitter
             sb.Append(ind).Append("global::System.Runtime.CompilerServices.Unsafe.SkipInit(out __ret);\n");
         }
         string inner = ind;
-        int p = 0;
+        var byref = m.Plan.Args.Where(x => x.Mode is ArgMode.Ref or ArgMode.Out or ArgMode.In).ToList();
+        var slot = new Dictionary<ArgPlan, int>();
+        for (int i = 0; i < byref.Count; i++) slot[byref[i]] = i;
+        foreach (ArgPlan a in m.Plan.Args)
+        {
+            if (a.HandleByRef && a.Mode is ArgMode.Ref or ArgMode.Out or ArgMode.In)
+            {
+                string init = a.Mode == ArgMode.Out ? "0" : $"(nint)({a.Name}?.Pointer ?? 0)";
+                sb.Append(inner).Append($"nint __b{slot[a]} = {init};\n");
+            }
+        }
         foreach (ArgPlan a in m.Plan.Args)
         {
             if (a.Mode == ArgMode.ThisRef && selfExpr == "this")
@@ -345,14 +365,13 @@ sealed class Emitter
             {
                 sb.Append(inner).Append($"fixed ({a.Use.Cs}* __self = &{selfExpr})\n");
             }
-            else if (a.Mode is ArgMode.Ref or ArgMode.Out or ArgMode.In)
+            else if (a.Mode is ArgMode.Ref or ArgMode.Out or ArgMode.In && !a.HandleByRef)
             {
-                sb.Append(inner).Append($"fixed ({a.Use.Cs}* __p{p++} = &{a.Name})\n");
+                sb.Append(inner).Append($"fixed ({a.Use.Cs}* __p{slot[a]} = &{a.Name})\n");
             }
         }
         sb.Append(inner).Append("{\n");
         string b = inner + "    ";
-        p = 0;
         foreach (ArgPlan a in m.Plan.Args)
         {
             switch (a.Mode)
@@ -367,7 +386,9 @@ sealed class Emitter
                     sb.Append(b).Append($"__f.X[{a.X}] = (long)({infoExpr});\n");
                     continue;
                 case ArgMode.Ref or ArgMode.Out or ArgMode.In:
-                    sb.Append(b).Append($"__f.X[{a.X}] = (long)__p{p++};\n");
+                    sb.Append(b).Append(a.HandleByRef
+                        ? $"__f.X[{a.X}] = (long)(&__b{slot[a]});\n"
+                        : $"__f.X[{a.X}] = (long)__p{slot[a]};\n");
                     continue;
             }
             switch (a.Place)
@@ -401,6 +422,11 @@ sealed class Emitter
             sb.Append(b).Append($"__f.RetSize = {ret.Use.Size};\n");
         }
         sb.Append(b).Append($"{G}.{(m.Fast ? "CallFast" : "Call")}({fnExpr}, &__f);\n");
+        foreach (ArgPlan a in byref)
+        {
+            if (a.HandleByRef)
+                sb.Append(b).Append($"{a.Name} = __b{slot[a]} != 0 ? new {a.Use.Cs}(__b{slot[a]}) : null!;\n");
+        }
         if (hasRet)
         {
             string value;
@@ -611,9 +637,17 @@ sealed class Emitter
         sb.Append(ind).Append("}\n");
 
         string rawParams = string.Join(", ", m.Plan.Raw.Select(r => $"{r.Type} {r.Name}"));
+        var handles = new List<(ArgPlan A, string Var)>();
         var callArgs = new List<string>();
         foreach (ArgPlan a in m.Plan.Args)
         {
+            if (a.HandleByRef && a.Mode is ArgMode.Ref or ArgMode.Out or ArgMode.In)
+            {
+                string v = $"__q{handles.Count}";
+                handles.Add((a, v));
+                callArgs.Add((a.Mode switch { ArgMode.Ref => "ref ", ArgMode.Out => "out ", _ => "in " }) + v);
+                continue;
+            }
             switch (a.Mode)
             {
                 case ArgMode.MethodInfo:
@@ -658,24 +692,42 @@ sealed class Emitter
         sb.Append(ind).Append($"static {ret.RawType} __n{id}({rawParams})\n");
         sb.Append(ind).Append("{\n");
         string t = ind + "    ";
+        for (int i = 0; i < handles.Count; i++)
+        {
+            ArgPlan a = handles[i].A;
+            sb.Append(t).Append($"nint __k{i} = (nint)(*({a.Raw[0].Type}*){a.Raw[0].Name});\n");
+            sb.Append(t).Append($"{a.Use.Cs} __q{i} = __k{i} != 0 ? new {a.Use.Cs}(__k{i}) : null!;\n");
+        }
+        string wb = string.Concat(handles.Select(x =>
+            $"*({x.A.Raw[0].Type}*){x.A.Raw[0].Name} = ({x.A.Raw[0].Type})({x.Var}?.Pointer ?? 0); "));
         sb.Append(t).Append("try\n").Append(t).Append("{\n");
         string u = t + "    ";
         sb.Append(u).Append($"var __c = __h{id}.Chain;\n");
         if (isVoid)
         {
-            sb.Append(u).Append($"if (__c == null) {{ __o{id}({args}); return; }}\n");
+            sb.Append(u).Append($"if (__c == null) {{ __o{id}({args}); {wb}return; }}\n");
             sb.Append(u).Append($"int __runs = __r{id};\n");
-            sb.Append(u).Append($"try {{ __c({args}); }}\n");
-            sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__r{id} == __runs) __o{id}({args}); }}\n");
+            sb.Append(u).Append($"try {{ __c({args}); {wb}}}\n");
+            sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__r{id} == __runs) {{ __o{id}({args}); {wb}}} }}\n");
             sb.Append(t).Append("}\n");
             sb.Append(t).Append($"catch (global::System.Exception __e2) {{ {rep}__e2); }}\n");
         }
-        else
+        else if (handles.Count == 0)
         {
             sb.Append(u).Append($"if (__c == null) return {Conv($"__o{id}({args})")};\n");
             sb.Append(u).Append($"int __runs = __r{id};\n");
             sb.Append(u).Append($"try {{ return {Conv($"__c({args})")}; }}\n");
             sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__r{id} == __runs) return {Conv($"__o{id}({args})")}; return {Conv($"__l{id}")}; }}\n");
+            sb.Append(t).Append("}\n");
+            sb.Append(t).Append($"catch (global::System.Exception __e2) {{ {rep}__e2); }}\n");
+            sb.Append(t).Append("return default;\n");
+        }
+        else
+        {
+            sb.Append(u).Append($"if (__c == null) {{ var __v = __o{id}({args}); {wb}return {Conv("__v")}; }}\n");
+            sb.Append(u).Append($"int __runs = __r{id};\n");
+            sb.Append(u).Append($"try {{ var __v = __c({args}); {wb}return {Conv("__v")}; }}\n");
+            sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__r{id} == __runs) {{ var __w = __o{id}({args}); {wb}return {Conv("__w")}; }} return {Conv($"__l{id}")}; }}\n");
             sb.Append(t).Append("}\n");
             sb.Append(t).Append($"catch (global::System.Exception __e2) {{ {rep}__e2); }}\n");
             sb.Append(t).Append("return default;\n");

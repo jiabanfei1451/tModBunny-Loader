@@ -107,6 +107,110 @@ internal static class Program
             return 0;
         }
 
+        if (args[1] == "--missing-members" && args.Length >= 3)
+        {
+            // uso: ildump <mod.dll> --missing-members <shim.dll>
+            //
+            // O --missing acima so' olha tipos. Um tipo existir no shim nao quer dizer
+            // que o MEMBRO existe: mods chamam `new EntitySource_TileUpdate(x, y, "ctx")`
+            // e o shim so' tinha o ctor de dois argumentos, o que vira
+            // MissingMethodException em tempo de JIT (log v157, dentro de
+            // TileLoader.DrawEffects). Este modo compara nome + quantidade de parametros
+            // e avisa duas coisas:
+            //   SEM    = o nome nao existe no tipo do shim -> estoura sempre
+            //   ASSIN  = existe com outro(s) tipo(s) -> pode ser o caso int/float do PC
+            var shim = ModuleDefinition.ReadModule(args[2], new ReaderParameters { ReadSymbols = false });
+            var types = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<TypeDefinition>>(StringComparer.Ordinal);
+            foreach (var t in shim.GetTypes())
+            {
+                string flat = t.FullName.Replace('/', '+');
+                if (!types.TryGetValue(flat, out var list))
+                    types[flat] = list = new System.Collections.Generic.List<TypeDefinition>();
+                list.Add(t);
+            }
+
+            static string Kind(TypeReference t) => t switch
+            {
+                GenericParameter g => "!" + g.Position,
+                ByReferenceType b => Kind(b.ElementType) + "&",
+                ArrayType a => Kind(a.ElementType) + "[]",
+                GenericInstanceType gi => gi.ElementType.FullName + "<" + string.Join(",", gi.GenericArguments.Select(Kind)) + ">",
+                _ => t.FullName
+            };
+
+            int noName = 0, diffSig = 0, ok = 0;
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            foreach (var r in module.GetMemberReferences())
+            {
+                string scope = r.DeclaringType.Scope switch
+                {
+                    AssemblyNameReference a => a.Name,
+                    _ => ""
+                };
+                if (scope != "tModLoader" && scope != "Terraria" && scope != "FNA" && scope != "ReLogic") continue;
+                string flat = r.DeclaringType.FullName.Replace('/', '+');
+                if (!types.TryGetValue(flat, out var candidates)) continue;
+
+                string key = flat + "::" + r.FullName;
+                if (!seen.Add(key)) continue;
+
+                int arity = r switch
+                {
+                    MethodReference m => m.Parameters.Count,
+                    _ => -1
+                };
+                string sig = r switch
+                {
+                    MethodReference m => "(" + string.Join(",", m.Parameters.Select(p => Kind(p.ParameterType))) + ")",
+                    _ => ""
+                };
+
+                bool anyName = false, exact = false;
+                foreach (var type in candidates)
+                {
+                    if (r is MethodReference mr)
+                    {
+                        foreach (var m in type.Methods)
+                        {
+                            if (m.Name != mr.Name || m.Parameters.Count != arity) continue;
+                            anyName = true;
+                            if (m.Parameters.Select(p => Kind(p.ParameterType)).SequenceEqual(mr.Parameters.Select(p => Kind(p.ParameterType))))
+                                exact = true;
+                        }
+                    }
+                    else if (r is FieldReference fr)
+                    {
+                        foreach (var f in type.Fields)
+                        {
+                            if (f.Name != fr.Name) continue;
+                            anyName = true;
+                            if (Kind(f.FieldType) == Kind(fr.FieldType)) exact = true;
+                        }
+                        foreach (var p in type.Properties)
+                        {
+                            if (p.Name != fr.Name) continue;
+                            anyName = true;
+                            if (p.PropertyType != null && Kind(p.PropertyType) == Kind(fr.FieldType)) exact = true;
+                        }
+                    }
+                }
+
+                if (exact) { ok++; continue; }
+                if (anyName)
+                {
+                    diffSig++;
+                    Console.WriteLine($"ASSIN {flat}::{r.Name}{sig}");
+                }
+                else
+                {
+                    noName++;
+                    Console.WriteLine($"SEM   {flat}::{r.Name}{sig}");
+                }
+            }
+            Console.WriteLine($"ok: {ok}; sem nome: {noName}; assinatura diferente: {diffSig}");
+            return 0;
+        }
+
         if (args[1] == "--hard" && args.Length >= 3)
         {
             // uso: ildump <mod.dll> --hard <shim.dll>

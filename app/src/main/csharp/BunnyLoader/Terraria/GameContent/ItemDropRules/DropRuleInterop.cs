@@ -12,6 +12,7 @@ internal static unsafe class DropRuleInterop
     static readonly Dictionary<IntPtr, WeakReference<IItemDropRule>> Rules = new();
     static readonly Dictionary<IntPtr, NativeDropRule> WatchedRules = new();
     static readonly Dictionary<IntPtr, WeakReference<IItemDropRuleCondition>> ConditionCache = new();
+    static bool SyncUnavailable;
     static readonly Dictionary<IItemDropRule, GameHandle> CustomRulePointers = new(ReferenceEqualityComparer.Instance);
     static readonly Dictionary<IntPtr, IItemDropRule> CustomRules = new();
     static readonly Dictionary<IItemDropRuleCondition, GameHandle> CustomConditionPointers = new(ReferenceEqualityComparer.Instance);
@@ -282,8 +283,13 @@ internal static unsafe class DropRuleInterop
             {
                 // Mesmo getter sem corpo nativo: não há lista para sincronizar.
                 // As cadeias ficam só no lado managed; o importante é não
-                // abortar `ModifyNPCLoot` por causa disso.
-                ItemHooks.Report("DropRuleInterop.Sync", e);
+                // abortar `ModifyNPCLoot` por causa disso. Avisa uma vez só
+                // (o report por regra gerava milhares de linhas de log).
+                if (!SyncUnavailable)
+                {
+                    SyncUnavailable = true;
+                    Log.Info($"DropRuleInterop: 'IItemDropRule.ChainedRules' sem corpo nativo ({e.GetType().Name}); cadeias ficam só no lado managed");
+                }
                 return;
             }
             Clear(list);

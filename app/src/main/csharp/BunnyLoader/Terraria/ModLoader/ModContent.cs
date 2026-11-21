@@ -95,7 +95,7 @@ public static class ModContent
 
     public static Asset<T> Request<T>(string name, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class
     {
-        Asset<T>.CheckSupported();
+        AssetKinds.CheckSupported(typeof(T));
         (string modName, string path) = SplitName(name);
         if (modName == "Terraria")
         {

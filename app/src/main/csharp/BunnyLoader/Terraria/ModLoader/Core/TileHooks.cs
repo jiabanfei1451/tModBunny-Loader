@@ -420,10 +420,22 @@ internal static partial class TileHooks
         return result;
     }
 
+    static readonly System.Collections.Generic.HashSet<int> noObjectData = new();
+
     static bool PlaceModObject(On_WorldGen.orig_PlaceTile orig, int i, int j, int type, bool mute, bool force, int player, int style)
     {
-        if (type < TileID.Count || TileObjectData.GetTileData(type, style, 0).IsNull)
+        // `GetTileData` devolve referencia NULA quando o tile nao tem
+        // TileObjectData (pylons de mod, por exemplo); acessar `.IsNull` nesse
+        // null estourava NRE dentro do hook WorldGen.PlaceTile e a colocacao
+        // falhava ("晶塔放置会错误"). Sem dados de objeto nao ha' nada a fazer
+        // aqui: quem coloca e' o caminho vanilla.
+        TileObjectData? data = type < TileID.Count ? null : TileObjectData.GetTileData(type, style, 0);
+        if (data is null || data.IsNull)
+        {
+            if (type >= TileID.Count && noObjectData.Add(type))
+                Log.Warn($"[place] tile {type} (style {style}) sem TileObjectData; usando caminho vanilla");
             return orig(i, j, type, mute, force, player, style);
+        }
         if (i < 0 || j < 0 || i >= Main.maxTilesX || j >= Main.maxTilesY)
             return false;
         if (!force && !Collision.EmptyTile(i, j, false) && Main.tileSolid[type])

@@ -236,7 +236,9 @@ internal static class Program
             byte[] patched;
             try
             {
-                patched = (byte[])rewrite.Invoke(null, new object[] { dll, bytes })!;
+                // Rewrite(string path, byte[] bytes, out List<string>? warmKeys):
+                // o `out` conta como argumento em Invoke (null = descartado).
+                patched = (byte[])rewrite.Invoke(null, new object?[] { dll, bytes, null })!;
             }
             catch (TargetInvocationException e)
             {

@@ -25,6 +25,26 @@ public static unsafe partial class ItemLoader
     /// <summary>Tipos de item cuja linha de diagnóstico já foi escrita.</summary>
     static readonly HashSet<int> LoggedItems = new();
 
+    /**
+     * DIAGNOSTICO: os campos do Item parecem trocados (bait saindo igual a
+     * makeNPC, consumivel ficando false). Compara os offsets que o runtime
+     * resolve com os do dump (bait 0x3C, makeNPC 0x40, consumable 0x95, ammo 0x100).
+     */
+    static void LogOffsets()
+    {
+        try
+        {
+            static int Off(string campo)
+            {
+                int slot = -1;
+                return BunnyLoader.Interop.GameInterop.Offset(ref slot, Item.Class, campo);
+            }
+            Log.Info($"[itemdiag] offsets: bait={Off("bait")} makeNPC={Off("makeNPC")} consumable={Off("consumable")} "
+                     + $"ammo={Off("ammo")} createTile={Off("createTile")} stack={Off("stack")} type={Off("type")}");
+        }
+        catch (Exception e) { Log.Warn($"[itemdiag] offsets falharam: {e.GetType().Name}"); }
+    }
+
     static ModItem?[] items = Array.Empty<ModItem?>();
 
     static int itemCount = ItemID.Count;
@@ -386,6 +406,12 @@ public static unsafe partial class ItemLoader
         }
         NativeApi* api = Host.Native();
         api->PrepareItem(self.Pointer, type);
+        // O `Item.ResetStats` nativo nao zera tudo quando o tipo e de mod (ele
+        // indexa tabelas do jogo com um id fora da faixa): o `bait` ficava com
+        // lixo e o tooltip de TODO consumivel de mod mostrava "forca de isca".
+        // Zera aqui, antes do SetDefaults do mod — quem e isca de verdade
+        // escreve bait depois (ou via CloneDefaults).
+        self.bait = 0;
         // `Item.ResetStats` (o reset do tModLoader) nem sempre deixa os campos
         // de uso preenchidos quando o tipo e de mod — e um mod que nao escreve
         // `useTime` (caso do mod de teste) ficava com 0 e a arma NAO ATACAVA:
@@ -422,7 +448,10 @@ public static unsafe partial class ItemLoader
             // receita, inventario) e cada linha custa ~8 ms de logcat: no
             // Fargowiltas eram 3 589 linhas, 29 s de carga e 0 informacao nova.
             if (LoggedItems.Add(type))
-                Log.Info($"item {template.FullName}: useStyle={self.useStyle} useTime={self.useTime} useAnimation={self.useAnimation} damage={self.damage} knockBack={self.knockBack} crit={self.crit} rare={self.rare} value={self.value} shoot={self.shoot} mana={self.mana} autoReuse={self.autoReuse} noMelee={self.noMelee} maxStack={self.maxStack} class={DamageClassLoader.ItemClass(self).Name} makeNPC={self.makeNPC} w={self.width} h={self.height}");
+            {
+                if (LoggedItems.Count == 1) LogOffsets();
+                Log.Info($"item {template.FullName}: bait={self.bait} makeNPC={self.makeNPC} consumivel={self.consumable} potion={self.potion} healLife={self.healLife} healMana={self.healMana} ammo={self.ammo} createTile={self.createTile} createWall={self.createWall} stack={self.stack} useStyle={self.useStyle} useTime={self.useTime} useAnimation={self.useAnimation} damage={self.damage} knockBack={self.knockBack} crit={self.crit} rare={self.rare} value={self.value} shoot={self.shoot} mana={self.mana} autoReuse={self.autoReuse} noMelee={self.noMelee} maxStack={self.maxStack} class={DamageClassLoader.ItemClass(self).Name} w={self.width} h={self.height}");
+            }
         }
         finally { DamageClassLoader.Defaulting = outer; }
     }

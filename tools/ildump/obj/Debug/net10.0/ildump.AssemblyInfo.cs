@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ildump")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b2fe8fc3abeb2d8cc8612588be786a6429e6c9aa")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3d96b4b03cd0ae21b7a9801d4e15dcec35762a65")]
 [assembly: System.Reflection.AssemblyProductAttribute("ildump")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ildump")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

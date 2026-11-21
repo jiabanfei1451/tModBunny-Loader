@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BunnyLoader;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -214,10 +215,21 @@ internal static unsafe partial class TileHooks
                         continue;
                     }
 
-                    foreach (GlobalTile global in TileLoader.Hooks.PreDraw)
-                        draw &= global.PreDraw(i, j, type, batch);
-                    if (draw && mod != null)
-                        draw = mod.PreDraw(i, j, batch);
+                    // Um hook de mod que estoura nao pode esconder o tile: antes, qualquer
+                    // excecao aqui (ou em DrawEffects, logo abaixo) pulava o batch.Draw do
+                    // sprite e o bloco colocado ficava invisivel (log v156: MusicBoxTile
+                    // estourava Method not found: FastRandom..ctor(ulong)).
+                    try
+                    {
+                        foreach (GlobalTile global in TileLoader.Hooks.PreDraw)
+                            draw &= global.PreDraw(i, j, type, batch);
+                        if (draw && mod != null)
+                            draw = mod.PreDraw(i, j, batch);
+                    }
+                    catch (Exception e)
+                    {
+                        ItemHooks.Report("TileLoader.PreDraw", e);
+                    }
                     var info = new TileDrawInfo(drawHandle.Target);
                     short fx = cell.frameX, fy = cell.frameY;
                     TileLoader.DrawData d = new()
@@ -247,13 +259,24 @@ internal static unsafe partial class TileHooks
                     info.tileSpriteEffect = effects;
                     info.tileLight = Lighting.GetColor(i, j);
                     info.finalColor = info.tileLight;
+                    AssetTrace.Tile(type, 1);
                     info.drawTexture = TextureAssets.Tile[type].Value;
+                    AssetTrace.Tile(type, 2);
                     info.glowTexture = default;
                     info.glowSourceRect = default;
                     info.glowColor = default;
-                    foreach (GlobalTile global in TileLoader.Hooks.DrawEffects)
-                        global.DrawEffects(i, j, type, batch, ref info);
-                    mod?.DrawEffects(i, j, batch, ref info);
+                    AssetTrace.Tile(type, 3);
+                    try
+                    {
+                        foreach (GlobalTile global in TileLoader.Hooks.DrawEffects)
+                            global.DrawEffects(i, j, type, batch, ref info);
+                        mod?.DrawEffects(i, j, batch, ref info);
+                    }
+                    catch (Exception e)
+                    {
+                        ItemHooks.Report("TileLoader.DrawEffects", e);
+                    }
+                    AssetTrace.Tile(type, 4);
                     if (draw && hidden && info.tileWidth > 0 && info.tileHeight > info.halfBrickHeight)
                     {
                         var source = new Rectangle(info.tileFrameX + info.addFrX, info.tileFrameY + info.addFrY, info.tileWidth, info.tileHeight - info.halfBrickHeight);
@@ -262,9 +285,16 @@ internal static unsafe partial class TileHooks
                         batch.Draw(info.drawTexture, position, source, info.tileLight, 0, Vector2.Zero, 1, info.tileSpriteEffect, 0);
                     }
 
-                    mod?.PostDraw(i, j, batch);
-                    foreach (GlobalTile global in TileLoader.Hooks.PostDraw)
-                        global.PostDraw(i, j, type, batch);
+                    try
+                    {
+                        mod?.PostDraw(i, j, batch);
+                        foreach (GlobalTile global in TileLoader.Hooks.PostDraw)
+                            global.PostDraw(i, j, type, batch);
+                    }
+                    catch (Exception e)
+                    {
+                        ItemHooks.Report("TileLoader.PostDraw", e);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -285,7 +315,7 @@ internal static unsafe partial class TileHooks
             {
                 Point point = vines[k];
                 var data = TileObjectData.GetTileData(Main.tile[point.X, point.Y]);
-                if (!data.IsNull)
+                if (data is not null && !data.IsNull)
                     self.DrawMultiTileVinesInWind(Main.screenPosition, Vector2.Zero, point.X, point.Y, data.Width, data.Height);
             }
         }

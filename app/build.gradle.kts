@@ -108,11 +108,11 @@ android {
         // Instalador nenhum recusa: cada build e um upgrade do anterior.
         versionCode = (System.currentTimeMillis() / 60_000).toInt()
         // A linha "TmodBunny Loader" (o app que roda em paralelo do Bunny
-        // Loader, com o TModLoader embutido) comeca a contagem de versao em
-        // 0.1.0: e um produto novo, nao uma continuacao de 0.5.x. O
+        // Loader, com o TModLoader embutido) tem contagem de versao propria:
+        // e um produto novo, nao uma continuacao de 0.5.x. O
         // applicationId NAO muda (com.bunnyloader.side) — e o mesmo app, so
         // com outro nome.
-        versionName = "0.1.0"
+        versionName = "0.1.2"
       }
         // -Pbl.buildTag=tml2: uma etiqueta curta no versionName. Sem ela, duas
         // iteracoes do mesmo dia chegam no relatorio com o MESMO nome e nao da

@@ -45,7 +45,7 @@ public sealed unsafe class Asset<T> where T : class
 
     internal IntPtr GameAsset => asset;
 
-    internal IntPtr Pointer => directTexture != IntPtr.Zero ? IntPtr.Zero : Volatile.Read(ref asset);
+    internal IntPtr Pointer => directTexture != IntPtr.Zero ? IntPtr.Zero : PointerSlot.Read(ref asset);
 
     IntPtr directTexture;
 
@@ -54,7 +54,7 @@ public sealed unsafe class Asset<T> where T : class
     IntPtr Resolved()
     {
         if (directTexture != IntPtr.Zero) return directTexture;
-        if (Volatile.Read(ref asset) == IntPtr.Zero && Host.Native()->IsGameThread() != 0) Wait();
+        if (PointerSlot.Read(ref asset) == IntPtr.Zero && Host.Native()->IsGameThread() != 0) Wait();
         return asset;
     }
 
@@ -122,7 +122,35 @@ public sealed unsafe class Asset<T> where T : class
 
     public string Name { get; }
 
-    public AssetState State => Volatile.Read(ref asset) != IntPtr.Zero ? AssetState.Loaded : AssetState.NotLoaded;
+    Type? elementType;
+
+    /// <summary>
+    /// O tipo do asset (Texture2D, Effect, ...) obtido em tempo de execucao.
+    /// NAO use typeof(T) dentro destes metodos: o Unity Mono aborta
+    /// (mini-generic-sharing.c:911, condition 'oti' not met) quando um metodo
+    /// generico compartilhado pede o rgctx "other slot" de Textura; GetType()
+    /// e uma chamada nao generica e resolve pelo objeto real.
+    /// </summary>
+    internal Type Element
+    {
+        get
+        {
+            if (elementType != null) return elementType;
+            Type[] args = GetType().GetGenericArguments();
+            return elementType = args.Length == 1 ? args[0] : typeof(object);
+        }
+    }
+
+    string? tag;
+
+    // NAO use Name aqui: para assets que vem do jogo o nome pode ter sido
+    // lido de memoria nativa e o buffer ja ter sido liberado, e o Concat
+    // estoura SEGV dentro do memcpy (string:Concat -> CopyStringContent).
+    // O endereco do objeto e sempre um campo gerenciado e serve para
+    // identificar o asset no log.
+    string Tag(string step) => (tag ??= "asset@" + asset.ToString("x")) + " " + step;
+
+    public AssetState State => PointerSlot.Read(ref asset) != IntPtr.Zero ? AssetState.Loaded : AssetState.NotLoaded;
 
     public bool IsLoaded => State == AssetState.Loaded;
 
@@ -139,9 +167,17 @@ public sealed unsafe class Asset<T> where T : class
             // Devolver um stub gerenciado mantem o mod vivo (ele so escreve
             // parametros e chama Apply) em vez de estourar em
             // GameObjectFactory. Ver Effect.TML.cs.
-            if (IsEffectType(typeof(T))) return (T)(object)Effect.CreateManaged();
+            AssetTrace.Step(Tag("1 inicio"));
+            bool effect = AssetKinds.IsEffectType(Element);
+            AssetTrace.Step(Tag(effect ? "2 effect" : "2 textura"));
+            if (effect) return (T)(object)Effect.CreateManaged();
             Wait();
-            return (T)GameObjectFactory.Create(typeof(T), ValuePointer());
+            AssetTrace.Step(Tag("3 Wait ok"));
+            IntPtr pointer = ValuePointer();
+            AssetTrace.Step(Tag("4 ValuePointer ok"));
+            object created = GameObjectFactory.Create(Element, pointer);
+            AssetTrace.Step(Tag("5 Create ok"));
+            return (T)created;
         }
     }
 
@@ -160,7 +196,7 @@ public sealed unsafe class Asset<T> where T : class
     IntPtr ValuePointer()
     {
         if (directTexture != IntPtr.Zero) return directTexture;
-        return typeof(T) == typeof(Texture2D) ? Host.Native()->TextureAssetValue(asset) : *(IntPtr*)(asset + ValueOffset());
+        return Element == typeof(Texture2D) ? Host.Native()->TextureAssetValue(asset) : *(IntPtr*)(asset + ValueOffset());
     }
 
     int ValueOffset()
@@ -175,12 +211,13 @@ public sealed unsafe class Asset<T> where T : class
 
     public void Wait()
     {
-        if (Volatile.Read(ref asset) != IntPtr.Zero) return;
+        AssetTrace.Step(Tag("0 Wait inicio"));
+        if (PointerSlot.Read(ref asset) != IntPtr.Zero) return;
         // Effect: nao ha arquivo .xnb para carregar (o port nao tem runtime de
         // shader). Marca como carregado e sai; quem le o valor recebe o stub.
-        if (IsEffectType(typeof(T)))
+        if (AssetKinds.IsEffectType(Element))
         {
-            Volatile.Write(ref asset, (IntPtr)1);
+            PointerSlot.Write(ref asset, (IntPtr)1);
             return;
         }
         NativeApi* api = Host.Native();
@@ -189,7 +226,7 @@ public sealed unsafe class Asset<T> where T : class
         IntPtr loaded;
         // As fontes do 1.4 sao ReLogic.Graphics.DynamicSpriteFont; o SpriteFont
         // continua aceito porque o Asset<SpriteFont> antigo ainda existe no shim.
-        if (IsFontType(typeof(T)))
+        if (AssetKinds.IsFontType(Element))
         {
             if (file == null) throw new InvalidOperationException($"asset {Name}: no game font with this name");
             byte* f = Host.Utf8(file);
@@ -197,7 +234,7 @@ public sealed unsafe class Asset<T> where T : class
             finally { Host.FreeUtf8(f); }
             if (loaded == IntPtr.Zero) throw new InvalidOperationException($"asset {Name}: {file} is not a font the game can load (blfont/1, after the content is ready)");
             directTexture = loaded;
-            Volatile.Write(ref asset, (IntPtr)1);
+            PointerSlot.Write(ref asset, (IntPtr)1);
             return;
         }
         if (file != null)
@@ -220,26 +257,23 @@ public sealed unsafe class Asset<T> where T : class
             if (missing != 0) throw new InvalidOperationException($"asset {Name}: the game image does not exist on mobile");
             if (loaded == IntPtr.Zero) throw new InvalidOperationException($"asset {Name}: no game texture with this name");
         }
-        Volatile.Write(ref asset, loaded);
+        PointerSlot.Write(ref asset, loaded);
     }
 
     /// <summary>
     /// <c>Asset&lt;DynamicSpriteFont&gt;</c> (tML 1.4.4.9) e
     /// <c>Asset&lt;SpriteFont&gt;</c> (resto do shim) carregam fonte.
+    /// Delega para <see cref="AssetKinds"/>: corpo genérico não pode chamar
+    /// estático da própria classe genérica (ver o comentário lá).
     /// </summary>
-    internal static bool IsFontType(Type type) =>
-        type == typeof(SpriteFont) || type == typeof(ReLogic.Graphics.DynamicSpriteFont);
+    internal static bool IsFontType(Type type) => AssetKinds.IsFontType(type);
 
     /// <summary>
     /// <c>Asset&lt;Effect&gt;</c> e o que o Luminance pede em
     /// <c>ShaderManager.LoadShaders</c>. O tipo existe no shim (stub), entao o
     /// pedido passa a ser aceito e o valor sai de <see cref="Effect.CreateManaged"/>.
     /// </summary>
-    internal static bool IsEffectType(Type type) => type == typeof(Effect);
+    internal static bool IsEffectType(Type type) => AssetKinds.IsEffectType(type);
 
-    internal static void CheckSupported()
-    {
-        if (typeof(T) != typeof(Texture2D) && !IsFontType(typeof(T)) && !IsEffectType(typeof(T)))
-            throw new NotSupportedException($"Asset<{typeof(T).Name}>: only Texture2D, a font (DynamicSpriteFont/SpriteFont) and Effect can be requested");
-    }
+    internal static void CheckSupported() => AssetKinds.CheckSupported(typeof(T));
 }

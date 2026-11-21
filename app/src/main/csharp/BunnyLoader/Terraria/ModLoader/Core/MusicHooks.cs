@@ -1,4 +1,5 @@
 using System;
+using BunnyLoader;
 using Terraria.ID;
 
 namespace Terraria.ModLoader.Core;
@@ -117,9 +118,17 @@ internal static class MusicHooks
         {
             if (--chooseIn <= 0 || chosenOtherworld != otherworld || Main.gameMenu)
             {
+                int previous = wanted;
                 wanted = Choose(otherworld);
                 chooseIn = ChooseEvery;
                 chosenOtherworld = otherworld;
+                if (wanted != previous)
+                {
+                    MusicLoader.Track? picked = MusicLoader.TrackOf(wanted);
+                    Log.Info(picked != null
+                        ? $"musica: faixa {wanted} <- {picked.File}"
+                        : $"musica: vanilla ({wanted})");
+                }
             }
             TitleCrossFade(Main.gameMenu && wanted >= 0);
             MusicLoader.Track? track = MusicLoader.TrackOf(wanted);

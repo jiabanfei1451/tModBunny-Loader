@@ -60,7 +60,9 @@ public abstract class ModPylon : ModTile
     public override void DrawEffects(int i, int j, SpriteBatch spriteBatch, ref TileDrawInfo drawData)
     {
         TileObjectData data = TileObjectData.GetTileData(Type, 0, 0);
-        if (!data.IsNull && drawData.tileFrameX % data.CoordinateFullWidth == 0 && drawData.tileFrameY == 0)
+        // Pylon de mod sem TileObjectData registrado: o proxy devolve null e
+        // `data.IsNull` estourava NRE de DENTRO do desenho do tile (log v158).
+        if (data is not null && !data.IsNull && drawData.tileFrameX % data.CoordinateFullWidth == 0 && drawData.tileFrameY == 0)
             Main.instance.TilesRenderer.AddSpecialLegacyPoint(i, j);
     }
 

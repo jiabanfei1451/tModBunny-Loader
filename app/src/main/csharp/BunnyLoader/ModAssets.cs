@@ -24,13 +24,13 @@ public sealed class ModAssets : AssetRepository
     public override Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
         where T : class
     {
-        Asset<T>.CheckSupported();
+        AssetKinds.CheckSupported(typeof(T));
         string relative = Relative(assetName);
         string extension = Extension<T>();
         lock (requested)
         {
             if (requested.TryGetValue(relative + extension, out object? have)) return (Asset<T>)have;
-            if (Asset<T>.IsEffectType(typeof(T)))
+            if (AssetKinds.IsEffectType(typeof(T)))
             {
                 // Shader (.xnb / D3D9 bytecode): este port nao tem runtime de
                 // HLSL (o jogo desenha pelo Unity). Devolver o stub mantem o
@@ -50,21 +50,14 @@ public sealed class ModAssets : AssetRepository
     }
 
     public override bool HasAsset<T>(string assetName) where T : class =>
-        Asset<T>.IsEffectType(typeof(T)) ||
-        ((typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || IsFont(typeof(T))) &&
+        AssetKinds.IsEffectType(typeof(T)) ||
+        ((typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || AssetKinds.IsFontType(typeof(T))) &&
          Find(Relative(assetName), Extension<T>()) != null);
-
-    /// <summary>
-    /// As fontes do 1.4 sao <c>DynamicSpriteFont</c> (arquivo <c>.ttf</c> no
-    /// mod); o <c>.json</c> fica para o <c>SpriteFont</c> do resto do shim.
-    /// </summary>
-    static bool IsFont(Type type) =>
-        type == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) || type == typeof(ReLogic.Graphics.DynamicSpriteFont);
 
     static string Extension<T>() where T : class =>
         typeof(T) == typeof(ReLogic.Graphics.DynamicSpriteFont) ? ".ttf" :
         typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.SpriteFont) ? ".json" :
-        Asset<T>.IsEffectType(typeof(T)) ? ".xnb" : ".png";
+        AssetKinds.IsEffectType(typeof(T)) ? ".xnb" : ".png";
 
     static string Relative(string assetName)
     {

@@ -42,8 +42,21 @@ internal static class BestiaryHooks
         Log.Info($"bestiary: {added} mod NPC entr{(added == 1 ? "y" : "ies")}");
     }
 
-    static NPC Sample(int type) =>
-        new GameDictionary(ContentSamples.NpcsByNetId).TryGetValue(type, out IntPtr npc) ? new NPC(npc) : default;
+    // v9: `ContentSamples.NpcsByNetId` pode estar VAZIO neste ponto da carga
+    // (o dicionario nativo so' e' preenchido depois de ContentSamples.ItemsByType,
+    // e `new GameDictionary(pointer)` com ponteiro nulo estoura NRE). A excecao
+    // subia ate' o catch externo de ContentReady e virava ~160 linhas
+    // "bestiary entry of NPC N threw" por mundo carregado.
+    static NPC? Sample(int type)
+    {
+        try
+        {
+            GameDictionary samples = new(ContentSamples.NpcsByNetId);
+            if (samples.IsNull) return null;
+            return samples.TryGetValue(type, out IntPtr npc) && npc != IntPtr.Zero ? new NPC(npc) : null;
+        }
+        catch { return null; }
+    }
 
     static BestiaryEntry Find(BestiaryDatabase database, int type)
     {
@@ -68,7 +81,10 @@ internal static class BestiaryHooks
     {
         int type = own.Type;
         BestiaryEntry generic = Find(database, type);
-        if (!generic.IsNull) new GameList(database._entries).RemoveAt(IndexOf(database, generic));
+        // `Find` devolve `default` (referencia nula) quando o NPC nao tem
+        // entrada generica; chamar `.IsNull` nesse null estourava NRE e
+        // derrubava o registro do NPC do mod inteiro.
+        if (generic is not null && !generic.IsNull) new GameList(database._entries).RemoveAt(IndexOf(database, generic));
         if (NPCID.Sets.NPCBestiaryDrawOffset.TryGetValue(type, out var modifiers) && modifiers.Hide) return false;
         ContentSamples.NpcBestiaryRarityStars.Reapply(type);
         NPC? sample = Sample(type);
@@ -104,7 +120,7 @@ internal static class BestiaryHooks
     static void Vanilla(BestiaryDatabase database, int type, bool globals, bool loot)
     {
         BestiaryEntry entry = Find(database, type);
-        if (entry.IsNull) return;
+        if (entry is null || entry.IsNull) return;
         // v71: Sample() devolve null quando o NPC ainda nao esta' na tabela
         // NpcsByNetId (acontece na carga antes do conteudo fechar). Um
         // sample.IsNull em null estourava NRE para TODOS os NPCs vanilla —

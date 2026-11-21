@@ -50,6 +50,7 @@ public static class NPCShopDatabase
     internal static void Initialize()
     {
         Core.PlaceDiag.Install();
+        Core.PlacementFallback.Install();
         if (ByIndex.ContainsKey(1)) return;
         int[] types = { 17, 19, 20, 38, 54, 107, 108, 124, 142, 160, 178, 207, 208, 209, 227, 228, 229, 353, 368, 453, 550, 588, 633, 663, 227 };
         for (int i = 0; i < types.Length; i++)
