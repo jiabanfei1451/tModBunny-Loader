@@ -415,7 +415,8 @@ internal static partial class TileHooks
     static bool Place(On_WorldGen.orig_PlaceTile orig, int i, int j, int type, bool mute, bool force, int player, int style)
     {
         bool result = orig(i, j, type, mute, force, player, style);
-        if (result && placing > 0 && TileObjectData.GetTileData(type, style, 0).IsNull)
+        TileObjectData? placedData = TileObjectData.GetTileData(type, style, 0);
+        if (result && placing > 0 && (placedData is null || placedData.IsNull))
             Placed(i, j, type);
         return result;
     }

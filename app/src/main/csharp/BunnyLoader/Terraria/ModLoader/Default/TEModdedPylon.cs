@@ -48,12 +48,14 @@ public abstract class TEModdedPylon : ModTileEntity
         if (!tile.active() || !TileID.Sets.CountsAsPylon.Contains(tile.type))
             return false;
         TileObjectData tileData = TileObjectData.GetTileData(tile);
-        return !tileData.IsNull && tile.frameY == 0 && tile.frameX % tileData.CoordinateFullWidth == 0;
+        return tileData is not null && !tileData.IsNull && tile.frameY == 0 && tile.frameX % tileData.CoordinateFullWidth == 0;
     }
 
     public override int Hook_AfterPlacement(int i, int j, int type, int style, int direction, int alternate)
     {
         TileObjectData tileData = TileObjectData.GetTileData(type, style, alternate);
+        if (tileData is null || tileData.IsNull)
+            return -1;
         int topLeftX = i - tileData.Origin.X;
         int topLeftY = j - tileData.Origin.Y;
         if (Main.netMode == NetmodeID.MultiplayerClient)

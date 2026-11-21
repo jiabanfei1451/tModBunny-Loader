@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BunnyLoader;
 using Terraria.DataStructures;
 using Terraria.ObjectData;
 
@@ -40,9 +41,16 @@ internal static class PlacementHooks
             // icone no mapa e sem teleporte).
             if (tileData is null || tileData.IsNull) return result;
             PlacementHook hook = tileData.HookPostPlaceMyPlayer;
+
+            // HookFormat e' uma CLASSE no shim: quando o campo nativo esta vazio o
+            // getter devolve null gerenciado, e "hook.hook.IsNull" estourava NRE
+            // (foi o que impedia o tile entity do pylon de ser criado).
+            PlacementHook.HookFormat? native = hook.hook;
+            if (native is not null && !native.IsNull) return result;
+
             int index = hook.badReturn - Marker;
             Func<int, int, int, int, int, int, int>? call;
-            lock (Hooks) call = hook.hook.IsNull && (uint)index < (uint)Hooks.Count ? Hooks[index] : null;
+            lock (Hooks) call = (uint)index < (uint)Hooks.Count ? Hooks[index] : null;
             if (call == null) return result;
             if (hook.processedCoordinates)
             {
@@ -50,9 +58,13 @@ internal static class PlacementHooks
                 tileX -= origin.X;
                 tileY -= origin.Y;
             }
-            call(tileX, tileY, type, style, dir, data.alternate);
+            int entity = call(tileX, tileY, type, style, dir, data.alternate);
+            if (placed.Add(type))
+                Log.Info($"PlacementHook: tipo {type} -> tile entity {entity} em ({tileX},{tileY})");
         }
         catch (Exception e) { ItemHooks.Report("PlacementHook (mod placement hook)", e); }
         return result;
     }
+
+    static readonly HashSet<int> placed = new();
 }

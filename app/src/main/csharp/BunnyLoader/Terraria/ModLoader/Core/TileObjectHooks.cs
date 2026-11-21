@@ -11,7 +11,7 @@ internal static partial class TileHooks
         if (TileID.Sets.Torches[type] || TileID.Sets.Platforms[type])
             return false;
         var data = TileObjectData.GetTileData(type, 0, 0);
-        if (data.IsNull)
+        if (data is null || data.IsNull)
             return false;
         if (WorldGen.destroyObject)
             return true;
@@ -20,7 +20,7 @@ internal static partial class TileHooks
             return true;
         int frameX = cell.frameX, frameY = cell.frameY, style = TileLoader.StyleAt(i, j);
         data = TileObjectData.GetTileData(cell);
-        if (data.IsNull)
+        if (data is null || data.IsNull)
             return true;
         int partFrameX = frameX % data.CoordinateFullWidth, partFrameY = frameY % data.CoordinateFullHeight;
         int partX = partFrameX / (data.CoordinateWidth + data.CoordinatePadding), partY = 0, remaining = partFrameY;
