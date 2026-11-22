@@ -223,14 +223,7 @@ public static unsafe class EquipLoader
     /// </summary>
     static void PrefetchTexture(EquipTexture texture)
     {
-        if (Host.Native()->PrefetchModTexture == null) return;
-        byte* file = Host.Utf8(texture.Texture), name = Host.Utf8(texture.Name);
-        try { Host.Native()->PrefetchModTexture(file, name); }
-        finally
-        {
-            Host.FreeUtf8(file);
-            Host.FreeUtf8(name);
-        }
+        return;
     }
 
     static IntPtr RequestTexture(EquipTexture texture)

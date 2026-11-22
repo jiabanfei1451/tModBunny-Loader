@@ -38,6 +38,18 @@ public static class IlInterop
         => Unsafe.Add(ref Unsafe.As<TArray, T>(ref array), index) = value;
 
     /// <summary>
+    /// <c>&amp;array[index]</c> do array embutido: o <c>ldelema</c> do mod.
+    ///
+    /// O PC declara estes campos como <c>T[]</c>, então o mod tira o endereço
+    /// do elemento com <c>ldelema</c> e escreve direto nele. No dump do Android
+    /// o campo é um struct de tamanho fixo, então devolvemos a referência para
+    /// o elemento dentro da memória do dono — o efeito é o mesmo.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ref T ArrayAddress<TArray, T>(ref TArray array, int index) where TArray : struct
+        => ref Unsafe.Add(ref Unsafe.As<TArray, T>(ref array), index);
+
+    /// <summary>
     /// Instancia GERENCIADA vazia para um slot do jogo que o dump do il2cpp
     /// perdeu (o ProxyGen so conseguiu emitir <c>Interop.GameObject</c>).
     ///

@@ -218,8 +218,8 @@ internal static class TouchButtonLayouts
         GameRefArray<VirtualControlsProfile_Layout> all = styles.Profiles;
         for (int i = 0; !all.IsNull && i < all.Length; i++)
             if (!all[i].IsNull) result.Add(all[i]);
-        VirtualControlsProfile_Layout? active = styles._activeProfile;
-        if (active is { IsNull: false } && !result.Contains(active)) result.Add(active);
+        VirtualControlsProfile_Layout active = styles._activeProfile;
+        if (!active.IsNull && !result.Contains(active)) result.Add(active);
         return result;
     }
 

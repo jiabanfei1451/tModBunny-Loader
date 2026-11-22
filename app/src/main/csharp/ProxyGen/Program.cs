@@ -37,6 +37,9 @@ static class Program
     /// </summary>
     static readonly HashSet<string> PointerStructs = new(StringComparer.Ordinal);
 
+    /// <summary>O tipo (pelo nome completo ou simples) foi marcado com <c>%</c>?</summary>
+    internal static bool PointerStruct(Type t) => PointerStructs.Contains(t.FullName ?? t.Name);
+
     /// <summary>Tipos cujo proxy aceita herança (`@open` em types.txt).</summary>
     static readonly HashSet<string> OpenTypes = new(StringComparer.Ordinal);
 
@@ -107,8 +110,12 @@ static class Program
             }
             if (line.StartsWith('%'))
             {
+                // '%' marca struct de ponteiro mas continua gerando os membros:
+                // os *_Layout do controle de toque sao classes no dump, porem o
+                // codigo do tML 1.4.5 os usa como valor (GameArray<T> where T :
+                // unmanaged), entao precisam sair como struct aqui.
                 PointerStructs.Add(line[1..].Trim());
-                continue;
+                line = line[1..].Trim();
             }
             if (line.StartsWith('-'))
             {

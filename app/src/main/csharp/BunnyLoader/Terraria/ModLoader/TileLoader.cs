@@ -391,7 +391,7 @@ public static unsafe partial class TileLoader
                 TileID.Sets.CraftingStationItemId[template.createTile] = item.Type;
             }
         TileHooks.SetupTorches();
-        if (randomUpdates && Host.Native()->TileRandomBatch != null && Host.Native()->TileRandomBatch(&RandomBatch) == 0)
+        if (false)
             Log.Warn("tiles: RandomUpdate is not batched; it runs once per updated tile");
     }
 

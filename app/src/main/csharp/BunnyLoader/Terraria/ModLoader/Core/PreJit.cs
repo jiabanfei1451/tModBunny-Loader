@@ -45,11 +45,8 @@ internal static unsafe class PreJit
 
         // OnFrame (o tick de pre-JIT cooperativo) veio do upstream; se o nosso
         // libbunny.so nao exporta o simbolo, o pre-JIT simplesmente nao roda.
-        if (Host.Native()->OnFrame == null) return;
+        return;
 
-        cursor = Methods(mods).GetEnumerator();
-        jitAtStart = JitInfo.GetCompilationTime(false);
-        Host.Native()->OnFrame(&Frame);
     }
 
     [UnmanagedCallersOnly]

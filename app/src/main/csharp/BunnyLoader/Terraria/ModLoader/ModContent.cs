@@ -232,6 +232,7 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
+        TouchControlSizes.Install();
         yield return 0;
         Terraria.ID.SetFactory.GrowToContent();
         yield return 0;

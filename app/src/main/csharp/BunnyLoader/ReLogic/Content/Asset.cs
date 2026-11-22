@@ -165,15 +165,7 @@ public sealed unsafe class Asset<T> where T : class
         // O prefetch de textura veio do upstream; o nosso libbunny.so nao
         // exporta esses simbolos, entao sem eles pulamos o caminho novo e a
         // textura continua carregando pelo ValuePointer() de sempre.
-        if (Host.Native()->LoadedModTexture == null) return false;
-
-        byte* n = Host.Utf8(Name);
-        IntPtr loaded;
-        try { loaded = Host.Native()->LoadedModTexture(n); }
-        finally { Host.FreeUtf8(n); }
-        if (loaded == IntPtr.Zero) return false;
-        PointerSlot.Write(ref asset, loaded);
-        return true;
+        return false;
     }
 
     internal Asset<T> OnRequest(AssetRequestMode mode, bool created)
@@ -186,14 +178,7 @@ public sealed unsafe class Asset<T> where T : class
 
     void Prefetch()
     {
-        if (Host.Native()->PrefetchModTexture == null) return;
-        byte* f = Host.Utf8(file!), n = Host.Utf8(Name);
-        try { Host.Native()->PrefetchModTexture(f, n); }
-        finally
-        {
-            Host.FreeUtf8(f);
-            Host.FreeUtf8(n);
-        }
+        return;
     }
 
     public bool IsLoaded => State == AssetState.Loaded;

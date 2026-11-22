@@ -57,7 +57,7 @@ public sealed unsafe class Hook
         // O ramo de gates veio do upstream e depende de InstallGateHook, que o
         // nosso libbunny.so nao exporta. Sem o simbolo o hook sai pelo caminho
         // classico e o spec de gate e' ignorado.
-        if (Host.Native()->InstallGateHook == null)
+        if (true)
         {
             IntPtr* classic = Host.Native()->InstallHook(method.Info, replacement);
             if (classic == null) throw new InvalidOperationException("hook install failed");
@@ -65,7 +65,8 @@ public sealed unsafe class Hook
             return new Hook(classic);
         }
 
-        IntPtr* slot = Host.Native()->InstallGateHook(method.Info, replacement, &spec, &gate);
+        IntPtr* slot = Host.Native()->InstallHook(method.Info, replacement);
+        id = -1;
         if (slot == null) throw new InvalidOperationException("hook install failed");
         id = gate;
         return new Hook(slot);

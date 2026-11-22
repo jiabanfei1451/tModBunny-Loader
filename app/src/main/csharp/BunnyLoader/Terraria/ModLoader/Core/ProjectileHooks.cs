@@ -244,6 +244,9 @@ internal static unsafe class ProjectileHooks
     {
         orig(self, spawnSource);
         if (self.originalDamage != 0 || ProjectileLoader.TemplateOf(self) == null) return;
+        // O jogo passa a fonte de spawn sem os campos que o tML preenche (as
+        // vezes nem objeto): sem esta guarda o hook estourava NRE a cada tiro.
+        if (spawnSource is null || spawnSource.IsNull) return;
         Item item = BunnyLoader.Interop.GameInterop.IsInstance(spawnSource.Pointer, EntitySource_ItemUse.Class) ? new EntitySource_ItemUse(spawnSource.Pointer).Item : default;
         self.originalDamage = !item.IsNull && item.damage >= 0 ? item.damage : self.damage;
     }

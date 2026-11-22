@@ -1044,11 +1044,17 @@ internal static class IlPatcher
                     // Fargowiltas.Content.Buffs.Omnistation.Update,
                     // IL_0169 — o buff do Omnistation nunca tinha efeito).
                     // O endereco so e necessario para array EMBUTIDO acessado
-                    // por elemento (Projectile.ai[i]).
+                    // por elemento (Projectile.ai[i]). O `ldelema` do mod pode
+                    // vir com o indice empilhado no meio (`ldfld localAI;
+                    // ldc.i4.1; ldelema`), por isso tambem olhamos o proximo
+                    // par de instrucoes — sem isso o getter de VALOR copiava a
+                    // struct e o `ldelema` caia num temporario (InvalidProgram
+                    // no FargoGlobalProjectile.PreAI).
                     if (byRefGetter != null && plainGetter != null)
                     {
                         Type? fieldClr = ResolveType(field.FieldType);
-                        bool needAddress = fieldClr != null && IsInlineArray(fieldClr) && NextIsElementAccess(ins);
+                        bool needAddress = fieldClr != null && IsInlineArray(fieldClr) &&
+                            (NextIsElementAccess(ins) || NextIsIndexedElementAccess(ins));
                         getter = needAddress ? byRefGetter : plainGetter;
                     }
                     // Slot DEGRADADO: o dump declarava um tipo que o ProxyGen
@@ -1301,6 +1307,7 @@ internal static class IlPatcher
         }
 
         PatchArrayElements(module, body, arrays);
+        FixOrphanLdelema(module, body);
 
         // O corpo CRESCEU: cada `ldfld` (3 bytes) virou `call` (5) e cada
         // getter byref ganhou mais um `call Read<T>`. O Cecil NAO alarga
@@ -1751,11 +1758,75 @@ internal static class IlPatcher
     /// byref deve manter o <c>T&amp;</c> (acesso a elemento) ou pode ser
     /// descarregado em valor (<c>Read&lt;T&gt;</c>, uso do array inteiro).
     /// </summary>
+    /// <summary>
+    /// Cauda do <c>ldelema</c> sobre array EMBUTIDO.
+    ///
+    /// Quando o mod escreve no elemento do campo (<c>localAI[1]++</c>), o
+    /// Roslyn empilha o campo, o índice e usa <c>ldelema</c>. Se a simulação de
+    /// pilha perdeu o produtor (o array vinha de um <c>Read&lt;T&gt;</c> já
+    /// materializado), sobra <c>call Read&lt;X&gt;; índice; ldelema</c> — e o
+    /// endereço cai num temporário: o JIT recusa o corpo inteiro
+    /// (InvalidProgram no FargoGlobalProjectile.PreAI e no FakeHeartDeviantt).
+    ///
+    /// Aqui desfazemos a materialização (o getter <c>__ref_</c> continua na
+    /// pilha) e trocamos o <c>ldelema</c> por <c>ArrayAddress</c>, que devolve
+    /// o mesmo <c>ref T</c> apontando para dentro do dono.
+    /// </summary>
+    static void FixOrphanLdelema(ModuleDefinition module, Mono.Cecil.Cil.MethodBody body)
+    {
+        Instruction[] list = body.Instructions.ToArray();
+        for (int i = 2; i < list.Length; i++)
+        {
+            Instruction current = list[i];
+            if (current.OpCode.Code != Code.Ldelema) continue;
+            Instruction index = list[i - 1];
+            if (!PushesIndex(index)) continue;
+            Instruction read = list[i - 2];
+            if (read.OpCode.Code != OpCodes.Call.Code || read.Operand is not GenericInstanceMethod readCall) continue;
+            if (readCall.Name != "Read" || readCall.DeclaringType?.FullName != "BunnyLoader.IlInterop") continue;
+            if (readCall.GenericArguments.Count != 1) continue;
+            if (current.Operand is not TypeReference element) continue;
+            MethodInfo? address = ElementAccessor("ArrayAddress");
+            if (address == null) continue;
+
+            var call = new GenericInstanceMethod((MethodReference)module.ImportReference(address));
+            call.GenericArguments.Add(module.ImportReference(readCall.GenericArguments[0]));
+            call.GenericArguments.Add(module.ImportReference(element));
+
+            read.OpCode = OpCodes.Nop;
+            read.Operand = null;
+            current.OpCode = OpCodes.Call;
+            current.Operand = call;
+        }
+    }
+
+    /// <summary>Índice de elemento empilhado por um literal ou variável local.</summary>
+    static bool PushesIndex(Instruction ins) => ins.OpCode.Code is
+        Code.Ldc_I4 or Code.Ldc_I4_0 or Code.Ldc_I4_1 or Code.Ldc_I4_2 or Code.Ldc_I4_3 or Code.Ldc_I4_4
+        or Code.Ldc_I4_5 or Code.Ldc_I4_6 or Code.Ldc_I4_7 or Code.Ldc_I4_8 or Code.Ldc_I4_M1 or Code.Ldc_I4_S
+        or Code.Ldloc_0 or Code.Ldloc_1 or Code.Ldloc_2 or Code.Ldloc_3 or Code.Ldloc or Code.Ldloc_S;
+
     static bool NextIsElementAccess(Instruction ins)
     {
         if (ins.Next == null) return false;
         return IsLdelem(ins.Next.OpCode.Code) || IsStelem(ins.Next.OpCode.Code) ||
                ins.Next.OpCode.Code is Code.Ldlen or Code.Ldelema;
+    }
+
+    /// <summary>
+    /// <c>ldfld campo; ldc.i4.N; ldelema</c>: o indice fica entre o campo e o
+    /// acesso, então <see cref="NextIsElementAccess"/> não enxerga. Precisa do
+    /// endereço do array embutido do mesmo jeito.
+    /// </summary>
+    static bool NextIsIndexedElementAccess(Instruction ins)
+    {
+        Instruction? index = ins.Next;
+        if (index == null) return false;
+        if (index.OpCode.Code is not (Code.Ldc_I4 or Code.Ldc_I4_0 or Code.Ldc_I4_1 or Code.Ldc_I4_2
+            or Code.Ldc_I4_3 or Code.Ldc_I4_4 or Code.Ldc_I4_5 or Code.Ldc_I4_6 or Code.Ldc_I4_7
+            or Code.Ldc_I4_8 or Code.Ldc_I4_M1 or Code.Ldc_I4_S or Code.Ldloc_0 or Code.Ldloc_1
+            or Code.Ldloc_2 or Code.Ldloc_3 or Code.Ldloc or Code.Ldloc_S)) return false;
+        return index.Next?.OpCode.Code is Code.Ldelema or Code.Ldelem_Any or Code.Stelem_Any;
     }
 
     static void TrackArray(Instruction ins, Type clrType, bool byRef, Dictionary<Instruction, ArrayRef> arrays)
@@ -1871,10 +1942,20 @@ internal static class IlPatcher
                 {
                     if (current.OpCode.Code == Code.Ldelema)
                     {
-                        // `ldelema` precisa de um T[] de verdade: o endereco
-                        // do elemento so existe na copia gerenciada.
-                        CoerceToManagedArray(module, il, producer, arrays, materialized, adapted);
-                        arraySlot = at;
+                        if (array.ByRef)
+                        {
+                            // Array EMBUTIDO: o `__ref_` do campo já está na
+                            // pilha, então o ldelema vira ArrayAddress (ref T)
+                            // e o elemento continua sendo o do dono.
+                            if (RewriteElement(module, il, current, array, arrays)) arraySlot = at;
+                        }
+                        else
+                        {
+                            // Array do jogo: precisa de um T[] de verdade, o
+                            // endereço do elemento só existe na cópia gerenciada.
+                            CoerceToManagedArray(module, il, producer, arrays, materialized, adapted);
+                            arraySlot = at;
+                        }
                     }
                     else if (RewriteElement(module, il, current, array, arrays))
                         arraySlot = at;
@@ -1952,7 +2033,13 @@ internal static class IlPatcher
                 for (int p = 0; p < -delta; p++)
                 {
                     int slot = stack.Count - 1;
-                    if (slot >= 0) Materialize(module, il, stack[slot], arrays, materialized);
+                    // O array consumido por um acesso que JÁ foi reescrito
+                    // (ArrayGet/ArraySet/ArrayAddress) não pode ser
+                    // materializado: o `Ref T`/`T&` é justamente o que o
+                    // acessador recebeu. Materializar aqui inseria um Read<T>
+                    // antes do `ldelema` e o endereço virava um temporário
+                    // (InvalidProgram no FargoGlobalProjectile.PreAI).
+                    if (slot >= 0 && slot != arraySlot) Materialize(module, il, stack[slot], arrays, materialized);
                     Pop(stack);
                 }
                 // Desvio: guarda como a pilha chega no alvo.
@@ -2286,6 +2373,19 @@ internal static class IlPatcher
 
             Type? element = ElementOf(code, current.Operand);
             if (element == null) return false;
+            // `ldelema` do mod (no PC o campo e' T[]): devolve `ref T` para o
+            // elemento do array embutido, o mesmo endereco que o ldelema daria.
+            if (code == Code.Ldelema)
+            {
+                MethodInfo? address = ElementAccessor("ArrayAddress");
+                if (address == null) return false;
+                var addressCall = new GenericInstanceMethod((MethodReference)module.ImportReference(address));
+                addressCall.GenericArguments.Add(module.ImportReference(array.Clr));
+                addressCall.GenericArguments.Add(module.ImportReference(element));
+                current.OpCode = OpCodes.Call;
+                current.Operand = addressCall;
+                return true;
+            }
             MethodInfo? target = ElementAccessor(IsLdelem(code) ? "ArrayGet" : "ArraySet");
             if (target == null) return false;
 

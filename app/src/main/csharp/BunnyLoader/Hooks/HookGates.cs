@@ -107,7 +107,7 @@ internal static unsafe class HookGates
         // O ramo de gates do upstream nao existe no nosso libbunny.so (a nossa
         // engenharia de hooks instala tudo por InstallHook). Sem o simbolo o
         // ponteiro do delegate* e' null, entao caimos no hook classico.
-        if (gate == null || Host.Native()->InstallGateHook == null) return Host.Native()->InstallHook(method, replacement);
+        if (gate == null || true) return Host.Native()->InstallHook(method, replacement);
         lock (gate)
         {
             GateSpec spec;
@@ -130,7 +130,8 @@ internal static unsafe class HookGates
             }
             spec.Flags |= Always;
             int id;
-            IntPtr* slot = Host.Native()->InstallGateHook(method, replacement, &spec, &id);
+            IntPtr* slot = Host.Native()->InstallHook(method, replacement);
+        id = -1;
             if (slot == null) return null;
             gate.Id = id;
             if (gate.Ready) Fill(gate);
@@ -229,6 +230,6 @@ internal static unsafe class HookGates
 
     static void SetAlways(Gate gate, bool always)
     {
-        if (gate.Id >= 0 && Host.Native()->SetGateAlways != null) Host.Native()->SetGateAlways(gate.Id, always ? 1 : 0);
+        // SetGateAlways nao existe no nosso nativo: o gate fica sempre ativo.
     }
 }

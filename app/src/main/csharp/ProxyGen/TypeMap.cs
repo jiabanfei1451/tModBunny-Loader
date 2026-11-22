@@ -264,6 +264,24 @@ sealed class TypeMap
     {
         if (t.IsByRef || t.IsGenericParameter || t.ContainsGenericParameters) return null;
         string sig = DumpName(t);
+
+        // '%' em types.txt: o dump declara classe, mas o tML usa como struct
+        // (GameArray<T> where T : unmanaged). O proxy e' um struct com so' o
+        // ponteiro, entao ele entra/sai da ABI como um handle de 8 bytes.
+        if (!t.IsValueType && Program.PointerStruct(t))
+        {
+            // Full (nao Opaque): o struct-proxy precisa dos campos/propriedades
+            // por Offset, senao ele vira uma casca sem Id/CentreButtonStyle.
+            Register(t, GenMode.Full);
+            string cs = ProxyName(t);
+            return new TypeUse
+            {
+                Cs = cs, Sig = sig, Abi = AbiClass.Int, Size = 8, Align = 8, Converted = true,
+                ToRaw = e => $"(long)(({e}).Pointer)",
+                FromRaw = e => $"new {cs}((nint)({e}))",
+                Refs = { t },
+            };
+        }
         TypeUse? Prim(string cs, AbiClass abi, int size, Func<string, string>? to = null, Func<string, string>? from = null) =>
             new TypeUse
             {
