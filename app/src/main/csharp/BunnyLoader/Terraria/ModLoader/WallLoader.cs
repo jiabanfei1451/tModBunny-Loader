@@ -122,4 +122,17 @@ public static unsafe partial class WallLoader
 
         return placedBy.GetValueOrDefault(wall.Type);
     }
+
+    /// <summary>
+    /// Versão pública usada pelo WorldGen.KillWall (o HookKill do armazenamento
+    /// roda WallHooks.CanExplode, que consulta a mesma regra). Mantida aqui para
+    /// o hook do upstream continuar compilando com o nosso TileData.
+    /// </summary>
+    public static bool CanExplode(int i, int j, int type)
+    {
+        if (GetWall(type)?.CanExplode(i, j) == false) return false;
+        foreach (GlobalWall global in Globals)
+            if (!global.CanExplode(i, j, type)) return false;
+        return true;
+    }
 }

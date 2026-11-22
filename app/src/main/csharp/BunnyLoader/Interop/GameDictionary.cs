@@ -125,7 +125,7 @@ public readonly unsafe struct GameDictionary
     /// </summary>
     public bool TryGetReference<TKey>(TKey key, out IntPtr value) where TKey : unmanaged
     {
-        IntPtr fn = Method("TryGetValue", 2, out IntPtr info);
+        IntPtr fn = Method(Layout, TryGetValueMethod, "TryGetValue", 2, out IntPtr info);
         IntPtr result = IntPtr.Zero;
         var call = GameCall.Returning(RetKind.Int);
         call.Arg(dictionary);
@@ -143,7 +143,7 @@ public readonly unsafe struct GameDictionary
     /// </summary>
     public void SetReference<TKey>(TKey key, IntPtr value) where TKey : unmanaged
     {
-        IntPtr fn = Method("set_Item", 2, out IntPtr info);
+        IntPtr fn = Method(Layout, SetItemMethod, "set_Item", 2, out IntPtr info);
         var call = GameCall.Returning(RetKind.Int);
         call.Arg(dictionary);
         call.Arg(key);

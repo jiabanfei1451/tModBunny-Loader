@@ -91,11 +91,6 @@ android {
         // recusam atualizar no lugar com versionCode igual. -Pbl.versionCode=N
         // permite subir entre iteracoes locais sem editar este arquivo.
         versionCode = (project.findProperty("bl.versionCode") as String?)?.toInt() ?: commitCount
-        versionName = "0.5.2-beta"
-        applicationId = if (playBuild) "com.bunnyloader.potatolabs" else "com.bunnyloader"
-        minSdk = 24
-        targetSdk = if (playBuild) 36 else 34
-        versionCode = commitCount
         versionName = "0.5.8-beta"
 
         // -Pbl.bench=true: o app de medicao (com.bunnyloader.bench), ao lado

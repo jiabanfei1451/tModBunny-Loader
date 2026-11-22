@@ -161,6 +161,12 @@ public sealed unsafe class Asset<T> where T : class
     bool Arrived()
     {
         if (file == null || Element != typeof(Texture2D) || Host.Native()->IsGameThread() == 0) return false;
+
+        // O prefetch de textura veio do upstream; o nosso libbunny.so nao
+        // exporta esses simbolos, entao sem eles pulamos o caminho novo e a
+        // textura continua carregando pelo ValuePointer() de sempre.
+        if (Host.Native()->LoadedModTexture == null) return false;
+
         byte* n = Host.Utf8(Name);
         IntPtr loaded;
         try { loaded = Host.Native()->LoadedModTexture(n); }
@@ -180,6 +186,7 @@ public sealed unsafe class Asset<T> where T : class
 
     void Prefetch()
     {
+        if (Host.Native()->PrefetchModTexture == null) return;
         byte* f = Host.Utf8(file!), n = Host.Utf8(Name);
         try { Host.Native()->PrefetchModTexture(f, n); }
         finally

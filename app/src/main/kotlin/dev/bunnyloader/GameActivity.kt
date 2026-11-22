@@ -314,7 +314,6 @@ class GameActivity : Activity() {
                     // armazenamento como diretório de trabalho.
                     tmlDir = TmlMods.dir(this).absolutePath,
                     enabledMods = (session?.mods ?: repo.enabledSpecs()).toTypedArray(),
-                    enabledMods = enabledMods.toTypedArray(),
                     logPath = logFile.absolutePath,
                     // Canal de dev: adb push <arquivo> para a NOSSA pasta
                     // externa. A do Terraria nao serve — desde o Android 11
@@ -431,7 +430,7 @@ class GameActivity : Activity() {
 
     // --- ciclo de vida (espelha a UnityPlayerActivity) -----------------------
 
-    override fun onStart() { super.onStart(); host?.start() }
+    override fun onStart() { super.onStart(); host?.start(); DiscordPresence.show() }
     override fun onResume() {
         BootLog.add(this, "atividade: volta do segundo plano")
         super.onResume()
@@ -445,10 +444,6 @@ class GameActivity : Activity() {
         host?.pause()
         ModAudio.pauseAll()
     }
-    override fun onStop() { super.onStop(); host?.stop() }
-    override fun onStart() { super.onStart(); host?.start(); DiscordPresence.show() }
-    override fun onResume() { super.onResume(); host?.resume(); ModAudio.resumeAll() }
-    override fun onPause() { super.onPause(); host?.pause(); ModAudio.pauseAll() }
     override fun onStop() { super.onStop(); host?.stop(); DiscordPresence.hide() }
 
     override fun onDestroy() {

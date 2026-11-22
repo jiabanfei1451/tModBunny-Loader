@@ -3,10 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using BunnyLoader;
 using BunnyLoader.Interop;
-using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
-using Terraria.DataStructures;
 using Terraria.Localization;
 using Terraria.ModLoader.Core;
 
@@ -20,11 +18,8 @@ public static class TouchButtonLoader
     static readonly List<ModTouchButton> buttons = new();
     static readonly Dictionary<string, ModTouchButton> byKey = new();
     static readonly Dictionary<ModKeybind, Texture2D> textures = new();
-    static readonly HashSet<nint> stepped = new();
-    static readonly string[] LabelCategories = { "TouchButtons", "Keybinds" };
     static ModTouchButton[] snapshot = Array.Empty<ModTouchButton>();
     static uint tick = uint.MaxValue;
-    static long animated;
 
     internal static int Unbound => (int)VirtualControlsHardwareConfigurationMapping_Layout.ContolType.Count;
 
@@ -37,8 +32,6 @@ public static class TouchButtonLoader
     public static int Count => Volatile.Read(ref snapshot).Length;
 
     public static IReadOnlyList<ModTouchButton> Buttons => Volatile.Read(ref snapshot);
-
-    internal static ModTouchButton[] Snapshot => Volatile.Read(ref snapshot);
 
     public static ModTouchButton RegisterButton(Mod mod, string name) => Register(mod, name, "");
 
@@ -61,7 +54,6 @@ public static class TouchButtonLoader
             Volatile.Write(ref snapshot, buttons.ToArray());
         }
         TouchButtonHooks.Install();
-        if (joystick) TouchJoystickHooks.Enable();
         return button;
     }
 
@@ -106,7 +98,7 @@ public static class TouchButtonLoader
             }
             catch (Exception e) { ItemHooks.Report($"{keybind.FullName}.Label", e); }
         }
-        foreach (string category in LabelCategories)
+        foreach (string category in new[] { "TouchButtons", "Keybinds" })
         {
             string textKey = $"Mods.{keybind.Mod.Name}.{category}.{keybind.Name}.DisplayName";
             if (Language.Exists(textKey)) return Language.GetTextValue(textKey);
@@ -153,39 +145,6 @@ public static class TouchButtonLoader
         }
         if (button.Icon != null) Log.Warn($"{button.FullName}: icon '{button.Icon}' is not in the mod");
         return default;
-    }
-
-    internal static bool Animated(ModTouchButton button) => button.Animation is { IsNull: false };
-
-    internal static Rectangle Frame(ModTouchButton button, Texture2D texture)
-    {
-        var whole = new Rectangle(0, 0, texture.Width, texture.Height);
-        if (button.Animation is not { IsNull: false } animation) return whole;
-        Animate();
-        try { return animation.GetFrame(texture); }
-        catch (Exception e)
-        {
-            ItemHooks.Report($"{button.FullName}.Animation", e);
-            return whole;
-        }
-    }
-
-    static void Animate()
-    {
-        long now = Environment.TickCount64 * 60 / 1000;
-        long steps = Math.Min(now - animated, 15);
-        if (steps <= 0) return;
-        animated = now;
-        stepped.Clear();
-        foreach (ModTouchButton button in Volatile.Read(ref snapshot))
-        {
-            if (button.Animation is not { IsNull: false } animation || !stepped.Add(animation.Pointer)) continue;
-            try
-            {
-                for (long i = 0; i < steps; i++) animation.Update();
-            }
-            catch (Exception e) { ItemHooks.Report($"{button.FullName}.Animation", e); }
-        }
     }
 
     internal static void Tick()

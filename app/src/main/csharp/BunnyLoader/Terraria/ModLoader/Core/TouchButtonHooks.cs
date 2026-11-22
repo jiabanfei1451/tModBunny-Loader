@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using BunnyLoader;
-using BunnyLoader.Hooks;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -16,33 +15,22 @@ internal static unsafe class TouchButtonHooks
     const int GroupCentre = 9;
 
     static Hook? visible, quickDraw, iconFrame, controlName, controlFrame;
-    static readonly byte* NoBits = (byte*)NativeMemory.AllocZeroed(16);
     static int frame;
-    static int groupFrame = -30;
-    static readonly List<(string Name, IntPtr Id, GameArray<ContolType> Actions)> groups = new();
+    static int groupFrame = int.MinValue;
+    static readonly List<(GameHandle Id, GameArray<ContolType> Actions)> groups = new();
     static readonly Dictionary<string, GameHandle> groupKeys = new();
     static int[] before = Array.Empty<int>();
 
     internal static bool Applied { get; private set; }
 
-    internal static GateSpec ValueGate(int arg) => ValueGate(arg, null, 0);
-
-    internal static GateSpec ValueGate(int arg, byte* bitmap, int bits) =>
-        new() { Arg = arg, PointerOffset = -1, FieldOffset = -1, FieldSize = 4, Bitmap = (IntPtr)bitmap, BitmapBits = bits, Flags = HookGates.Value };
-
-    static Hook? Gated(string type, string signature, IntPtr replacement, GateSpec spec)
-    {
-        try { return Hook.InstallGated(new GameClass("", type), signature, replacement, spec, out _); }
-        catch (Exception e)
-        {
-            Log.Error($"item hooks: {type}.{signature} is not hooked: {e.Message}");
-            return null;
-        }
-    }
-
     internal static void Install() => ItemHooks.Once("TouchButtons", () =>
     {
         On_GUIVirtualInputController.Update += Update;
+        On_GUIVirtualInputController.Draw += (orig, self) =>
+        {
+            Guard("arrays", () => EnsureController(self));
+            orig(self);
+        };
         On_GUIVirtualInputController.HandleTouchCursorDown += HandleTouchCursorDown;
         TouchJoystickHooks.Install();
         On_GUIVirtualInputControllerEdit.Draw += (orig, self) =>
@@ -62,16 +50,15 @@ internal static unsafe class TouchButtonHooks
         };
         On_VirtualControlsStyles_Layout.GetShareCode += (orig, profile) =>
             TouchButtonLayouts.WithoutMods(profile.IsNull ? Array.Empty<VirtualControlsProfile_Layout>() : new[] { profile }, () => orig(profile));
-        visible = Gated("GUIVirtualInputController",
+        visible = ItemHooks.Raw("", "GUIVirtualInputController",
             "bool DetermineButtonVisible(int slot, VirtualControlsHardwareConfigurationMapping_Layout.ContolType action, VirtualControlsHardwareConfigurationMapping_Layout slotConfig)",
-            (IntPtr)(delegate* unmanaged<IntPtr, int, int, IntPtr, IntPtr, byte>)&DetermineButtonVisible, ValueGate(2, NoBits, TouchButtonLoader.FirstAction));
-        if (visible == null) On_GUIVirtualInputController.Draw += DrawArrays;
-        quickDraw = Gated("GUIQuickActionButton",
+            (IntPtr)(delegate* unmanaged<IntPtr, int, int, IntPtr, IntPtr, byte>)&DetermineButtonVisible);
+        quickDraw = ItemHooks.Raw("", "GUIQuickActionButton",
             "void Draw(QuickActionButton_Layout.QuickActionControl actionType, QuickActionButton_Layout layout, bool pressed, ref float scale, bool ignoreChecks, bool ignoreIcon)",
-            (IntPtr)(delegate* unmanaged<int, IntPtr, byte, float*, byte, byte, IntPtr, void>)&QuickDraw, ValueGate(0, NoBits, TouchButtonLoader.QuickBase));
-        iconFrame = Gated("GUIQuickActionButton",
+            (IntPtr)(delegate* unmanaged<int, IntPtr, byte, float*, byte, byte, IntPtr, void>)&QuickDraw);
+        iconFrame = ItemHooks.Raw("", "GUIQuickActionButton",
             "void GetIconFrame(QuickActionButton_Layout.QuickActionControl actionType, out Texture2D iconTexture, out Rectangle frame)",
-            (IntPtr)(delegate* unmanaged<int, IntPtr*, Rectangle*, IntPtr, void>)&GetIconFrame, ValueGate(0, NoBits, TouchButtonLoader.QuickBase));
+            (IntPtr)(delegate* unmanaged<int, IntPtr*, Rectangle*, IntPtr, void>)&GetIconFrame);
         controlName = ItemHooks.Raw("", "GUIVirtualInputControllerEdit",
             "string GetControlName(VirtualControlsHardwareConfigurationMapping_Layout.ContolType control)",
             (IntPtr)(delegate* unmanaged<IntPtr, int, IntPtr, IntPtr>)&GetControlName);
@@ -100,33 +87,22 @@ internal static unsafe class TouchButtonHooks
     static void Update(On_GUIVirtualInputController.orig_Update orig, GUIVirtualInputController self, float elapsedTime)
     {
         frame++;
-        try
+        Guard("arrays", () =>
         {
             EnsureController(self);
             Ensure(false);
-        }
-        catch (Exception e) { ItemHooks.Report("TouchButtons: arrays", e); }
-        try { RefreshGroups(); }
-        catch (Exception e) { ItemHooks.Report("TouchButtons: groups", e); }
-        orig(self, elapsedTime);
-        if (groups.Count > 0)
+        });
+        Guard("groups", RefreshGroups);
+        int count = groups.Count;
+        if (count == 0)
         {
-            try { GroupChoices(self); }
-            catch (Exception e) { ItemHooks.Report("TouchButtons: group choice", e); }
+            orig(self, elapsedTime);
+            return;
         }
-        TouchJoystickHooks.AfterUpdate();
-    }
-
-    static void DrawArrays(On_GUIVirtualInputController.orig_Draw orig, GUIVirtualInputController self)
-    {
-        try { EnsureController(self); }
-        catch (Exception e) { ItemHooks.Report("TouchButtons: arrays", e); }
-        orig(self);
-    }
-
-    static void GroupChoices(GUIVirtualInputController controller)
-    {
-        foreach ((string name, IntPtr id, GameArray<ContolType> actions) in groups)
+        if (before.Length < count) before = new int[count];
+        for (int i = 0; i < count; i++) before[i] = GroupIndex(self, groups[i].Id);
+        orig(self, elapsedTime);
+        for (int i = 0; i < count; i++)
         {
             int was = before[i];
             GameArray<ContolType> actions = groups[i].Actions;
@@ -166,12 +142,7 @@ internal static unsafe class TouchButtonHooks
     {
         Hook? hook = visible;
         if (hook == null) return 1;
-        if (action >= TouchButtonLoader.FirstAction)
-        {
-            try { EnsureController(new GUIVirtualInputController(self)); }
-            catch (Exception e) { ItemHooks.Report("TouchButtons: arrays", e); }
-            if (TouchButtonLoader.ByAction(action) is ModTouchButton button && !TouchButtonLoader.Visible(button)) return 0;
-        }
+        if (action >= TouchButtonLoader.FirstAction && TouchButtonLoader.ByAction(action) is ModTouchButton button && !TouchButtonLoader.Visible(button)) return 0;
         var call = GameCall.Returning(RetKind.Int);
         call.Arg(self);
         call.Arg(slot);
@@ -194,12 +165,7 @@ internal static unsafe class TouchButtonHooks
             {
                 var state = pressed != 0 ? GUIQuickActionButton.InteractionState.Pressed
                     : TouchButtonLoader.Enabled(button!) ? GUIQuickActionButton.InteractionState.Normal : GUIQuickActionButton.InteractionState.Disabled;
-                try
-                {
-                    var quick = new QuickActionButton_Layout(layout);
-                    if (TouchButtonLoader.Animated(button!)) GUIQuickActionButton.DrawFrame(quick, texture, TouchButtonLoader.Frame(button!, texture), state, ref *scale);
-                    else GUIQuickActionButton.Draw(quick, texture, state, ref *scale);
-                }
+                try { GUIQuickActionButton.Draw(new QuickActionButton_Layout(layout), texture, state, ref *scale); }
                 catch (Exception e) { ItemHooks.Report($"{button!.FullName}: draw", e); }
                 return;
             }
@@ -228,7 +194,7 @@ internal static unsafe class TouchButtonHooks
             if (!texture.IsNull)
             {
                 *iconTexture = texture.Pointer;
-                *frameOut = TouchButtonLoader.Frame(button!, texture);
+                *frameOut = new Rectangle(0, 0, texture.Width, texture.Height);
                 return;
             }
             actionType = TouchButtonLoader.QuickUnbound;
@@ -264,13 +230,12 @@ internal static unsafe class TouchButtonHooks
         if (controlType >= TouchButtonLoader.FirstAction)
         {
             Texture2D texture = default;
-            ModTouchButton? button = TouchButtonLoader.ByAction(controlType);
-            if (button != null) texture = TouchButtonLoader.Texture(button);
+            if (TouchButtonLoader.ByAction(controlType) is ModTouchButton button) texture = TouchButtonLoader.Texture(button);
             else if (TouchButtonOptions.IsPageAction(controlType)) texture = BunnyHead();
             if (!texture.IsNull)
             {
                 *tex = texture.Pointer;
-                *frameOut = button != null ? TouchButtonLoader.Frame(button, texture) : new Rectangle(0, 0, texture.Width, texture.Height);
+                *frameOut = new Rectangle(0, 0, texture.Width, texture.Height);
                 return;
             }
             controlType = TouchButtonLoader.Unbound;
@@ -365,7 +330,7 @@ internal static unsafe class TouchButtonHooks
                 result[i] = Unsafe.As<int, T>(ref v);
             }
         }
-        foreach (ModTouchButton button in TouchButtonLoader.Snapshot)
+        foreach (ModTouchButton button in TouchButtonLoader.Buttons)
         {
             int i = TouchButtonLoader.ActionOf(button), v = value(button);
             if (Unsafe.As<T, int>(ref result[i]) != v) result[i] = Unsafe.As<int, T>(ref v);
@@ -416,15 +381,15 @@ internal static unsafe class TouchButtonHooks
             string? id = hardware.SlotId;
             if (!ours || id == null) continue;
             if (!groupKeys.TryGetValue(id, out GameHandle? key)) groupKeys[id] = key = new GameHandle(GameString.New(id));
-            groups.Add((id, key.Target, actions));
+            groups.Add((key, actions));
         }
     }
 
-    static GUIVirtualInputController.GroupControlState GroupState(GUIVirtualInputController controller, IntPtr id)
+    static int GroupIndex(GUIVirtualInputController controller, GameHandle id)
     {
         GameObject states = controller.GroupStates;
         if (states.IsNull) return -1;
         var dictionary = new GameDictionary(states);
-        return dictionary.TryGetValue(id, out GUIVirtualInputController.GroupControlState state) ? state : default;
+        return dictionary.TryGetReference(id.Target, out IntPtr state) && state != IntPtr.Zero ? new GUIVirtualInputController.GroupControlState(state).pressedIndex : -1;
     }
 }

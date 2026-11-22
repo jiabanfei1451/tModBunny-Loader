@@ -35,21 +35,6 @@ bool tileArrays(TileArrays* out);
 int tileTypeAtOffset(int32_t offset);
 
 /** Tipo do tile ativo em (x, y), ou -1. */
-struct TileTable {
-    const uint8_t* data = nullptr;
-    int count = 0;
-};
-
-bool tileArrays(TileArrays* out);
-
-bool tileLightedTable(TileTable* out);
-
-bool tileSolidTable(TileTable* out);
-
-bool worldTileSize(int* width, int* height);
-
-bool worldGrowsGrassUnderground();
-
 int tileTypeAt(int x, int y);
 
 /** Tipo da parede no offset do struct Tile, ou -1 (sem mundo, fora, sem parede). */
@@ -61,6 +46,3 @@ int wallTypeAt(int x, int y);
 constexpr int16_t kTileActiveBit = 0x20;
 
 } // namespace bl::runtime
-constexpr uint8_t kWallInvisibleBit = 0x20;
-
-}

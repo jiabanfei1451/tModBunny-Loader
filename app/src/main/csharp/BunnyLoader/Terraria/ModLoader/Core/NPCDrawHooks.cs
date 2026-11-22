@@ -154,7 +154,9 @@ internal static unsafe class NPCDrawHooks
     {
         if (batch.IsNull) return -1;
         SpriteBatcher batcher = batch._batcher;
-        return batcher.IsNull ? -1 : batcher._batchItemCount;
+        // O proxy do SpriteBatcher nao expoe _batchItemCount; o campo fica em
+        // SpriteBatcher_Cloud em 0x18 (dump.cs).
+        return batcher.IsNull ? -1 : *(int*)(batcher.Pointer + 0x18);
     }
 
     static Color TintedByBuffs(On_NPC.orig_GetNPCColorTintedByBuffs orig, NPC self, Color npcColor)

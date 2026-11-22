@@ -746,11 +746,6 @@ sealed class Emitter
             sb.Append(u).Append($"int __runs = __r{id};\n");
             sb.Append(u).Append($"try {{ __c({args}); {wb}}}\n");
             sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__r{id} == __runs) {{ __o{id}({args}); {wb}}} }}\n");
-            sb.Append(u).Append($"if (__c == null) {{ __b{id}({args}); return; }}\n");
-            sb.Append(u).Append($"ref int __rr = ref __r{id};\n");
-            sb.Append(u).Append("int __runs = __rr;\n");
-            sb.Append(u).Append($"try {{ __c({args}); }}\n");
-            sb.Append(u).Append($"catch (global::System.Exception __e) {{ {rep}__e); if (__rr == __runs) __o{id}({args}); }}\n");
             sb.Append(t).Append("}\n");
             sb.Append(t).Append($"catch (global::System.Exception __e2) {{ {rep}__e2); }}\n");
         }

@@ -53,6 +53,18 @@ public sealed unsafe class Hook
         MethodRef method = default;
         GameInterop.Method(ref method, gameClass, signature, LayoutUnchecked(signature));
         int gate;
+
+        // O ramo de gates veio do upstream e depende de InstallGateHook, que o
+        // nosso libbunny.so nao exporta. Sem o simbolo o hook sai pelo caminho
+        // classico e o spec de gate e' ignorado.
+        if (Host.Native()->InstallGateHook == null)
+        {
+            IntPtr* classic = Host.Native()->InstallHook(method.Info, replacement);
+            if (classic == null) throw new InvalidOperationException("hook install failed");
+            id = -1;
+            return new Hook(classic);
+        }
+
         IntPtr* slot = Host.Native()->InstallGateHook(method.Info, replacement, &spec, &gate);
         if (slot == null) throw new InvalidOperationException("hook install failed");
         id = gate;

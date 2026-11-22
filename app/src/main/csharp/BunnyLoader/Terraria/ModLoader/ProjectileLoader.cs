@@ -39,6 +39,8 @@ public static unsafe class ProjectileLoader
         return index < (uint)all.Length ? all[index] : null;
     }
 
+    internal static ModProjectile? TemplateOf(Projectile projectile) => projectile.IsNull ? null : GetProjectile(projectile.type);
+
     internal static ModProjectile? InstanceOf(Projectile projectile)
     {
         if (projectile.IsNull) return null;

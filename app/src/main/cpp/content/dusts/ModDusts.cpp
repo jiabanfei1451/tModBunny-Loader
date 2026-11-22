@@ -318,7 +318,6 @@ Scan g_scan;
 std::vector<Il2CppObject*> g_list;
 std::vector<bool> g_flags;
 std::vector<Il2CppObject*> g_hidden;
-std::vector<Il2CppObject*> g_skip;
 struct Swapped { Il2CppObject* dust; int realType, updateType; };
 std::vector<Swapped> g_swapped;
 
@@ -511,8 +510,8 @@ void hkDrawDust(Il2CppObject* self, const MethodInfo* m) {
 
     // ModDust.PreDraw, antes de tudo (o rastro fica por baixo). O lote e do JS.
     std::vector<Il2CppObject*> skip;
-    g_list.clear();
     if (g_anyHooks & kDustPreDraw) {
+        g_list.clear();
         for (Il2CppObject* d : scan.mods) {
             if (g_hooks[modIndex(typeOf(d))] & kDustPreDraw) g_list.push_back(d);
         }
@@ -522,21 +521,23 @@ void hkDrawDust(Il2CppObject* self, const MethodInfo* m) {
             dispatch(g_list, g_flags, g_cb.preDraw, g_native.preDraw);
             endKillTracking(g_list);
         }
+        for (size_t i = 0; i < g_list.size(); ++i) {
+            if (!g_flags[i]) skip.push_back(g_list[i]);
+        }
     }
+    auto skipped = [&skip](Il2CppObject* d) {
+        for (Il2CppObject* s : skip) if (s == d) return true;
+        return false;
+    };
 
     // 1a passada: as do jogo e as de mod na folha do jogo.
     g_hidden.clear();
-    g_skip.clear();
     size_t groups = 0;
-    size_t next = 0;
     for (Il2CppObject* d : scan.mods) {
-        bool skipped = false;
-        if (next < g_list.size() && g_list[next] == d) skipped = g_flags[next++] == 0;
         if (!activeOf(d)) continue;
         const int mi = modIndex(typeOf(d));
         if (mi < 0) continue;
-        if (skipped) g_skip.push_back(d);
-        if (g_group[mi] != 0 || skipped) {
+        if (g_group[mi] != 0 || skipped(d)) {
             activeOf(d) = false;
             g_hidden.push_back(d);
             if (g_group[mi] > static_cast<int>(groups)) groups = static_cast<size_t>(g_group[mi]);
@@ -551,8 +552,6 @@ void hkDrawDust(Il2CppObject* self, const MethodInfo* m) {
     if (groups == 0) return;
     // As passadas escondem toda poeira que nao e da textura: aqui sim, todas.
     scanDusts(dusts, scanLimit(), scan, true);
-    for (Il2CppObject* d : g_skip) activeOf(d) = false;
-    scanDusts(dusts, kDustSlots, scan, true);
     Il2CppObject* sheet = readStatic<Il2CppObject*>(refs().texture);
     for (size_t g = 1; g <= groups; ++g) {
         Il2CppObject* asset = il2cpp::api().gchandle_get_target(g_groupAssets[g - 1]);
@@ -564,8 +563,6 @@ void hkDrawDust(Il2CppObject* self, const MethodInfo* m) {
             const int mi = modIndex(typeOf(d));
             const bool mine = mi >= 0 && g_group[mi] == static_cast<int>(g) && !skipped(d);
             if (mine) { any = true; ++g_groupDusts; continue; }
-            const bool mine = mi >= 0 && g_group[mi] == static_cast<int>(g);
-            if (mine) { any = true; continue; }
             activeOf(d) = false;
             g_hidden.push_back(d);
         }
@@ -577,7 +574,6 @@ void hkDrawDust(Il2CppObject* self, const MethodInfo* m) {
         }
         for (Il2CppObject* d : g_hidden) activeOf(d) = true;
     }
-    for (Il2CppObject* d : g_skip) activeOf(d) = true;
 }
 
 bool wantsAlpha(Il2CppObject* self) {

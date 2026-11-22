@@ -83,19 +83,6 @@ internal static unsafe class BuffHooks
             return args;
         }
         bool Has(string name) => ItemHooks.Overrides(type, baseType, name);
-        if (Has(nameof(ModBuff.Update)))
-            ItemHooks.Once("BuffUpdate", () =>
-            {
-                On_Player.UpdateBuffs += UpdateBuffs;
-                On_NPC.UpdateNPC_BuffSetFlags += UpdateNPCBuffs;
-            });
-        if (Has(nameof(ModBuff.ReApply)))
-            ItemHooks.Once("BuffReApply", () =>
-            {
-                On_Player.AddBuff_TryUpdatingExistingBuffTime += TryUpdatingExistingBuffTime;
-                On_NPC.AddBuff += AddNPCBuff;
-            });
-        if (Has(nameof(ModBuff.ModifyBuffText)))
         var flags = BuffHookFlags.None;
         if (Exact(type, baseType, nameof(ModBuff.Update), Args(typeof(Player), index))) flags |= BuffHookFlags.UpdatePlayer;
         if (Exact(type, baseType, nameof(ModBuff.Update), Args(typeof(NPC), index))) flags |= BuffHookFlags.UpdateNPC;
@@ -132,9 +119,6 @@ internal static unsafe class BuffHooks
                 On_Lang.GetBuffName += GetBuffName;
                 On_Main.GetBuffTooltip += GetBuffTooltip;
             });
-        if (Has(nameof(ModBuff.RightClick))) ItemHooks.Once("BuffRightClick", () => On_GUIBuffs.RemoveBuff_int += RemoveBuff);
-        if (Has(nameof(GlobalBuff.CustomBuffTipSize)) || Has(nameof(GlobalBuff.DrawCustomBuffTip)))
-            ItemHooks.Once("BuffTip", () => On_Main.MouseText_DrawBuffTooltip += DrawBuffTooltip);
         }
         if ((flags & BuffHookFlags.RightClick) != 0) ItemHooks.Once("BuffRightClick", () => On_GUIBuffs.RemoveBuff_int += RemoveBuff);
         if ((flags & (BuffHookFlags.CustomBuffTipSize | BuffHookFlags.DrawCustomBuffTip)) != 0)
@@ -151,8 +135,11 @@ internal static unsafe class BuffHooks
     static void DrawBuffTooltip(On_Main.orig_MouseText_DrawBuffTooltip orig, Main self, string? cursorText, string? buffString, ref int X, ref int Y)
     {
         string tip = buffString ?? "";
+        bool merged = tip.Contains('\n') && !ShowsBanners();
+        string name = merged ? (cursorText ?? "") + "\n" + tip : cursorText ?? "";
+        string shown = merged ? "" : tip;
         ReLogic.Graphics.DynamicSpriteFont font = FontAssets.MouseText.Value;
-        var sizes = new System.Collections.Generic.List<Vector2> { font.MeasureString(tip), font.MeasureString(cursorText ?? "") };
+        var sizes = new System.Collections.Generic.List<Vector2> { font.MeasureString(shown), font.MeasureString(name) };
         int fixedSizes = sizes.Count;
         GlobalBuffHooks hooks = BuffLoader.GlobalHooks;
         foreach (GlobalBuff g in hooks.CustomBuffTipSize)
@@ -171,9 +158,6 @@ internal static unsafe class BuffHooks
             if (X + largest.X + 24f > Main.screenWidth) X = (int)(Main.screenWidth - largest.X - 24f);
             if (Y + largest.Y + 4f > Main.screenHeight) Y = (int)(Main.screenHeight - largest.Y - 4f);
         }
-        orig(self, cursorText, buffString, ref X, ref Y);
-        int originY = Y + (int)font.MeasureString(tip).Y;
-        foreach (GlobalBuff g in BuffLoader.Globals)
         orig(self, name, shown, ref X, ref Y);
         int originY = Y + (int)font.MeasureString(merged ? name : tip).Y;
         foreach (GlobalBuff g in hooks.DrawCustomBuffTip)
@@ -286,8 +270,6 @@ internal static unsafe class BuffHooks
         look->Active = 1;
     }
 
-    static bool Over(object instance, Type baseType, string name) =>
-        Overridden.GetOrAdd((instance.GetType(), name), key => ItemHooks.Overrides(key.Item1, baseType, key.Item2));
     static ModBuff? Own(int type, BuffHookFlags flag) => BuffLoader.GetBuff(type) is ModBuff m && (m.HookFlags & flag) != 0 ? m : null;
 
     internal static void AfterPlayerBuffs(Player self)
@@ -407,13 +389,6 @@ internal static unsafe class BuffHooks
         orig(self, type, time, quiet);
     }
 
-    static bool WantsText(int type)
-    {
-        if (Own(type, nameof(ModBuff.ModifyBuffText)) != null) return true;
-        foreach (GlobalBuff g in BuffLoader.Globals)
-            if (Over(g, typeof(GlobalBuff), nameof(GlobalBuff.ModifyBuffText))) return true;
-        return false;
-    }
     static bool ShowsBanners()
     {
         GUIInstance gui = GUIInstance.Active;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using BunnyLoader.Interop;
 
 namespace BunnyLoader;
@@ -71,6 +72,7 @@ internal sealed unsafe class EntityInstances<T> where T : class
     {
         if (entity == IntPtr.Zero) return;
         NativeApi* api = Host.Native();
+        long collections = GameGc.Collections();
         lock (entries)
         {
             if (entries.TryGetValue(entity, out Entry old))

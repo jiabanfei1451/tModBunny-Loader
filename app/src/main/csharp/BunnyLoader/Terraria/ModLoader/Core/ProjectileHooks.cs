@@ -577,7 +577,6 @@ internal static unsafe class ProjectileHooks
         {
             TypeGate<On_Projectile.hook_IsInteractable>(0, type => type >= ProjectileID.Count);
             On_Projectile.IsInteractable += IsInteractable;
-            On_Player.PushTouchCursorState += PushTouchCursorState;
         });
         WantDraw();
     }

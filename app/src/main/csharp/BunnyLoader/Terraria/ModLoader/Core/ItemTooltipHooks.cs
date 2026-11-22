@@ -340,7 +340,7 @@ internal static unsafe class ItemTooltipHooks
 
         static string Tip(int i) => Cached(Tips, Lang.tip, i);
 
-        static string Cached(string?[] cache, GameArray<LocalizedText> texts, int i)
+        static string Cached(string?[] cache, GameRefArray<LocalizedText> texts, int i)
         {
             if ((uint)i >= (uint)cache.Length) return At(texts, i);
             string? value = cache[i];

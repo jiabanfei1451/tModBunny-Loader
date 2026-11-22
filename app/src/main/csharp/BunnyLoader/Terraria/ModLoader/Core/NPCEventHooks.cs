@@ -80,14 +80,6 @@ internal static unsafe class NPCEventHooks
         if (baseType == typeof(ModNPC) || baseType == typeof(GlobalNPC))
             flags |= NPCMethod.PreAI | NPCMethod.AI | NPCMethod.PostAI;
         if (baseType == typeof(ModNPC)) flags |= NPCMethod.FindFrame;
-        uint events = 0;
-        if ((flags & (NPCMethod.PreAI | NPCMethod.AI | NPCMethod.PostAI)) != 0) events |= 1;
-        if ((flags & NPCMethod.FindFrame) != 0) events |= 2;
-        if ((flags & NPCMethod.ResetEffects) != 0) events |= 4;
-        if ((flags & NPCMethod.CheckActive) != 0) events |= 8;
-        if ((flags & NPCMethod.UpdateLifeRegen) != 0) events |= 16;
-        if ((flags & NPCMethod.ApplyDifficultyAndPlayerScaling) != 0) events |= 32;
-        if ((flags & NPCMethod.CheckDead) != 0) events |= 128;
         uint events = Events(flags);
         if (npcType < 0)
         {

@@ -1,5 +1,4 @@
 #pragma once
-#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,12 +23,6 @@ Il2CppObject* loadTextureAsset(const std::string& path, const unsigned char* dat
                                const std::string& assetName, int* width, int* height);
 
 bool isVanillaTexturePath(const std::string& path);
-
-Il2CppObject* wrapTextureAsset(Il2CppObject* gameTexture, const std::string& assetName);
-bool rawTextureUploadAvailable();
-Il2CppObject* textureAssetFromPixels(const uint8_t* rgba, int width, int height, const std::string& assetName);
-void checkTextureAgainstUnity(const std::string& path, const uint8_t* rgba, int width, int height,
-                              const std::string& assetName);
 
 Il2CppObject* missingTextureAsset(int* width, int* height);
 

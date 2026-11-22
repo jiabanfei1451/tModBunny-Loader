@@ -125,11 +125,8 @@ public static class ModContent
 
     public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class
     {
-        if (name != null && Requested<T>.ByName.TryGetValue(name, out Asset<T>? known))
-        {
-            asset = known;
-            return true;
-        }
+        // Requested<T>.ByName era do motor antigo (IlInterop); o upstream resolve
+        // tudo por byName dentro do ModAssets, entao aqui basta a checagem.
         if (!HasAsset(name!))
         {
             asset = null!;
@@ -235,8 +232,6 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
-        yield return 0;
-        TouchControlSizes.Install();
         yield return 0;
         Terraria.ID.SetFactory.GrowToContent();
         yield return 0;

@@ -383,18 +383,16 @@ internal static unsafe class BackgroundHooks
 
     static GameRefArray<Texture2D> GetBackTextureValues(On_Main.orig_get_backTextureValues orig, Main self)
     {
-        GameRefArray<Texture2D> values = orig(self);
         if (Flags[CurrentFlag] == 0) return orig(self);
-        GameArray<Texture2D> values = orig(self);
+        GameRefArray<Texture2D> values = orig(self);
         Patch(Main.undergroundBackground, self, false, values);
         return values;
     }
 
     static GameRefArray<Texture2D> GetOldBackTextureValues(On_Main.orig_get_oldBackTextureValues orig, Main self)
     {
-        GameRefArray<Texture2D> values = orig(self);
         if (Flags[OldFlag] == 0) return orig(self);
-        GameArray<Texture2D> values = orig(self);
+        GameRefArray<Texture2D> values = orig(self);
         Patch(Main.oldUndergroundBackground, self, true, values);
         return values;
     }

@@ -35,4 +35,3 @@ target_compile_options(bunny PRIVATE -O2 -fno-exceptions -fno-rtti)
 # loadHook do TexturePacks.cpp) nao precisa de nada: sem personalidade, o frame
 # dele e so atravessado (um destrutor pendente ali fica sem rodar).
 target_link_libraries(bunny shadowhook::shadowhook log dl)
-target_link_libraries(bunny shadowhook::shadowhook log dl z)

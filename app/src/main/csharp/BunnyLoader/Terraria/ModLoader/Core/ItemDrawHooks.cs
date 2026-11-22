@@ -34,7 +34,7 @@ internal static unsafe class ItemDrawHooks
 
     const int World = 0, Inventory = 1;
 
-    static Hook? drawItem, drawIcon, getAlpha;
+    static Hook? drawItem;
     delegate void IconGate();
 
     delegate void AlphaGate();

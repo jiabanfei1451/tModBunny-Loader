@@ -14,7 +14,6 @@ enum SystemStage : int32_t {
     kStageTransform = 7,
     kStageClockAdvance = 8,
     kSystemStageCount = 9,
-    kStageClockRateSlot = 100,
 };
 
 enum SystemStageClient : int32_t { kStageClientJs = 0, kStageClientManaged = 1, kStageClientCount = 2 };

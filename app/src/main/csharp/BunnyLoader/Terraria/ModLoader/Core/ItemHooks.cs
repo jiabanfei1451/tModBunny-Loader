@@ -22,10 +22,8 @@ internal static unsafe class ItemHooks
     static readonly HashSet<string> Reported = new();
     static readonly Dictionary<int, IntPtr> UsedBy = new();
 
-    static Hook? canUse, animation, useStyle, holdStyle, updateEquips;
-    static readonly int* AirScopes = (int*)NativeMemory.AllocZeroed(sizeof(int));
-
     static Hook? canUse, startUse, ownerOnly, animation, useStyle, holdStyle, updateEquips;
+    static readonly int* AirScopes = (int*)NativeMemory.AllocZeroed(sizeof(int));
 
     [ThreadStatic] static IntPtr equipping;
 
@@ -213,7 +211,8 @@ internal static unsafe class ItemHooks
     {
         try
         {
-            return Hook.InstallGated(type, signature, replacement, arg, pointerOffset, fieldOffset, fieldSize);
+            var gate = new GateSpec { Arg = arg, PointerOffset = pointerOffset, FieldOffset = fieldOffset, FieldSize = fieldSize };
+            return Hook.InstallGated(type, signature, replacement, gate, out _);
         }
         catch (Exception e)
         {

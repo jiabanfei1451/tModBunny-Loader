@@ -434,8 +434,6 @@ internal static unsafe class WallHooks
 
     static void Kill(On_WorldGen.orig_KillWall orig, int i, int j, bool fail)
     {
-        int wallType = Main.tile[i, j].wall;
-        if (exploding > 0 && wallType != 0 && !CanExplode(i, j, wallType))
         int wallType = TileData.RawWall(TileData.RawOffset(i, j));
         if (exploding > 0 && wallType != 0 && !WallLoader.CanExplode(i, j, wallType))
             return;

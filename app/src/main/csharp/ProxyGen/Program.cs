@@ -88,6 +88,12 @@ static class Program
             if (line.StartsWith('-'))
             {
                 TypeMap.Excluded.Add(line[1..].Replace('/', '+'));
+
+                // '-' quer dizer "escrito a mao": nao gera nem a casca do tipo.
+                // (o outro ramo que fazia SkipTypes.Add ficava depois deste
+                // continue, ou seja, era codigo morto e os tipos vazios
+                // colidiam com os .TML.cs de mesmo nome)
+                SkipTypes.Add(line[1..].Trim());
                 continue;
             }
             if (line.StartsWith('='))
