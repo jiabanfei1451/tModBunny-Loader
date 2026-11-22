@@ -36,7 +36,13 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
     public int AIType
     {
         get => aiType;
-        set { aiType = value; if (value > 0 && Type >= Terraria.ID.NPCID.Count) NPCEventHooks.Want(Type, 1); }
+        set
+        {
+            aiType = value;
+            if (value <= 0) return;
+            NPCGates.Borrow(value);
+            if (Type >= Terraria.ID.NPCID.Count) NPCEventHooks.Want(Type, 1);
+        }
     }
 
     public int AnimationType
@@ -71,7 +77,7 @@ public abstract class ModNPC : ModType<NPC, ModNPC>, ILocalizedModType
     public float DrawOffsetY
     {
         get => drawOffsetY;
-        set { drawOffsetY = value; NPCDrawOffsetHooks.Install(); }
+        set { drawOffsetY = value; if (value != 0 && registeredType > 0) NPCDrawOffsetHooks.Want(registeredType); }
     }
 
     public bool TownNPCStayingHomeless

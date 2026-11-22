@@ -31,6 +31,7 @@ bool gameInitialized();
 
 /** Na sonda: volta quando o jogo termina de carregar, ou depois de `max`. */
 void waitForGameLoaded(std::chrono::milliseconds max);
+void waitForGameLoaded(std::chrono::steady_clock::time_point deadline);
 
 /**
  * Na sonda, depois de carregar os mods e instalar o nucleo. Ate aqui o

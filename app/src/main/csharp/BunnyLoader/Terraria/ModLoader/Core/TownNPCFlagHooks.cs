@@ -1,4 +1,9 @@
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using BunnyLoader;
+using BunnyLoader.Interop;
+using Microsoft.Xna.Framework.Graphics;
+using Terraria.GameContent;
 using Terraria.ID;
 
 namespace Terraria.ModLoader.Core;
@@ -15,10 +20,30 @@ internal static class TownNPCFlagHooks
                 continue;
             ItemHooks.Once("TownActsLike", () =>
             {
+                NPCGates.Type<On_NPC.hook_get_isLikeATownNPC>(0, Modded);
                 On_NPC.get_isLikeATownNPC += IsLikeATownNPC;
+                NPCGates.Type<On_NPC.hook_get_CanBeTalkedTo>(0, Modded);
                 On_NPC.get_CanBeTalkedTo += CanBeTalkedTo;
+                NPCGates.Type<On_NPC.hook_get_CanTalk>(0, Modded);
                 On_NPC.get_CanTalk += CanTalk;
                 On_NPC.TrySyncingUniqueTownNPCData += TrySyncing;
+            });
+            return;
+        }
+    }
+
+    internal static void WantNoHappiness()
+    {
+        bool[] set = NPCID.Sets.NoTownNPCHappiness;
+        for (int type = 0; type < set.Length; type++)
+        {
+            if (!set[type])
+                continue;
+            ItemHooks.Once("TownNoHappiness", () =>
+            {
+                NPCGates.Type<On_ShopHelper.hook_ProcessMood>(2, NoHappiness);
+                On_ShopHelper.ProcessMood += ProcessMood;
+                On_GUINPCDialogue.SetupButtonText += SetupButtonText;
             });
             return;
         }
@@ -38,11 +63,34 @@ internal static class TownNPCFlagHooks
         return type >= NPCID.Count && type < NPCID.Sets.ActsLikeTownNPC.Length && NPCID.Sets.ActsLikeTownNPC[type];
     }
 
+    static bool Modded(int type) => type >= NPCID.Count;
+
+    static bool NoHappiness(int type) => (uint)type < (uint)NPCID.Sets.NoTownNPCHappiness.Length && NPCID.Sets.NoTownNPCHappiness[type];
+
     static bool Staying(NPC npc) => npc.type >= NPCID.Count && npc.ModNPC?.TownNPCStayingHomeless == true;
 
     static bool IsLikeATownNPC(On_NPC.orig_get_isLikeATownNPC orig, NPC self) => orig(self) || Acts(self);
 
     static bool CanBeTalkedTo(On_NPC.orig_get_CanBeTalkedTo orig, NPC self) => orig(self) || (Acts(self) && self.aiStyle == 7 && self.velocity.Y == 0f);
+
+    static void SetupButtonText(On_GUINPCDialogue.orig_SetupButtonText orig, GUINPCDialogue self, ref GameString text, ref Texture2D texture,
+        ref GameString text2, ref Texture2D texture2, ref int cost, ref bool happiness)
+    {
+        orig(self, ref text, ref texture, ref text2, ref texture2, ref cost, ref happiness);
+        NPC npc = TownNPCHooks.TalkingTo();
+        if (!npc.IsNull && NoHappiness(npc.type)) happiness = false;
+    }
+
+    static void ProcessMood(On_ShopHelper.orig_ProcessMood orig, ShopHelper self, Player player, NPC npc)
+    {
+        if (!NoHappiness(npc.type))
+        {
+            orig(self, player, npc);
+            return;
+        }
+        self._currentHappiness = "";
+        self._currentPriceAdjustment = npc.loveStruck ? 0.9f : 1f;
+    }
 
     static bool CanTalk(On_NPC.orig_get_CanTalk orig, NPC self) => orig(self) || (Acts(self) && self.aiStyle == 7 && self.velocity.Y == 0f && !NPCID.Sets.IsTownPet[self.type]);
 

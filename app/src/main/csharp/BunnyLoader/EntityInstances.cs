@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using BunnyLoader.Interop;
 
 namespace BunnyLoader;
@@ -10,12 +12,24 @@ internal sealed unsafe class EntityInstances<T> where T : class
 
     readonly Dictionary<IntPtr, Entry> entries = new();
     int added;
+    long version;
 
     struct Entry
     {
         public uint Handle;
+        public long Validated;
         public T Value;
     }
+
+    struct Hit
+    {
+        public EntityInstances<T>? Owner;
+        public IntPtr Entity;
+        public long Epoch, Version;
+        public T? Value;
+    }
+
+    [ThreadStatic] static Hit last;
 
     public int Count
     {
@@ -25,14 +39,32 @@ internal sealed unsafe class EntityInstances<T> where T : class
     public T? Get(IntPtr entity)
     {
         if (entity == IntPtr.Zero) return null;
+        long collections = GameGc.Collections();
+        if (collections >= 0)
+        {
+            ref Hit hit = ref last;
+            if (hit.Entity == entity && hit.Epoch == collections && ReferenceEquals(hit.Owner, this) && hit.Version == Volatile.Read(ref version)) return hit.Value;
+        }
         lock (entries)
         {
-            if (!entries.TryGetValue(entity, out Entry entry)) return null;
+            ref Entry entry = ref CollectionsMarshal.GetValueRefOrNullRef(entries, entity);
+            if (Unsafe.IsNullRef(ref entry)) return null;
+            if (collections >= 0 && entry.Validated == collections) return Remember(entity, collections, entry.Value);
             NativeApi* api = Host.Native();
-            if (api->GcHandleTarget(entry.Handle) == entity) return entry.Value;
+            if (api->GcHandleTarget(entry.Handle) == entity)
+            {
+                entry.Validated = collections;
+                return collections >= 0 ? Remember(entity, collections, entry.Value) : entry.Value;
+            }
             Remove(api, entity, entry);
             return null;
         }
+    }
+
+    T Remember(IntPtr entity, long collections, T value)
+    {
+        last = new Hit { Owner = this, Entity = entity, Epoch = collections, Version = version, Value = value };
+        return value;
     }
 
     public void Set(IntPtr entity, T? value)
@@ -45,7 +77,8 @@ internal sealed unsafe class EntityInstances<T> where T : class
             {
                 if (value != null && api->GcHandleTarget(old.Handle) == entity)
                 {
-                    entries[entity] = new Entry { Handle = old.Handle, Value = value };
+                    entries[entity] = new Entry { Handle = old.Handle, Validated = collections, Value = value };
+                    Interlocked.Increment(ref version);
                     return;
                 }
                 Remove(api, entity, old);
@@ -53,7 +86,8 @@ internal sealed unsafe class EntityInstances<T> where T : class
             if (value == null) return;
             uint handle = api->GcHandleNewWeak(entity);
             if (handle == 0) return;
-            entries[entity] = new Entry { Handle = handle, Value = value };
+            entries[entity] = new Entry { Handle = handle, Validated = collections, Value = value };
+            Interlocked.Increment(ref version);
             if (++added % SweepEvery == 0) Sweep(api);
         }
     }
@@ -61,6 +95,7 @@ internal sealed unsafe class EntityInstances<T> where T : class
     void Remove(NativeApi* api, IntPtr entity, Entry entry)
     {
         entries.Remove(entity);
+        Interlocked.Increment(ref version);
         api->GcHandleFree(entry.Handle);
     }
 

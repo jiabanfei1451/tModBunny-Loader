@@ -129,6 +129,9 @@ class Prefs(context: Context) {
     var scenery: String
         get() = p.getString(SCENERY, "") ?: ""
         set(v) = p.edit().putString(SCENERY, v).apply()
+    var discordPresence: Boolean
+        get() = p.getBoolean(DISCORD_PRESENCE, true)
+        set(v) = p.edit().putBoolean(DISCORD_PRESENCE, v).apply()
 
     /** A ordem do Explorar: o nome de um [ExploreSort]. */
     var exploreSort: String
@@ -166,6 +169,7 @@ class Prefs(context: Context) {
         const val GAME_CHECK_DONE = "gameCheckDone"
         const val PROFILE_NAME = "profileName"
         const val THEME_EFFECTS = "themeEffects"
+        const val DISCORD_PRESENCE = "discordPresence"
         /** Nenhum arquivo de mundo tem este nome (o jogo grava `*.wld`). */
         const val TITLE_ONLY = "-"
     }

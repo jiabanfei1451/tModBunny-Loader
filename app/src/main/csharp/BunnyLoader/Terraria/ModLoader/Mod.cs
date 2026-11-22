@@ -58,6 +58,10 @@ public abstract class Mod
     /// </summary>
     public ReLogic.Content.AssetRepository Assets => assets ??= new ModAssets(this);
 
+    public Assembly Code => GetType().Assembly;
+
+    public PreJITFilter PreJITFilter { get; protected set; } = new PreJITFilter();
+
     public bool ContentAutoloadingEnabled { get; init; } = true;
 
     public bool BackgroundAutoloadingEnabled { get; init; } = true;

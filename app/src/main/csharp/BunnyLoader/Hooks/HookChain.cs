@@ -67,9 +67,16 @@ public sealed class HookChain<THook, TOrig> where THook : System.Delegate where 
                 // unico lugar que referencia o corpo [UnmanagedCallersOnly]
                 // gerado pelo HookGen, e o CLR do PC derruba o processo ao
                 // compilar esse corpo. No aparelho (Mono) nao ha esse problema.
-                if (!BunnyLoader.Hook.Skipped) install();
+                if (!BunnyLoader.Hook.Skipped)
+                {
+                    Type? outer = HookGates.Installing;
+                    HookGates.Installing = typeof(THook);
+                    try { install(); }
+                    finally { HookGates.Installing = outer; }
+                }
                 installed = true;
             }
+            HookGates.Subscribed(typeof(THook), hook);
             hooks.Add(hook);
             Rebuild();
         }

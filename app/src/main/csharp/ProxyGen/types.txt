@@ -32,9 +32,9 @@ Terraria.ID.ItemUseStyleID
 Terraria.ID.ItemHoldStyleID
 !Terraria.Recipe.AddCustomShimmerResult
 # CountTileTypesInArea: o contrato do 1.4.4.9 usa `int[]`; o array do jogo no
-# dump só existe como GameArray<int> (ponteiro Il2CppArray). A dupla é escrita
-# à mão em Terraria/On.WorldGen.TML.cs, com cópia de ida e volta. `!!` também
-# suprime os delegates orig_/hook_ gerados (o `!` simples só reserva o nome).
+# dump s贸 existe como GameArray<int> (ponteiro Il2CppArray). A dupla 茅 escrita
+# 脿 m茫o em Terraria/On.WorldGen.TML.cs, com c贸pia de ida e volta. `!!` tamb茅m
+# suprime os delegates orig_/hook_ gerados (o `!` simples s贸 reserva o nome).
 !!Terraria.WorldGen.CountTileTypesInArea
 Terraria.ID.SoundID
 Terraria.ID.SetFactory
@@ -85,6 +85,7 @@ GUITransactionButton
 GUIVirtualInputController
 GUIVirtualInputControllerEdit
 GUIVirtualInputControllerEdit_ControlPanel+ControlPanelActionSetting
+GUIVirtualInputControllerEdit_ControlPanel+ControlPanelSizeSlider
 Terraria.RemoteClient
 GUIEvents
 Terraria.GameContent.PressurePlateHelper
@@ -227,8 +228,8 @@ Terraria.GameContent.DoorOpeningHelper
 !Terraria.GameContent.Drawing.TileDrawing.IsVisible
 !Terraria.Main.SceneMetrics
 # tML patch faz `const int maxX = N` virar `static readonly int` (Main.cs.patch),
-# então o mod lê `ldsfld Main::maxNPCs`. O gerado saía `const` (o dump é const),
-# e const não tem armazenamento em runtime -> `ldsfld` quebra (MissingField).
+# ent茫o o mod l锚 `ldsfld Main::maxNPCs`. O gerado sa铆a `const` (o dump 茅 const),
+# e const n茫o tem armazenamento em runtime -> `ldsfld` quebra (MissingField).
 # Viram campos `static readonly int` em Main.TML.cs.
 !Terraria.Main.maxChests
 !Terraria.Main.maxItems
@@ -540,9 +541,8 @@ Terraria.GameContent.ItemTrader
 
 # Proxies que precisam ser `record class` (o mod usa `with`).
 # Ver RecordTypes em Program.cs.
-@record Terraria.Audio.SoundStyle
 
-# Gerenciados à mão: o tML os declara como `record struct` e o dump
+# Gerenciados 脿 m茫o: o tML os declara como `record struct` e o dump
 # deste jogo como classe; um proxy gerado daria "value type mismatch".
 - Terraria.Audio.SoundStyle
 
@@ -567,24 +567,24 @@ Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
 !Microsoft.Xna.Framework.Graphics.Texture2D.Width
 !Microsoft.Xna.Framework.Graphics.Texture2D.Height
 
-# `SoundID.Item1` etc. no dump são `LegacySoundStyle` (classe), mas no tML são
-# `SoundStyle` (struct): Program.cs mapeia SÓ esses campos para SoundStyle.
-# O tipo LegacySoundStyle em si continua gerado — o shim usa o proxy dele para
-# falar com o objeto nativo (SoundStyle.cs / SoundHooks.cs / hooks de áudio).
-# `UseSound` no tML é `SoundStyle?` — escrito à mão em Item.TML.cs.
+# `SoundID.Item1` etc. no dump s茫o `LegacySoundStyle` (classe), mas no tML s茫o
+# `SoundStyle` (struct): Program.cs mapeia S脫 esses campos para SoundStyle.
+# O tipo LegacySoundStyle em si continua gerado 鈥?o shim usa o proxy dele para
+# falar com o objeto nativo (SoundStyle.cs / SoundHooks.cs / hooks de 谩udio).
+# `UseSound` no tML 茅 `SoundStyle?` 鈥?escrito 脿 m茫o em Item.TML.cs.
 !Terraria.Item.UseSound
 
-# `NPC.HitSound`/`DeathSound` também são `SoundStyle?` no tML (1.4.4.9
-# NPC.cs.patch:460/468); o dump os declara como referência `LegacySoundStyle`.
-# Gerado como propriedade, o `SetDefaults` de todo NPC não JITava
+# `NPC.HitSound`/`DeathSound` tamb茅m s茫o `SoundStyle?` no tML (1.4.4.9
+# NPC.cs.patch:460/468); o dump os declara como refer锚ncia `LegacySoundStyle`.
+# Gerado como propriedade, o `SetDefaults` de todo NPC n茫o JITava
 # (`newobj Nullable<SoundStyle>` na pilha contra um setter que pedia
-# `LegacySoundStyle`). Escritos à mão em NPC.TML.cs.
+# `LegacySoundStyle`). Escritos 脿 m茫o em NPC.TML.cs.
 !Terraria.NPC.HitSound
 !Terraria.NPC.DeathSound
 
-# `SoundID`: o tML expõe TODOS os sons como `SoundStyle` e o mod pode tomar o
-# ENDEREÇO do campo (`ldsflda`, para `SoundEngine.PlaySound(in SoundStyle, …)`).
-# Const (`Roar = 15`) e propriedade não têm endereço — o JIT recusa os dois.
+# `SoundID`: o tML exp玫e TODOS os sons como `SoundStyle` e o mod pode tomar o
+# ENDERE脟O do campo (`ldsflda`, para `SoundEngine.PlaySound(in SoundStyle, 鈥?`).
+# Const (`Roar = 15`) e propriedade n茫o t锚m endere莽o 鈥?o JIT recusa os dois.
 # Estes viram campos `static readonly SoundStyle` em ID/SoundID.TML.cs.
 !Terraria.ID.SoundID.Roar
 !Terraria.ID.SoundID.Item14
@@ -594,8 +594,8 @@ Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
 !Terraria.ID.SoundID.MenuOpen
 
 # tML patch faz `ItemID.Count`/`NPCID.Count` virarem `static readonly short`
-# (ItemLoader.ItemCount / NPCLoader.NPCCount). O gerado saía `const short`, que
-# não tem armazenamento em runtime -> `ldsfld` quebra. Viram `static readonly
+# (ItemLoader.ItemCount / NPCLoader.NPCCount). O gerado sa铆a `const short`, que
+# n茫o tem armazenamento em runtime -> `ldsfld` quebra. Viram `static readonly
 # short` em ID/ItemID.TML.cs e ID/NPCID.TML.cs.
 !Terraria.ID.ItemID.Count
 !Terraria.ID.NPCID.Count
@@ -603,18 +603,18 @@ Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
 # tML 1.4.5 patches/Terraria/Localization/Language.cs.patch:56 declara
 # `LocalizedText[] FindAll(LanguageSearchFilter)`. O ProxyGen devolve
 # GameRefArray<T> (tipo IL diferente) -> o mod nao acha o metodo.
-# `!` faz o gerado virar FindAll_ e o手写 em Language.cs converte para T[].
+# `!` faz o gerado virar FindAll_ e o鎵嬪啓 em Language.cs converte para T[].
 !Terraria.Localization.Language.FindAll
 
-# `ItemID.Sets.BannerStrength` no contrato (1.4.4.9 ItemID.cs.patch) é
+# `ItemID.Sets.BannerStrength` no contrato (1.4.4.9 ItemID.cs.patch) 茅
 # `BannerEffect[]`; o dump devolve `GameArray<BannerEffect>` (struct). O
 # Fargowiltas faz `Sets.BannerStrength = Factory.CreateCustomSet<BannerEffect>(...)`
 # em Load(): o `stsfld` era reescrito para `__set_BannerStrength(GameArray<T>)`
-# e recebia um array gerenciado -> InvalidProgram no método INTEIRO.
-# Escrito à mão como campo real em ID/ItemID.Sets.TML.cs.
+# e recebia um array gerenciado -> InvalidProgram no m茅todo INTEIRO.
+# Escrito 脿 m茫o como campo real em ID/ItemID.Sets.TML.cs.
 !Terraria.ID.ItemID+Sets.BannerStrength
 
-# ---- 上游 0.5.4 合并：饰品槽 / 顶栏 / 子世界用到的 UI 类型（dump 里是全局命名空间，故用裸名） ----
+# ---- 涓婃父 0.5.4 鍚堝苟锛氶グ鍝佹Ы / 椤舵爮 / 瀛愪笘鐣岀敤鍒扮殑 UI 绫诲瀷锛坉ump 閲屾槸鍏ㄥ眬鍛藉悕绌洪棿锛屾晠鐢ㄨ８鍚嶏級 ----
 GUIEquipment
 GUIEquipment+EquipmentItemType
 GUIEquipmentLoadout

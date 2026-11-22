@@ -32,6 +32,7 @@
 #include "content/dusts/ModDusts.h"
 #include "content/common/ContentAssets.h"
 #include "content/common/ModContent.h"
+#include "content/common/ModTextures.h"
 #include "content/textures/FontPacks.h"
 #include "content/common/ModLanguage.h"
 #include "content/common/ModNet.h"
@@ -224,6 +225,19 @@ struct NativeApi {
     void* (*paramClass)(void* method, int32_t parameter);
     void (*setBuffTexts)(int32_t type, const char* displayName, const char* description);
     int32_t (*installTileTextureHook)(int32_t firstType, int32_t secondType, void* (*callback)(int32_t, int32_t, int32_t));
+    void** (*installGatedHook)(void* method, void* replacement, int32_t arg, int32_t pointerOffset, int32_t fieldOffset, int32_t fieldSize);
+    void (*setItemTooltip)(int32_t type, const char* tooltip);
+    void* (*planetTexture)();
+    int32_t (*hideUnderworld)(int32_t hide);
+    int32_t (*hideOcean)(int32_t hide);
+    int32_t (*hideMapFrame)(int32_t hide);
+    void (*onVisualItemCopy)(runtime::VisualItemCopyHook hook);
+    void** (*installGateHook)(void* method, void* replacement, const gate::Spec* spec, int32_t* id);
+    int32_t (*setGateAlways)(int32_t id, int32_t always);
+    int32_t (*tileRandomBatch)(runtime::TileRandomBatchCallback callback);
+    void (*prefetchModTexture)(const char* file, const char* assetName);
+    void* (*loadedModTexture)(const char* assetName);
+    void (*onFrame)(runtime::FrameHook callback);
 };
 
 // Exportados pela libil2cpp que a il2cpp::Api nao carrega.
@@ -666,6 +680,17 @@ void* nativeRequestModTexture(const char* file, const char* assetName) {
     }
     loaded[assetName] = a.gchandle_new(asset, false);
     return asset;
+    if (!file || !assetName || !nativeIsGameThread()) return nullptr;
+    return runtime::content::modTexture(file, assetName);
+}
+
+void nativePrefetchModTexture(const char* file, const char* assetName) {
+    if (file && assetName) runtime::content::prefetchModTexture(file, assetName);
+}
+
+void* nativeLoadedModTexture(const char* assetName) {
+    if (!assetName || !nativeIsGameThread()) return nullptr;
+    return runtime::content::loadedModTexture(assetName);
 }
 
 void* nativeRequestVanillaTexture(const char* name, int32_t* missingOnMobile) {
@@ -1191,6 +1216,33 @@ const NativeApi kNativeApi{
     [](int32_t firstType, int32_t secondType, void* (*callback)(int32_t, int32_t, int32_t)) -> int32_t {
         return runtime::installTileTextureHook(firstType, secondType, callback) ? 1 : 0;
     },
+    [](void* method, void* replacement, int32_t arg, int32_t pointerOffset, int32_t fieldOffset, int32_t fieldSize) -> void** {
+        return gate::installHook(static_cast<const MethodInfo*>(method), replacement, arg, pointerOffset, fieldOffset, fieldSize);
+    },
+    [](int32_t type, const char* tooltip) {
+        if (tooltip) runtime::setModItemTooltip(type, cultureTexts(tooltip));
+    },
+    []() -> void* {
+        static uint32_t handle = 0;
+        if (handle) return il2cpp::api().gchandle_get_target(handle);
+        int w = 0, h = 0;
+        Il2CppObject* asset = runtime::content::loadTextureAsset("", bl_planet_png, bl_planet_png_len, "bunny:planet", &w, &h);
+        if (asset) handle = il2cpp::api().gchandle_new(asset, false);
+        return asset;
+    },
+    nativeHideUnderworld,
+    nativeHideOcean,
+    nativeHideMapFrame,
+    [](runtime::VisualItemCopyHook hook) { runtime::setVisualItemCopyHook(hook ? profile::wrap(hook, "VisualItemCopy") : nullptr); },
+    [](void* method, void* replacement, const gate::Spec* spec, int32_t* id) -> void** {
+        if (!spec) return nullptr;
+        return gate::installHook(static_cast<const MethodInfo*>(method), replacement, *spec, id);
+    },
+    [](int32_t id, int32_t always) -> int32_t { return gate::setAlways(id, always != 0) ? 1 : 0; },
+    [](runtime::TileRandomBatchCallback callback) -> int32_t { return runtime::setTileRandomBatch(profile::wrap(callback, "TileRandomBatch")) ? 1 : 0; },
+    nativePrefetchModTexture,
+    nativeLoadedModTexture,
+    [](runtime::FrameHook callback) { runtime::addFrameHook(callback); },
 };
 
 } // namespace

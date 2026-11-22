@@ -152,11 +152,52 @@ public sealed unsafe class Asset<T> where T : class
 
     public AssetState State => PointerSlot.Read(ref asset) != IntPtr.Zero ? AssetState.Loaded : AssetState.NotLoaded;
 
+    /// <summary>
+    /// O asset de um mod pode chegar depois do Request (o Prefetch manda o
+    /// nativo carregar em segundo plano). Antes de dizer "nao carregado" o
+    /// State pergunta ao nativo se a textura ja' ficou pronta e adota o
+    /// ponteiro (upstream 0.5.8).
+    /// </summary>
+    bool Arrived()
+    {
+        if (file == null || Element != typeof(Texture2D) || Host.Native()->IsGameThread() == 0) return false;
+        byte* n = Host.Utf8(Name);
+        IntPtr loaded;
+        try { loaded = Host.Native()->LoadedModTexture(n); }
+        finally { Host.FreeUtf8(n); }
+        if (loaded == IntPtr.Zero) return false;
+        PointerSlot.Write(ref asset, loaded);
+        return true;
+    }
+
+    internal Asset<T> OnRequest(AssetRequestMode mode, bool created)
+    {
+        if (file == null || Element != typeof(Texture2D) || mode == AssetRequestMode.DoNotLoad || PointerSlot.Read(ref asset) != IntPtr.Zero) return this;
+        if (mode == AssetRequestMode.ImmediateLoad && Host.Native()->IsGameThread() != 0) Wait();
+        else if (created || mode == AssetRequestMode.ImmediateLoad) Prefetch();
+        return this;
+    }
+
+    void Prefetch()
+    {
+        byte* f = Host.Utf8(file!), n = Host.Utf8(Name);
+        try { Host.Native()->PrefetchModTexture(f, n); }
+        finally
+        {
+            Host.FreeUtf8(f);
+            Host.FreeUtf8(n);
+        }
+    }
+
     public bool IsLoaded => State == AssetState.Loaded;
 
     public bool IsDisposed => false;
 
     static int valueOffset = -1;
+
+    static IntPtr textureClass;
+
+    static int textureOffset = -1;
 
     public T Value
     {

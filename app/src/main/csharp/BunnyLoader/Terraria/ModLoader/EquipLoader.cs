@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Threading;
 using BunnyLoader;
 using BunnyLoader.Interop;
 using Terraria.DataStructures;
@@ -30,6 +31,8 @@ public static unsafe class EquipLoader
     static readonly Dictionary<EquipType, int> Vanilla = new();
 
     static readonly List<EquipType> InstalledTypes = new();
+
+    static EquipType[] installedTypes = Array.Empty<EquipType>();
 
     static bool installed;
 
@@ -76,10 +79,7 @@ public static unsafe class EquipLoader
         lock (Gate) return Vanilla.TryGetValue(type, out int count) ? count : 0;
     }
 
-    internal static EquipType[] Installed()
-    {
-        lock (Gate) return InstalledTypes.ToArray();
-    }
+    internal static EquipType[] Installed() => Volatile.Read(ref installedTypes);
 
     internal static void Autoload(ModItem item)
     {
@@ -167,6 +167,7 @@ public static unsafe class EquipLoader
         {
             Vanilla[type] = vanilla;
             InstalledTypes.Add(type);
+            Volatile.Write(ref installedTypes, InstalledTypes.ToArray());
         }
         if (type == EquipType.Wings) PrepareWingStats(vanilla, total);
 
@@ -181,6 +182,7 @@ public static unsafe class EquipLoader
             if (items.Length < total) SetItemTypes(type, items.Resized(total));
         }
 
+        foreach (EquipTexture texture in list) PrefetchTexture(texture);
         for (int i = 0; i < list.Count; i++)
         {
             EquipTexture texture = list[i];
@@ -219,6 +221,17 @@ public static unsafe class EquipLoader
     /// <c>InstallType</c> inteiro e levava junto TODAS as texturas daquele tipo
     /// (cabecas, corpos, asas), nao so a que falhou.
     /// </summary>
+    static void PrefetchTexture(EquipTexture texture)
+    {
+        byte* file = Host.Utf8(texture.Texture), name = Host.Utf8(texture.Name);
+        try { Host.Native()->PrefetchModTexture(file, name); }
+        finally
+        {
+            Host.FreeUtf8(file);
+            Host.FreeUtf8(name);
+        }
+    }
+
     static IntPtr RequestTexture(EquipTexture texture)
     {
         byte* file = Host.Utf8(texture.Texture), name = Host.Utf8(texture.Name);

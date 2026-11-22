@@ -34,8 +34,28 @@ public sealed unsafe class Hook
     public static Hook Install(IntPtr method, IntPtr replacement)
     {
         if (skip) return new Hook(DeadSlot());
-        IntPtr* slot = Host.Native()->InstallHook(method, replacement);
+
+        // Quando o pedido vem de dentro de um HookChain.Add o HookGates sabe de
+        // que tipo e' o gancho e instala pelo portao nativo (o gate so chama o
+        // shim quando existe mod inscrito). Fora disso instala direto.
+        Type? gated = Hooks.HookGates.Installing;
+        Hooks.HookGates.Installing = null;
+        IntPtr* slot = gated != null
+            ? Hooks.HookGates.Install(gated, method, replacement)
+            : Host.Native()->InstallHook(method, replacement);
+
         if (slot == null) throw new InvalidOperationException("hook install failed");
+        return new Hook(slot);
+    }
+
+    internal static Hook InstallGated(GameClass gameClass, string signature, IntPtr replacement, GateSpec spec, out int id)
+    {
+        MethodRef method = default;
+        GameInterop.Method(ref method, gameClass, signature, LayoutUnchecked(signature));
+        int gate;
+        IntPtr* slot = Host.Native()->InstallGateHook(method.Info, replacement, &spec, &gate);
+        if (slot == null) throw new InvalidOperationException("hook install failed");
+        id = gate;
         return new Hook(slot);
     }
 

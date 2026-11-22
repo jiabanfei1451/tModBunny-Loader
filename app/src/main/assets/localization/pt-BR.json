@@ -418,6 +418,8 @@
   "DiscordDescription": "Novidades, ajuda com mods e a comunidade do Bunny Loader.",
   "Join": "Entrar",
   "Community": "Comunidade",
+  "DiscordPresence": "Status no Discord",
+  "DiscordPresenceDescription": "Mostra o Bunny Loader e os mods ligados no seu perfil do Discord enquanto você joga. Precisa do app do Discord neste aparelho.",
   "MostDownloadedDescription": "Os mais baixados do catálogo.",
   "DownloadCount": "%1$s downloads",
   "Downloads": "Downloads",

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -124,18 +125,27 @@ public static class ModContent
 
     public static bool RequestIfExists<T>(string name, out Asset<T> asset, AssetRequestMode mode = AssetRequestMode.AsyncLoad) where T : class
     {
-        if (!HasAsset(name))
+        if (name != null && Requested<T>.ByName.TryGetValue(name, out Asset<T>? known))
+        {
+            asset = known;
+            return true;
+        }
+        if (!HasAsset(name!))
         {
             asset = null!;
             return false;
         }
-        asset = Request<T>(name, mode);
+        asset = Request<T>(name!, mode);
         return true;
     }
 
+    static readonly ConcurrentDictionary<string, bool> AssetExists = new(StringComparer.Ordinal);
+
     public static bool HasAsset(string assetName)
     {
+        if (AssetExists.TryGetValue(assetName, out bool known)) return known;
         (string modName, string path) = SplitName(assetName);
+        bool exists;
         if (modName != "Terraria")
             return Host.FindMod(modName) is Mod mod &&
                 (mod.Assets.HasAsset<Microsoft.Xna.Framework.Graphics.Texture2D>(path) ||
@@ -225,6 +235,8 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
+        yield return 0;
+        TouchControlSizes.Install();
         yield return 0;
         Terraria.ID.SetFactory.GrowToContent();
         yield return 0;
@@ -430,7 +442,11 @@ public static class ModContent
         try { PlantLoader.FinishSetup(); }
         catch (Exception e) { Log.Error($"trees: setup failed: {e}"); }
         yield return 0;
-        try { Core.TownNPCFlagHooks.WantActsLike(); }
+        try
+        {
+            Core.TownNPCFlagHooks.WantActsLike();
+            Core.TownNPCFlagHooks.WantNoHappiness();
+        }
         catch (Exception e) { Log.Error($"town NPC flags: setup failed: {e}"); }
         CustomContentSetup.ContentReady();
         foreach (Mod mod in mods)
@@ -527,6 +543,10 @@ public static class ModContent
                            mod.GetContent<GlobalItem>().Any(g => ItemHooks.Overrides(g.GetType(), typeof(GlobalItem), nameof(GlobalItem.OnCreated)));
             if (created) RecipeLoader.WantCraft();
         }
+        try { BunnyLoader.Hooks.HookGates.ContentReady(); }
+        catch (Exception e) { Log.Error($"hook gates: setup failed: {e}"); }
+        try { PreJit.Start(Host.Mods); }
+        catch (Exception e) { Log.Error($"pre-JIT: setup failed: {e}"); }
         Log.Info($"startup: C# compiled {JitInfo.GetCompiledMethodCount(false)} methods, {JitInfo.GetCompiledILBytes(false) / 1024} KB of IL, {JitInfo.GetCompilationTime(false).TotalMilliseconds:F0} ms of JIT");
     }
 

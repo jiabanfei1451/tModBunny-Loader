@@ -24,15 +24,47 @@ public abstract class ModProjectile : ModType<Projectile, ModProjectile>, ILocal
 
     internal bool UsesExplosiveMarker;
 
+    internal Core.ProjectileMethod Hooks;
+
     public int AIType { get; set; }
 
     public int CooldownSlot { get; set; } = -1;
 
-    public int DrawOffsetX { get; set; }
+    // Campos por tras das propriedades de offset: o setter delas avisa o
+    // ProjectileHooks que o desenho precisa passar pelo shim (upstream 0.5.8).
+    int drawOffsetX, drawOriginOffsetY;
+    float drawOriginOffsetX;
 
-    public int DrawOriginOffsetY { get; set; }
+    public int DrawOffsetX
+    {        get => drawOffsetX;
+        set
+        {
+            drawOffsetX = value;
+            if (value != 0) Core.ProjectileHooks.WantDrawOffset(this);
+        }
+    }
 
-    public float DrawOriginOffsetX { get; set; }
+    public int DrawOriginOffsetY
+    {
+        get => drawOriginOffsetY;
+        set
+        {
+            drawOriginOffsetY = value;
+            if (value != 0) Core.ProjectileHooks.WantDrawOffset(this);
+        }
+    }
+
+    public float DrawOriginOffsetX
+    {
+        get => drawOriginOffsetX;
+        set
+        {
+            drawOriginOffsetX = value;
+            if (value != 0) Core.ProjectileHooks.WantDrawOffset(this);
+        }
+    }
+
+    internal bool HasDrawOffset => drawOffsetX != 0 || drawOriginOffsetY != 0 || drawOriginOffsetX != 0;
 
     public virtual string Texture => (GetType().Namespace + "." + Name).Replace('.', '/');
 

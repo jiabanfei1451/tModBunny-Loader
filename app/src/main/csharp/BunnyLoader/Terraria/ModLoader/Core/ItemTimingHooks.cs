@@ -10,6 +10,17 @@ internal static class ItemTimingHooks
 
     static int timing;
 
+    sealed class AltAnswer
+    {
+        public uint Tick;
+        public IntPtr Player, Held;
+        public int Slot, Type;
+        public bool Stacked;
+        public Item Result;
+    }
+
+    static readonly AltAnswer LastAlt = new() { Slot = -1 };
+
     public static void Install(Func<string, bool> has, bool global)
     {
         bool speed = has(nameof(ModItem.UseSpeedMultiplier));
@@ -189,13 +200,78 @@ internal static class ItemTimingHooks
         return false;
     }
 
+    internal static bool HasAlternativeUse(Item item, Player player) => ItemCombatHooks.Wanted(globalAlt, item) && AltFunctionUse(item, player);
+
+    internal static Item AlternativeItem(Player player)
+    {
+        if (player.IsNull) return default;
+        try
+        {
+            int slot = ItemHooks.Selected(player);
+            Item held = slot >= 0 && slot < 58 ? player.inventory[slot] : default;
+            int type = held.IsNull ? 0 : held.type;
+            bool stacked = !held.IsNull && held.stack > 0;
+            uint tick = Main._gameUpdateCount;
+            AltAnswer last = LastAlt;
+            lock (last)
+            {
+                if (last.Tick == tick && last.Player == player.Pointer && last.Slot == slot && last.Held == held.Pointer && last.Type == type && last.Stacked == stacked)
+                    return last.Result;
+            }
+            Item result = stacked && HasAlternativeUse(held, player) ? held : default;
+            lock (last)
+            {
+                last.Tick = tick;
+                last.Player = player.Pointer;
+                last.Slot = slot;
+                last.Held = held.Pointer;
+                last.Type = type;
+                last.Stacked = stacked;
+                last.Result = result;
+            }
+            return result;
+        }
+        catch (Exception e)
+        {
+            ItemHooks.Report("AltFunctionUse", e);
+            return default;
+        }
+    }
+
+    static bool HoldsAlternativeItem(Player player) => !AlternativeItem(player).IsNull;
+
+    static bool CanAlternativeFire(On_Player.orig_CanAlternativeFire orig, Player self, bool checkIfHasMapping) =>
+        orig(self, checkIfHasMapping) || HoldsAlternativeItem(self);
+
+    static bool SwapAlternativeFireModeActive(On_VirtualControllerInputState.orig_get_SwapAlternativeFiteModeActive orig, VirtualControllerInputState self) =>
+        orig(self) || !self.hasToggleFireInteract && self.hasTouchRightStick && HoldsAlternativeItem(Main.LocalPlayer);
+
+    static bool ToggleAlternativeFireMode(On_VirtualControllerInputState.orig_get_ToggleAlternativeFireMode orig, VirtualControllerInputState self)
+    {
+        if (orig(self)) return true;
+        if (self.hasToggleFireInteract || !self.hasTouchRightStick || !HoldsAlternativeItem(Main.LocalPlayer)) return false;
+        return self.TouchToggleFireInteract switch
+        {
+            VirtualControllerInputState.CursorInputMode.Global => self.globalToggleAlternativeFireModeInternal,
+            VirtualControllerInputState.CursorInputMode.AlwaysOn => true,
+            VirtualControllerInputState.CursorInputMode.Disabled => false,
+            _ => self.toggleAlternativeFireModeInternal,
+        };
+    }
+
+    static bool AlternativeFireMode()
+    {
+        GUIInstance gui = GUIInstance.Active;
+        return !gui.IsNull && !gui.VirtualControllerInputState.IsNull && gui.VirtualControllerInputState.ToggleAlternativeFireMode;
+    }
+
     static void ManageRightClickFeatures(On_Player.orig_ItemCheck_ManageRightClickFeatures orig, Player self)
     {
         Item held = default;
         bool check = false;
         try
         {
-            int slot = self.selectedItem;
+            int slot = ItemHooks.Selected(self);
             held = slot >= 0 && slot < 58 ? self.inventory[slot] : default;
             if (!held.IsNull && held.stack > 0 && ItemCombatHooks.Wanted(globalAlt, held))
             {

@@ -26,6 +26,9 @@ val betaBuild = (project.findProperty("bl.beta") as String?)?.toBoolean() ?: fal
 // ja esta no aparelho. Para o pacote de distribuicao, -Pbl.side=false.
 val sideBuild = (project.findProperty("bl.side") as String?)?.toBoolean() ?: true
 
+val discordSdk = file("libs/discord_partner_sdk.aar")
+val discordAppId = (project.findProperty("bl.discordAppId") as String?)?.trim()?.toLongOrNull() ?: 0L
+
 val hasGameFont = file("src/main/res/font/bunny.ttf").isFile
 val fontDir = file(if (hasGameFont) "src/main/res/font" else "src/fontFallback/res/font")
 
@@ -89,6 +92,11 @@ android {
         // permite subir entre iteracoes locais sem editar este arquivo.
         versionCode = (project.findProperty("bl.versionCode") as String?)?.toInt() ?: commitCount
         versionName = "0.5.2-beta"
+        applicationId = if (playBuild) "com.bunnyloader.potatolabs" else "com.bunnyloader"
+        minSdk = 24
+        targetSdk = if (playBuild) 36 else 34
+        versionCode = commitCount
+        versionName = "0.5.8-beta"
 
         // -Pbl.bench=true: o app de medicao (com.bunnyloader.bench), ao lado
         // do Bunny Loader de verdade. Traz os testes de BENCH_TESTS ligados e
@@ -129,6 +137,7 @@ android {
         // 上游在 play 变体下换成另一个包名。缺这个占位符清单合并直接失败。
         manifestPlaceholders["editorPermission"] = "com.bunnyloader.permission.EDITOR"
         buildConfigField("boolean", "BENCH", benchBuild.toString())
+        buildConfigField("long", "DISCORD_APP_ID", "${if (discordSdk.isFile) discordAppId else 0L}L")
 
         // Só arm64. O runtime do jogo é integrado e existe apenas para
         // arm64-v8a; permitir armeabi-v7a instalaria o Bunny Loader em
@@ -701,6 +710,8 @@ dependencies {
     // é carregada por reflection), mas o jogo não sobe, como sem os .so do jogo.
     val unityClasses = file("libs/unity-classes.jar")
     if (unityClasses.isFile) implementation(files(unityClasses))
+
+    if (discordSdk.isFile) implementation(files(discordSdk))
 
     if (csharpEnabled) implementation(files(monoCryptoJar).builtBy(syncMonoCryptoJar))
 

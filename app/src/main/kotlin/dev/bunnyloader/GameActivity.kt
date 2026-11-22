@@ -15,6 +15,7 @@ import android.widget.Toast
 import bunny.MenuLocalization
 import dev.bunnyloader.game.BootLog
 import dev.bunnyloader.game.BundledRuntime
+import dev.bunnyloader.game.DiscordPresence
 import dev.bunnyloader.game.DotnetRuntime
 import dev.bunnyloader.game.Eligibility
 import dev.bunnyloader.game.GameTexts
@@ -302,6 +303,7 @@ class GameActivity : Activity() {
         // nesta abertura só.
         val session = ServerSync.takeSession(this)
         if (session != null) Log.i(TAG, "sincronizar mods: abrindo com os ${session.mods.size} pacotes do servidor")
+        val enabledMods = session?.mods ?: repo.enabledSpecs()
         val ok = runCatching {
             NativeBridge.init(
                 NativeConfig(
@@ -312,6 +314,7 @@ class GameActivity : Activity() {
                     // armazenamento como diretório de trabalho.
                     tmlDir = TmlMods.dir(this).absolutePath,
                     enabledMods = (session?.mods ?: repo.enabledSpecs()).toTypedArray(),
+                    enabledMods = enabledMods.toTypedArray(),
                     logPath = logFile.absolutePath,
                     // Canal de dev: adb push <arquivo> para a NOSSA pasta
                     // externa. A do Terraria nao serve — desde o Android 11
@@ -347,6 +350,9 @@ class GameActivity : Activity() {
         if (!ok) {
             Toast.makeText(this, "Nucleo nao iniciado - rodando sem mods", Toast.LENGTH_SHORT).show()
         }
+        runCatching {
+            DiscordPresence.start(this, enabledMods.filterNot { it.substringAfter('=').startsWith('@') }.map { it.substringBefore('=') })
+        }.onFailure { logFailure("DiscordPresence.start", it) }
     }
 
 
@@ -440,16 +446,22 @@ class GameActivity : Activity() {
         ModAudio.pauseAll()
     }
     override fun onStop() { super.onStop(); host?.stop() }
+    override fun onStart() { super.onStart(); host?.start(); DiscordPresence.show() }
+    override fun onResume() { super.onResume(); host?.resume(); ModAudio.resumeAll() }
+    override fun onPause() { super.onPause(); host?.pause(); ModAudio.pauseAll() }
+    override fun onStop() { super.onStop(); host?.stop(); DiscordPresence.hide() }
 
     override fun onDestroy() {
         hideLoadingPanel()
         if (currentRef?.get() === this) currentRef = null
         val hadHost = host != null
-        host?.destroy()
+        DiscordPresence.stop {
+            host?.destroy()
+            // So derruba o processo se a Unity chegou a subir; num erro de boot,
+            // matar na hora atrapalha a leitura do log.
+            if (hadHost) Process.killProcess(Process.myPid())
+        }
         super.onDestroy()
-        // So derruba o processo se a Unity chegou a subir; num erro de boot,
-        // matar na hora atrapalha a leitura do log.
-        if (hadHost) Process.killProcess(Process.myPid())
     }
 
     override fun onNewIntent(intent: Intent) {

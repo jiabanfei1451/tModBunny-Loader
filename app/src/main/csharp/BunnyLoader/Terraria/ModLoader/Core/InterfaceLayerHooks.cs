@@ -19,6 +19,7 @@ internal static class InterfaceLayerHooks
     }
 
     static readonly List<GameInterfaceLayer> vanilla = new();
+    static readonly List<GameInterfaceLayer> layers = new();
     static readonly List<IntPtr> applied = new();
     static readonly Dictionary<string, Native> natives = new();
     static readonly Dictionary<IntPtr, GameInterfaceLayer> byNative = new();
@@ -79,7 +80,7 @@ internal static class InterfaceLayerHooks
         if (list.Count == 0) return;
         if (capturedList != listObject.Pointer || list.Count != applied.Count) Capture(list, listObject.Pointer);
 
-        var layers = new List<GameInterfaceLayer>(vanilla.Count + 8);
+        layers.Clear();
         foreach (GameInterfaceLayer layer in vanilla)
         {
             layer.Active = true;

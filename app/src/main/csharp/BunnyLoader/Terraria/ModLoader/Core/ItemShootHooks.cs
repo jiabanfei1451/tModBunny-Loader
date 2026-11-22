@@ -75,6 +75,7 @@ internal static class ItemShootHooks
             {
                 On_Player.PickAmmo += PickAmmo;
                 On_Player.PickAmmo_PickAmmoItem += PickAmmo_PickAmmoItem;
+                ItemHooks.WantTurnToAir();
                 On_Item.TurnToAir += TurnToAir;
             });
         }
@@ -426,6 +427,7 @@ internal static class ItemShootHooks
         AmmoScope? outer = ammo;
         var scope = new AmmoScope { Player = self, Weapon = sItem, DontConsume = dontConsume };
         ammo = scope;
+        ItemHooks.EnterAirScope();
         try
         {
             orig(self, sItem, ref projToShoot, ref speed, ref canShoot, ref Damage, ref KnockBack, out usedAmmoItemId, dontConsume);
@@ -433,6 +435,7 @@ internal static class ItemShootHooks
         }
         finally
         {
+            ItemHooks.ExitAirScope();
             if (!scope.Item.IsNull && scope.Blocked) scope.Item.consumable = scope.Consumable;
             ammo = null;
             try
