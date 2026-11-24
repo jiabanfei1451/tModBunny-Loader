@@ -340,9 +340,16 @@ val syncFonte by tasks.registering(Sync::class) {
  * LICENSE.md e THIRD_PARTY_NOTICES.md -> assets/legal/, para a tela de licenças
  * (Config > Sobre). As licenças MIT e BSD das bibliotecas pedem que o aviso vá
  * junto com o binário; a raiz continua sendo o único lugar de editar.
+ *
+ * O texto MIT do tModLoader vem da cópia que já existe em `tmodloader/LICENSE`
+ * (árvore do contrato 1.4.4.9, não se edita nada lá) e entra com nome próprio
+ * porque a tela mostra um botão separado para ele.
  */
 val syncLegal by tasks.registering(Sync::class) {
     from(rootProject.file("LICENSE.md"), rootProject.file("THIRD_PARTY_NOTICES.md"))
+    from(rootProject.file("tmodloader/LICENSE")) {
+        rename { "TMODLOADER_LICENSE.md" }
+    }
     into(layout.buildDirectory.dir("generated/blAssets/legal"))
 }
 // --- Runtime .NET dos mods C# ---

@@ -129,8 +129,13 @@ internal static class VanillaMusic
         bool temple = inWorld && Main.tile[tx, ty].wall == 87;
         bool mushroom = (Main.bgStyle == 9 && cy < surfaceY) || Main.undergroundBackground == 2;
         if (temple || metrics.ZoneDungeon || mushroom || metrics.ZoneCorrupt || metrics.ZoneCrimson) return SceneEffectPriority.BiomeHigh;
-        if (metrics.ZoneMeteor || metrics.ZoneGraveyard || metrics.ZoneJungle || metrics.ZoneSnow ||
-            (!otherworld && (metrics.ZoneUndergroundDesert || metrics.ZoneDesert))) return SceneEffectPriority.BiomeMedium;
+        if (metrics.ZoneMeteor || metrics.ZoneGraveyard || metrics.ZoneJungle || metrics.ZoneSnow) return SceneEffectPriority.BiomeMedium;
+        // v26: o deserto nao e' BiomeMedium. No contrato, o ramo do deserto
+        // (e do subsolo profundo em geral) fica DEPOIS do ponto onde o tML
+        // insere "modPriority >= BiomeLow"; logo a musica vanilla de deserto
+        // ocupa uma faixa abaixo de BiomeLow. Declarar BiomeMedium aqui fazia
+        // o cenario Desert do mod (Priority = BiomeLow) perder a comparacao
+        // em MusicHooks.Choose() e a faixa vanilla continuar tocando.
         return SceneEffectPriority.BiomeLow;
     }
 }

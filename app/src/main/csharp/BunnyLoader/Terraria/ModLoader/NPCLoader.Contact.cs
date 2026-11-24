@@ -64,6 +64,12 @@ public static partial class NPCLoader
 
     public static bool CanHitNPC(NPC npc, NPC target)
     {
+        // v154: dois NPCs do time do jogador nao se machucam. O vanilla ja'
+        // filtra por "!friendly" no laco de alvo, mas o friendly de um NPC de
+        // cidade pode chegar falso (mod que so' ligou townNPC, ou gancho que
+        // desligou no meio da partida) e ai' os cidadaos se batem. Invasao e
+        // chefe continuam batendo normal: o teste exige os DOIS lados.
+        if (NPCFriendlyGate.Blocks(npc, target, "CanHitNPC")) return false;
         foreach (GlobalNPC? global in Slots(npc))
         {
             if (!Has(global, NPCMethod.CanHitNPC)) continue;

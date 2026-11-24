@@ -442,6 +442,7 @@ public static class ModContent
         {
             Core.TownNPCFlagHooks.WantActsLike();
             Core.TownNPCFlagHooks.WantNoHappiness();
+            Core.NPCFriendlyGate.Want();
         }
         catch (Exception e) { Log.Error($"town NPC flags: setup failed: {e}"); }
         CustomContentSetup.ContentReady();

@@ -33,6 +33,9 @@ public unsafe class DynamicSpriteFont : IGameObject
 
     static int reported;
 
+    /// <summary>Fonte nativa equivalente (ver o catch de <see cref="MeasureString"/>).</summary>
+    Microsoft.Xna.Framework.Graphics.SpriteFont? spriteFont;
+
     /// <summary>
     /// <c>Vector2 MeasureString(string text)</c> — instancia, retorno
     /// <c>Vector2</c> em dois registradores (H2F).
@@ -40,6 +43,7 @@ public unsafe class DynamicSpriteFont : IGameObject
     public Vector2 MeasureString(string? text)
     {
         if (Pointer == 0) return Vector2.Zero;
+        if (spriteFont is not null) return spriteFont.MeasureString(text);
         try
         {
             ref readonly MethodRef m = ref GameInterop.Method(ref __measureString, Class,
@@ -55,11 +59,23 @@ public unsafe class DynamicSpriteFont : IGameObject
         }
         catch (Exception e)
         {
-            // Uma fonte que nao mede nao pode derrubar o desenho do mod: o
-            // tamanho zero e degradacao aceitavel (texto sem centralizacao).
-            if (Interlocked.Exchange(ref reported, 1) == 0)
-                Log.Error($"DynamicSpriteFont.MeasureString: {e.Message}");
-            return Vector2.Zero;
+            // O Android 1.4.5.8.6 nao tem o namespace ReLogic.Graphics: a
+            // DynamicSpriteFont do PC nao existe aqui e a fonte nativa e a
+            // Microsoft.Xna.Framework.Graphics.SpriteFont. Como o ponteiro e o
+            // MESMO objeto de fonte, medir pelo SpriteFont funciona e devolve o
+            // tamanho de verdade (antes o texto saia sem centralizacao porque
+            // MeasureString devolvia zero). So zeramos se ate isso falhar.
+            try
+            {
+                spriteFont = new Microsoft.Xna.Framework.Graphics.SpriteFont(Pointer);
+                return spriteFont.MeasureString(text);
+            }
+            catch (Exception inner)
+            {
+                if (Interlocked.Exchange(ref reported, 1) == 0)
+                    Log.Error($"DynamicSpriteFont.MeasureString: {e.Message} / {inner.Message}");
+                return Vector2.Zero;
+            }
         }
     }
 }

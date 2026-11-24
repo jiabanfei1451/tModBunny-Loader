@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BunnyLoader;
 using Terraria.Graphics.Capture;
 using Terraria.ModLoader.Core;
 
@@ -45,6 +46,8 @@ public static class SceneEffectLoader
         (a, b) => b.Weight != a.Weight ? b.Weight.CompareTo(a.Weight) : a.Order.CompareTo(b.Order);
 
     public static int Count => Effects.Count;
+
+    static string lastMusicOwner = "";
 
     internal static IReadOnlyList<ModSceneEffect> All => Effects;
 
@@ -110,9 +113,17 @@ public static class SceneEffectLoader
         {
             result.anyActive = true;
             Ranked.Sort(ByWeight);
-            foreach (var (_, _, effect) in Ranked)
+            // v26: o contrato do tML preenche no maximo 8 campos e, em cada um,
+            // testa "priority == 0" (nao "value == -1"). A diferenca importa: um
+            // cenario de ambiencia tem Music != -1 mas Priority = None, entao com
+            // o teste antigo ele travava o slot de musica para sempre e o cenario
+            // de verdade (Town/Desert) nunca entrava, ou entrava a faixa de
+            // ambiencia no lugar da musica.
+            int sceneEffectFields = 0;
+            for (int i = 0; sceneEffectFields < 8 && i < Ranked.Count; i++)
             {
-                try { Fill(result, effect); }
+                ModSceneEffect effect = Ranked[i].Effect;
+                try { sceneEffectFields += Fill(result, effect); }
                 catch (Exception e) { ItemHooks.Report($"{effect.FullName} (scene)", e); }
             }
         }
@@ -135,34 +146,68 @@ public static class SceneEffectLoader
 
     static bool Same(SceneEffectInstance.PrioritizedPair a, SceneEffectInstance.PrioritizedPair b) => a.value == b.value && a.priority == b.priority;
 
-    static void Fill(SceneEffectInstance result, ModSceneEffect effect)
+    static int Fill(SceneEffectInstance result, ModSceneEffect effect)
     {
         SceneEffectPriority priority = effect.Priority;
-        if (result.waterStyle.value == -1 && effect.WaterStyle is { } water)
+        int fields = 0;
+        if (result.waterStyle.priority == 0 && effect.WaterStyle is { } water)
+        {
             result.waterStyle = new SceneEffectInstance.PrioritizedPair { value = water.Slot, priority = priority };
-        if (result.undergroundBackground.value == -1 && effect.UndergroundBackgroundStyle is { } underground)
+            fields++;
+        }
+        if (result.undergroundBackground.priority == 0 && effect.UndergroundBackgroundStyle is { } underground)
+        {
             result.undergroundBackground = new SceneEffectInstance.PrioritizedPair { value = underground.Slot, priority = priority };
-        if (result.surfaceBackground.value == -1 && effect.SurfaceBackgroundStyle is { } surface)
+            fields++;
+        }
+        if (result.surfaceBackground.priority == 0 && effect.SurfaceBackgroundStyle is { } surface)
+        {
             result.surfaceBackground = new SceneEffectInstance.PrioritizedPair { value = surface.Slot, priority = priority };
-        if (result.music.value == -1)
+            fields++;
+        }
+        if (result.music.priority == 0)
         {
             int music = effect.Music;
-            if (music != -1) result.music = new SceneEffectInstance.PrioritizedPair { value = music, priority = priority };
+            if (music != -1)
+            {
+                result.music = new SceneEffectInstance.PrioritizedPair { value = music, priority = priority };
+                fields++;
+                // v27 diagnostico: quem ganhou o slot de musica. So' escreve quando
+                // o dono muda (dedup por tipo+faixa) para nao inundar o log.
+                string owner = effect.GetType().FullName ?? effect.GetType().Name;
+                string key = owner + "|" + music;
+                if (lastMusicOwner != key)
+                {
+                    lastMusicOwner = key;
+                    Log.Info($"[scene] musica slot <- {music} por {owner} prioridade={priority} peso={effect.GetWeight(Main.LocalPlayer):F2}");
+                }
+            }
         }
         if (effect is ModBiome biome)
         {
-            if (result.biomeTorchItemType.value == -1 && biome.BiomeTorchItemType != -1)
+            if (result.biomeTorchItemType.priority == 0 && biome.BiomeTorchItemType != -1)
+            {
                 result.biomeTorchItemType = new SceneEffectInstance.PrioritizedPair { value = biome.BiomeTorchItemType, priority = priority };
-            if (result.biomeCampfireItemType.value == -1 && biome.BiomeCampfireItemType != -1)
+                fields++;
+            }
+            if (result.biomeCampfireItemType.priority == 0 && biome.BiomeCampfireItemType != -1)
+            {
                 result.biomeCampfireItemType = new SceneEffectInstance.PrioritizedPair { value = biome.BiomeCampfireItemType, priority = priority };
+                fields++;
+            }
         }
         if (result.tileColorStyle == CaptureBiome.TileColorStyle.Normal && effect.TileColorStyle != CaptureBiome.TileColorStyle.Normal)
+        {
             result.tileColorStyle = effect.TileColorStyle;
+            fields++;
+        }
         if (result.mapBackground == null && effect.MapBackground is { Length: > 0 } map)
         {
             result.mapBackground = map;
             result.mapBackgroundSceneEffect = effect;
+            fields++;
         }
+        return fields;
     }
 
     public static void UpdateMusic(ref int music, ref SceneEffectPriority priority)

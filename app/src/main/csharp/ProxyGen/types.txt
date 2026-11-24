@@ -676,3 +676,8 @@ Microsoft.Xna.Framework.Graphics.RenderTargetBinding
 # EffectTechnique.Passes: escrito a mao em EffectTechnique.TML.cs (Pointer==0 tem de
 # devolver a colecao gerenciada; o gerado lancava NullReferenceException).
 !Microsoft.Xna.Framework.Graphics.EffectTechnique.Passes
+
+# TownRoomManager.HasRoom(int, out Point) e' usado pelo Fargowiltas.FargoGlobalNPC.PreAI;
+# sem o proxy completo o IlPatcher nao acha o metodo e esvazia o PreAI
+# (era o que fazia o OverloadSummon gerar so 1 boss).
+Terraria.GameContent.TownRoomManager

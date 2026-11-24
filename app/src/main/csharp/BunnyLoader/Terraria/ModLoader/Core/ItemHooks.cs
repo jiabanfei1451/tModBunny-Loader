@@ -350,6 +350,7 @@ internal static unsafe class ItemHooks
         // Shoot (caminho de entrada diferente) ou se nem chega a usar.
         Diag63.Once("use:" + item.type, 120, () => $"[v63] UseItem rodou {Diag63.Name(item)} pid={player.whoAmI} ctrlUse={player.controlUseItem} ctrlTile={player.controlUseTile}");
         bool? result = null;
+        int stackBefore = item.stack;
         UseDepth++;
         foreach (GlobalItem? g in ItemLoader.Globals.Slots(item) ?? Array.Empty<GlobalItem?>())
         {
@@ -367,11 +368,55 @@ internal static unsafe class ItemHooks
             {
                 bool? used = m.UseItem(player);
                 if (used.HasValue && result != false) result = used.Value;
+                if (used != false) SwarmSpread(m, item, player, stackBefore);
             }
             catch (Exception e) { Report($"{m.FullName}.UseItem", e); }
         }
         UseDepth--;
         return result;
+    }
+
+    /// <summary>
+    /// Regra do Fargowiltas para os "Overload" (SwarmSummonBase): com 10 ou
+    /// mais no slot sai UM boss sobrecarregado; com menos de 10 saem tantos
+    /// bosses normais quanto o slot tinha. O mod so' faz a primeira parte —
+    /// `SwarmSummonBase.UseItem` gera um NPC e desconta `Min(stack,10)-1` — e
+    /// `FargoGlobalNPC.SpawnBoss(NPC,int)` (que geraria o resto) nao tem
+    /// chamador nesta build. Entao completamos aqui, so' para itens daquele
+    /// namespace, sem tocar no caminho do boss sobrecarregado.
+    /// </summary>
+    static void SwarmSpread(ModItem m, Item item, Player player, int stackBefore)
+    {
+        try
+        {
+            Type type = m.GetType();
+            string? name = type.FullName;
+            if (name is null || !name.StartsWith("Fargowiltas.Items.Summons.SwarmSummons.", StringComparison.Ordinal)) return;
+
+            int count = Math.Min(stackBefore, 10);
+            if (count < 2 || count > 9) return;
+
+            FieldInfo? npcField = type.GetField("npcType", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (npcField is null || npcField.FieldType != typeof(int)) return;
+            if (npcField.GetValue(m) is not int npcType || npcType <= 0) return;
+
+            NPC source = new(NPC.GetBossSpawnSource(player.whoAmI).Pointer);
+            for (int i = 1; i < count; i++)
+            {
+                float x = player.Center.X + Main.rand.Next(-700, 700);
+                float y = player.Center.Y - Main.rand.Next(500, 900);
+                int index = NPC.NewNPC(NPC.GetBossSpawnSource(player.whoAmI), (int)x, (int)y, npcType, 0, 0f, 0f, 0f, 0f, 255);
+                if (index >= 0) Log.Info($"[swarm] extra {i + 1}/{count} tipo {npcType} nasceu como NPC #{index}");
+            }
+
+            // O mod desconta `count - 1`; a regra e' consumir `count`.
+            int left = stackBefore - count;
+            if (left < 0) left = 0;
+            if (left >= item.stack) return;
+            item.stack = left;
+            if (left == 0) item.TurnToAir();
+        }
+        catch (Exception e) { Report("SwarmSpread", e); }
     }
 
     static void OwnerOnlyCode(On_Player.orig_ItemCheck_OwnerOnlyCode orig, Player self, ref Player.ItemCheckContext context, Item sItem, int weaponDamage, Rectangle heldItemFrame)

@@ -275,10 +275,17 @@ fun PixelDialog(title: String, onDismiss: () -> Unit, content: @Composable () ->
 
 // =============================== Licenças ===============================
 
-/** Os textos de assets/legal/: cópias de LICENSE.md e THIRD_PARTY_NOTICES.md (syncLegal no build). */
+/**
+ * Os textos de assets/legal/: cópias de LICENSE.md, THIRD_PARTY_NOTICES.md e da
+ * licença MIT do tModLoader (syncLegal no build). O tModLoader ganha botão
+ * próprio porque a API de mods é um port declarado do dele desde a primeira
+ * versão, e quem procura o aviso espera achá-lo pelo nome do projeto, não
+ * escondido dentro dos avisos de terceiros.
+ */
 private enum class LegalText(val title: String, val file: String) {
     LICENSE("License", "LICENSE.md"),
     THIRD_PARTY("ThirdParties", "THIRD_PARTY_NOTICES.md"),
+    TMODLOADER("TmodLoaderLicense", "TMODLOADER_LICENSE.md"),
 }
 
 /**
@@ -298,11 +305,17 @@ fun LicensesCard(modifier: Modifier = Modifier) {
                 tr("LicenseSummary"),
                 size = Ts.Small, color = Bl.TextFaint,
             )
+            // Duas por linha: "tModLoader" é uma palavra longa e, em três
+            // colunas iguais num aparelho estreito, ela sai cortada.
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (text in LegalText.entries) {
+                for (text in listOf(LegalText.LICENSE, LegalText.THIRD_PARTY)) {
                     PixelButton(tr(text.title), { open = text }, Modifier.weight(1f),
                         fontSize = Ts.Small)
                 }
+            }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PixelButton(tr(LegalText.TMODLOADER.title), { open = LegalText.TMODLOADER },
+                    Modifier.weight(1f), fontSize = Ts.Small)
             }
         }
     }

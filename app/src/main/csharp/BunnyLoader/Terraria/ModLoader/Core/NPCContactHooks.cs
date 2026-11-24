@@ -27,6 +27,10 @@ internal static class NPCContactHooks
     static void BeHurtByOtherNPC(On_NPC.orig_BeHurtByOtherNPC orig, NPC self, int npcIndex, NPC thatNPC)
     {
         if (!NPCLoader.CanHitNPC(thatNPC, self)) return;
+        // v154: a porta principal ja' esta' dentro de CanHitNPC; esta repeticao
+        // e' so' para o caso de um mod chamar BeHurtByOtherNPC por conta propria
+        // e o CanHitNPC dele ter sido substituido.
+        if (NPCFriendlyGate.Blocks(thatNPC, self, "BeHurtByOtherNPC")) return;
         Contact outer = contact;
         bool outerActive = active;
         contact = new Contact { Attacker = thatNPC, Victim = self };

@@ -42,6 +42,22 @@ internal static class MusicHooks
         orig(self);
         try { Step(); }
         catch (Exception e) { ItemHooks.Report("Music (fade)", e); }
+        try { WatchBox2(); }
+        catch (Exception e) { ItemHooks.Report("Music (box2)", e); }
+    }
+
+    // O MusicEvents do UnCalamityModMusic (interludio do Hardmode, por exemplo)
+    // nao toca som por conta propria: ele escreve Main.musicBox2 e deixa o
+    // jogo tocar. Se este valor muda e nada sai do alto-falante, o problema
+    // esta' depois desse ponto, nao no mod. Loga so' quando muda.
+    static int lastBox2 = -1;
+
+    static void WatchBox2()
+    {
+        int box = Main.musicBox2;
+        if (box == lastBox2) return;
+        lastBox2 = box;
+        Log.Info($"musica: musicBox2 -> {box} (newMusic={Main.newMusic} cur={Main.curMusic} wanted={wanted})");
     }
 
     static int Choose(bool otherworld)
@@ -55,7 +71,34 @@ internal static class MusicHooks
         FromNpcs(ref music, ref priority);
         if (SceneEffectLoader.Count > 0) SceneEffectLoader.UpdateMusic(ref music, ref priority);
         if (music < 0 || priority < SceneEffectPriority.BiomeLow) return -1;
-        return priority >= VanillaMusic.Tier(otherworld) ? music : -1;
+        SceneEffectPriority tier = VanillaMusic.Tier(otherworld);
+        bool wins = priority >= tier;
+        string why = $"{priority} >= {tier} (otherworld={otherworld})";
+        if (lastDiag != why)
+        {
+            lastDiag = why;
+            Log.Info($"musica: cenario {music} prioridade {priority} vs vanilla {tier} -> {(wins ? "mod vence" : "vanilla vence")}");
+        }
+        return wins ? music : -1;
+    }
+
+    static string lastDiag = "";
+
+    // v27 diagnostico: dois caminhos independentes decidiram "nao e cidade":
+    // o tier nativo (SceneMetrics.TownNPCCount < 3) e o mod (Player.townNPCs > 2f).
+    // Se os dois derem zero dentro de uma cidade real, o campo nativo nao esta'
+    // sendo mantido neste port. Loga so' quando a faixa muda (raro).
+    static void DiagTown()
+    {
+        try
+        {
+            var p = Main.LocalPlayer;
+            int townNpcs = p.IsNull ? -1 : p.townNPCs;
+            int metricsTown = Main.SceneMetrics.IsNull ? -1 : Main.SceneMetrics.TownNPCCount;
+            bool inTown = p.IsNull ? false : p.townNPCs > 2;
+            Log.Info($"[town] townNPCs={townNpcs} metricsTownNPCCount={metricsTown} playerInTown={inTown} day={Main.dayTime} time={Main.time:F0}");
+        }
+        catch (Exception e) { ItemHooks.Report("Music (town diag)", e); }
     }
 
     static void FromNpcs(ref int music, ref SceneEffectPriority priority)
@@ -128,6 +171,7 @@ internal static class MusicHooks
                     Log.Info(picked != null
                         ? $"musica: faixa {wanted} <- {picked.File}"
                         : $"musica: vanilla ({wanted})");
+                    DiagTown();
                 }
             }
             TitleCrossFade(Main.gameMenu && wanted >= 0);

@@ -1034,8 +1034,29 @@ internal static class IlPatcher
             switch (ins.OpCode.Code)
             {
                 case Code.Ldfld or Code.Ldsfld:
+                    DropVolatilePrefix(ins);
                     MethodInfo? getter = byRefGetter ?? plainGetter ?? refGetter;
                     if (getter == null) { missing++; if (!HasRealField(shim, field.Name)) { unresolved = true; reasons.Add($"sem getter {owner}::{field.Name}"); } continue; }
+                    // Chest::item: no tModLoader de PC o campo e Item[]; aqui o
+                    // Player.bank/bank2/bank3/bank4 e InventoryStorage
+                    // (GameRefArray<Item>) e so o Chest real guarda
+                    // ChestItem[] (struct de 6 bytes). Ler o campo direto
+                    // fazia o mod tratar ChestItem como referencia: o
+                    // Fargowiltas.FargoPlayer.PostUpdateBuffs recebia lixo e
+                    // estourava NullReferenceException em Item.get_IsAir.
+                    // Chest.Items(IGameObject) decide pelo tipo REAL do
+                    // recebedor e devolve um Item[] gerenciado de verdade —
+                    // depois disso ldelem.ref/ldlen/ldelema seguem validos e
+                    // o array nao precisa de TrackArray.
+                    if (ins.OpCode.Code == Code.Ldfld && owner == "Terraria.Chest" &&
+                        field.Name == "item" && FindMethod(shim, "Items") is MethodInfo itemsOf)
+                    {
+                        ins.OpCode = OpCodes.Call;
+                        ins.Operand = module.ImportReference(itemsOf);
+                        rewritten++;
+                        if (Trace != null) Trace.WriteLine(method.FullName + " :: Chest::item -> Chest.Items");
+                        break;
+                    }
                     // Quando existem os DOIS getters, o de VALOR deixa a pilha
                     // simetrica com o setter. O padrao `ldarg.1; dup; ldfld X;
                     // ...; stfld X` (que o Roslyn gera para `x += n` em campo)
@@ -1134,6 +1155,7 @@ internal static class IlPatcher
                     break;
 
                 case Code.Stfld or Code.Stsfld:
+                    DropVolatilePrefix(ins);
                     if (setter == null)
                     {
                         // ProxyGen expõe vários campos do jogo como propriedade
@@ -1806,6 +1828,27 @@ internal static class IlPatcher
         or Code.Ldc_I4_5 or Code.Ldc_I4_6 or Code.Ldc_I4_7 or Code.Ldc_I4_8 or Code.Ldc_I4_M1 or Code.Ldc_I4_S
         or Code.Ldloc_0 or Code.Ldloc_1 or Code.Ldloc_2 or Code.Ldloc_3 or Code.Ldloc or Code.Ldloc_S;
 
+    /// <summary>
+    /// Tira o prefixo <c>volatile.</c> do campo antes de trocar o <c>ldfld</c>
+    /// por um <c>call</c>: prefixo so vale para acesso a memória e o Mono
+    /// recusa o corpo inteiro (<c>FargoGlobalTile.KillTile</c> e
+    /// <c>DestroyChest</c> abriam com <c>volatile. WorldGen.gen</c>).
+    /// </summary>
+    static void DropVolatilePrefix(Instruction ins)
+    {
+        Instruction? previous = ins.Previous;
+        while (previous != null && previous.OpCode.Code is Code.Nop or Code.Volatile)
+        {
+            if (previous.OpCode.Code == Code.Volatile)
+            {
+                previous.OpCode = OpCodes.Nop;
+                previous.Operand = null;
+                return;
+            }
+            previous = previous.Previous;
+        }
+    }
+
     static bool NextIsElementAccess(Instruction ins)
     {
         if (ins.Next == null) return false;
@@ -1869,7 +1912,7 @@ internal static class IlPatcher
     static void PatchArrayElements(ModuleDefinition module, Mono.Cecil.Cil.MethodBody body,
         Dictionary<Instruction, ArrayRef> arrays)
     {
-        if (arrays.Count == 0 && !NeedsReferenceCoercion(body)) return;
+        if (arrays.Count == 0 && !NeedsReferenceCoercion(body) && !NeedsElementCoercion(body)) return;
 
         Instruction[] ins = body.Instructions.ToArray();
 
@@ -1907,6 +1950,9 @@ internal static class IlPatcher
         // de interface) ou `op_Implicit` (T[]). Compartilhar o set impede as
         // duas de serem inseridas na mesma posição da pilha.
         var adapted = new HashSet<Instruction>();
+        // `newarr` do próprio método -> tipo do elemento. Serve para o
+        // `stelem.ref` saber o que o CLR vai exigir do valor empilhado.
+        var newArrays = new Dictionary<Instruction, Type?>();
         // Profundidade da pilha em cada alvo de desvio (vista no desvio). O
         // `x ?? (x = new ...)` que o Roslyn gera para cache de delegate deixa
         // o ARRAY na pilha ATRAVES do desvio; limpar a pilha ao chegar no alvo
@@ -1959,6 +2005,21 @@ internal static class IlPatcher
                     }
                     else if (RewriteElement(module, il, current, array, arrays))
                         arraySlot = at;
+                }
+                else if (at >= 0 && stack[at] is Instruction creator && newArrays.ContainsKey(creator) &&
+                    current.OpCode.Code is Code.Stelem_Any or Code.Stelem_Ref)
+                {
+                    // stelem num array criado pelo PROPRIO metodo (newarr):
+                    // o CLR confere o tipo do elemento contra o tipo do array.
+                    // O SetBestiary do Fargowiltas faz
+                    // newarr IBestiaryInfoElement e grava
+                    // SpawnConditionBestiaryInfoElement/FlavorTextBestiaryInfoElement
+                    // - classes DIFERENTES do elemento declarado (os tres sao
+                    // proxies de classe no port), entao o JIT do Mono aceita o
+                    // corpo e estoura ArrayTypeMismatchException em execucao.
+                    // As tres classes tem op_Implicit entre si; basta chamar.
+                    newArrays.TryGetValue(creator, out Type? element);
+                    CoerceElementValue(module, il, body, stack.Count > 0 ? stack[^1] : null, element, materialized, adapted);
                 }
             }
 
@@ -2041,6 +2102,14 @@ internal static class IlPatcher
                     // (InvalidProgram no FargoGlobalProjectile.PreAI).
                     if (slot >= 0 && slot != arraySlot) Materialize(module, il, stack[slot], arrays, materialized);
                     Pop(stack);
+                }
+                // newarr nao muda a profundidade (Delta = 0), mas o valor no
+                // topo passa a ser o ARRAY e nao mais o tamanho: sem trocar o
+                // produtor o stelem seguinte veria o ldc.i4 do tamanho.
+                if (current.OpCode.Code == Code.Newarr)
+                {
+                    newArrays[current] = current.Operand is TypeReference tref ? ResolveType(tref) : null;
+                    if (stack.Count > 0) stack[^1] = current;
                 }
                 // Desvio: guarda como a pilha chega no alvo.
                 if (current.Operand is Instruction jump) branchDepth[jump] = stack.Count;
@@ -2193,6 +2262,11 @@ internal static class IlPatcher
         // deixa um local `T[]` com GameRefArray na pilha -> InvalidProgram no
         // corpo INTEIRO. Era o MusicUtilities.NPCNearby do VCMM, que derrubava
         // o MusicCondition de TODOS os bosses (musica de boss nunca tocava).
+        //
+        // Main.recipe entra na lista porque o MiscRecipeSystem do Fargowiltas
+        // so PERCORRE o array (PostAddRecipes, IL_0128: stloc.s V_5 com
+        // `Recipe[]`); a copia le os ponteiros ja existentes e slots vazios
+        // viram `null` no array gerenciado, que o laco do mod ignora.
         bool filled = name is "GameRefArray`1" &&
             clr.GetGenericArguments()[0].FullName is "Terraria.Player" or "Terraria.NPC";
         if (name is not "GameArray`1" && !filled) return null;
@@ -2285,6 +2359,49 @@ internal static class IlPatcher
         Instruction anchor = materialized.TryGetValue(producer, out Instruction? read) ? read : producer;
         il.InsertAfter(anchor, il.Create(OpCodes.Call, module.ImportReference(conv)));
         if (Trace != null) Trace.WriteLine($"conversao {have.Name} -> {want.Name} em {producer}");
+    }
+
+    /// <summary>
+    /// Valor indo para dentro de um array criado pelo proprio metodo
+    /// (<c>newarr T</c> + <c>stelem</c>). O CLR confere o tipo do valor contra
+    /// o tipo do ARRAY, nao contra o que o mod queria dizer: o
+    /// <c>SetBestiary</c> do Fargowiltas monta
+    /// <c>newarr IBestiaryInfoElement</c> e grava
+    /// <c>SpawnConditionBestiaryInfoElement</c>/<c>FlavorTextBestiaryInfoElement</c>
+    /// — no PC as tres sao classes/interface compativeis, aqui sao tres proxies
+    /// de classe DIFERENTES (a interface virou <c>sealed partial class</c>), e
+    /// o resultado era <c>ArrayTypeMismatchException</c> em 5 NPCs.
+    /// Os proxies tem <c>op_Implicit</c> entre si, entao basta chamar.
+    /// </summary>
+    static void CoerceElementValue(ModuleDefinition module, ILProcessor il, Mono.Cecil.Cil.MethodBody body,
+        Instruction? producer, Type? element, Dictionary<Instruction, Instruction> materialized,
+        HashSet<Instruction> adapted)
+    {
+        if (producer == null || element == null) return;
+        Type? have = ProducedType(body, producer);
+        if (have == null || have == element || element.IsAssignableFrom(have)) return;
+        MethodInfo? conv = ImplicitOp(have, element);
+        if (conv == null) return;
+        if (!adapted.Add(producer)) return;
+        Instruction anchor = materialized.TryGetValue(producer, out Instruction? read) ? read : producer;
+        il.InsertAfter(anchor, il.Create(OpCodes.Call, module.ImportReference(conv)));
+        if (Trace != null) Trace.WriteLine($"stelem conversao {have.Name} -> {element.Name} em {producer}");
+    }
+
+    /// <summary>
+    /// True quando o corpo faz <c>newarr</c> seguido de <c>stelem</c>: sem isso
+    /// a simulacao de pilha nem roda nos metodos sem array do shim.
+    /// </summary>
+    static bool NeedsElementCoercion(Mono.Cecil.Cil.MethodBody body)
+    {
+        bool created = false;
+        foreach (Instruction ins in body.Instructions)
+        {
+            Code code = ins.OpCode.Code;
+            if (code == Code.Newarr) created = true;
+            else if (created && code is Code.Stelem_Ref or Code.Stelem_Any) return true;
+        }
+        return false;
     }
 
     /// <summary>

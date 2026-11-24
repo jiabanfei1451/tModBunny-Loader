@@ -37,7 +37,9 @@ public readonly struct NPCHappiness
             return this;
         }
         var profile = database.GetByNPCID(NpcType);
-        if (!profile.IsNull && profile != database._trashEntry)
+        // Mesmo caso do SetBiomeAffection: NPC de mod sem linha no banco vanilla
+        // devolve null e o `profile.IsNull` estourava NRE.
+        if (profile is not null && !profile.IsNull && profile != database._trashEntry)
         {
             var list = new GameList(profile.ShopModifiers);
             for (int i = 0; i < list.Count; i++)
@@ -121,7 +123,12 @@ public readonly struct NPCHappiness
             stage = "GetByNPCID";
             var profile = database.GetByNPCID(NpcType);
             BiomePreferenceListTrait trait = default;
-            if (!profile.IsNull && profile != database._trashEntry)
+            // O proxy devolve null (nao um ponteiro 0) quando o nativo responde 0,
+            // e NAO existe entrada de personalidade para todo NPC de mod: o
+            // VanillaShopDatabase nao tem linha para o 701 do Fargowiltas, e o
+            // `!profile.IsNull` estourava NullReferenceException dentro do
+            // SetStaticDefaults (a loja/dialogo daquele NPC ficavam pela metade).
+            if (profile is not null && !profile.IsNull && profile != database._trashEntry)
             {
                 stage = "perfil: ShopModifiers";
                 var list = new GameList(profile.ShopModifiers);
