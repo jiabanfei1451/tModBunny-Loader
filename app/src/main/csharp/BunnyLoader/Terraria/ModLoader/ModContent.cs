@@ -226,6 +226,10 @@ public static class ModContent
         // Os mods já carregaram (0..55%); daqui para a frente é a instalação
         // do conteúdo, que é a parte longa da abertura.
         Progress.Write("正在安装内容…", 55);
+        // v48: criar aqui as instanciacoes Asset<Effect>/Request<Effect> (ver
+        // ModAssets.PrewarmEffect). Sem isso o callvirt do Luminance cai num slot
+        // nulo e vira NRE, sem nunca entrar no nosso override.
+        BunnyLoader.ModAssets.PrewarmEffect();
         ServerSyncHooks.Install();
         yield return 0;
         ServerSyncHooks.InstallMenus();

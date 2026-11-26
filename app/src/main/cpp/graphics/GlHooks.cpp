@@ -30,6 +30,12 @@ using BlitFn = void (*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, 
 using UintFn = void (*)(GLuint);
 using EnumFn = void (*)(GLenum);
 using ColorMaskFn = void (*)(GLboolean, GLboolean, GLboolean, GLboolean);
+using ScissorFn = void (*)(GLint, GLint, GLsizei, GLsizei);
+using BlendFuncFn = void (*)(GLenum, GLenum);
+using BlendFuncSeparateFn = void (*)(GLenum, GLenum, GLenum, GLenum);
+using ClearColorFn = void (*)(GLfloat, GLfloat, GLfloat, GLfloat);
+using DepthMaskFn = void (*)(GLboolean);
+using DepthFuncFn = void (*)(GLenum);
 
 SwapFn g_origSwap = nullptr;
 BindFramebufferFn g_origBindFramebuffer = nullptr;
@@ -44,6 +50,12 @@ EnumFn g_origActiveTexture = nullptr;
 EnumFn g_origEnable = nullptr;
 EnumFn g_origDisable = nullptr;
 ColorMaskFn g_origColorMask = nullptr;
+ScissorFn g_origScissor = nullptr;
+BlendFuncFn g_origBlendFunc = nullptr;
+BlendFuncSeparateFn g_origBlendFuncSeparate = nullptr;
+ClearColorFn g_origClearColor = nullptr;
+DepthMaskFn g_origDepthMask = nullptr;
+DepthFuncFn g_origDepthFunc = nullptr;
 
 // As nossas proprias chamadas GL (o desenho do efeito) passam pelos mesmos
 // hooks: nao entram no rastro nem mudam o espelho do estado da Unity.
@@ -176,8 +188,43 @@ void hkViewport(GLint x, GLint y, GLsizei w, GLsizei h) {
 }
 
 void hkUseProgram(GLuint program) {
-    if (tracked()) g_shadow.program = program;
+    if (tracked()) {
+        g_shadow.program = program;
+        // v48: o rastro precisa saber SOB QUAL programa cada bloco de draws
+        // saiu; sem isso "112 draws" nao diz nada sobre o estado.
+        traceEvent("PG(%u)", program);
+    }
     g_origUseProgram(program);
+}
+
+void hkScissor(GLint x, GLint y, GLsizei w, GLsizei h) {
+    if (tracked()) traceEvent("SCO(%d,%d,%d,%d)", x, y, w, h);
+    g_origScissor(x, y, w, h);
+}
+
+void hkBlendFunc(GLenum src, GLenum dst) {
+    if (tracked()) traceEvent("BF(%d,%d)", (int)src, (int)dst);
+    g_origBlendFunc(src, dst);
+}
+
+void hkBlendFuncSeparate(GLenum srgb, GLenum drgb, GLenum sa, GLenum da) {
+    if (tracked()) traceEvent("BFS(%d,%d,%d,%d)", (int)srgb, (int)drgb, (int)sa, (int)da);
+    g_origBlendFuncSeparate(srgb, drgb, sa, da);
+}
+
+void hkClearColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
+    if (tracked()) traceEvent("CC(%.2f,%.2f,%.2f,%.2f)", r, g, b, a);
+    g_origClearColor(r, g, b, a);
+}
+
+void hkDepthMask(GLboolean flag) {
+    if (tracked()) traceEvent("DM(%d)", (int)flag);
+    g_origDepthMask(flag);
+}
+
+void hkDepthFunc(GLenum func) {
+    if (tracked()) traceEvent("DF(%d)", (int)func);
+    g_origDepthFunc(func);
 }
 
 void hkBindVertexArray(GLuint vao) {
@@ -323,6 +370,12 @@ void installGlHooks() {
         ok &= hookGl("glDrawElements", reinterpret_cast<void*>(g.DrawElements), hkDrawElements, &g_origDrawElements);
         ok &= hookGl("glDrawArrays", reinterpret_cast<void*>(g.DrawArrays), hkDrawArrays, &g_origDrawArrays);
         ok &= hookGl("glBlitFramebuffer", reinterpret_cast<void*>(g.BlitFramebuffer), hkBlit, &g_origBlit);
+        ok &= hookGl("glScissor", reinterpret_cast<void*>(g.Scissor), hkScissor, &g_origScissor);
+        ok &= hookGl("glBlendFunc", reinterpret_cast<void*>(g.BlendFunc), hkBlendFunc, &g_origBlendFunc);
+        ok &= hookGl("glBlendFuncSeparate", reinterpret_cast<void*>(g.BlendFuncSeparate), hkBlendFuncSeparate, &g_origBlendFuncSeparate);
+        ok &= hookGl("glClearColor", reinterpret_cast<void*>(g.ClearColor), hkClearColor, &g_origClearColor);
+        ok &= hookGl("glDepthMask", reinterpret_cast<void*>(g.DepthMask), hkDepthMask, &g_origDepthMask);
+        ok &= hookGl("glDepthFunc", reinterpret_cast<void*>(g.DepthFunc), hkDepthFunc, &g_origDepthFunc);
         BL_INFO("efeitos de tela: hooks GL %s", ok ? "ok" : "com falha");
     });
 }

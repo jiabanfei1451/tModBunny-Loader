@@ -35,13 +35,16 @@ internal static class WorldViewProbe
     // no primeiro desenho de shader — e com o registro do Luminance vazio isso
     // nunca acontecia (v46 saiu sem nenhuma linha "rastro GL"). Aqui a sonda
     // roda todo quadro de jogo (MouseText), entao serve de gatilho.
-    static bool traceRequested;
+    static readonly int[] TraceFrames = { 12, 60, 120, 200 };
+
+    static int traceNext;
 
     static unsafe void RequestGlTrace()
     {
-        if (traceRequested) return;
-        traceRequested = true;
-        Log.Info($"rastro GL: pedido no quadro {frames} (tela {Main.screenWidth}x{Main.screenHeight})");
+        if (traceNext >= TraceFrames.Length || frames != TraceFrames[traceNext]) return;
+        traceNext++;
+        Log.Info($"rastro GL: pedido no quadro {frames} (tela {Main.screenWidth}x{Main.screenHeight} " +
+                 $"drawToScreen={Main.drawToScreen})");
         Host.Native()->GlTrace();
     }
 
@@ -55,7 +58,6 @@ internal static class WorldViewProbe
         frames++;
 
         if (frames >= 12) RequestGlTrace();
-
         // v42: as 8 primeiras linhas saem por quadro; depois, uma por segundo
         // (~60 quadros), para o log nao virar 2500 linhas.
         bool sample = frames <= 8 || frames % 60 == 0;

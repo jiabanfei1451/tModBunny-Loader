@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using BunnyLoader.Interop;
 using BunnyLoader.Screen;
+using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
 using Terraria.ModLoader;
 
@@ -145,6 +146,38 @@ public sealed class ModAssets : AssetRepository
                      $"effect={AssetKinds.IsEffectType(t)} mod={mod.Name} nome={assetName}");
         }
         catch { }
+    }
+
+    /// <summary>
+    /// v48: forca, no NOSSO assembly, a instanciacao concreta de
+    /// <c>Asset&lt;Effect&gt;</c> e de <c>Request&lt;Effect&gt;</c>.
+    ///
+    /// O v46/v47 provaram que o NRE do Luminance acontece ENTRE o
+    /// <c>get_Assets()</c> (que loga) e o <c>Request&lt;Effect&gt;</c> (nenhuma
+    /// linha "[fx] req" sai): e' o <c>callvirt</c> de um metodo virtual
+    /// generico sem slot — textura funciona porque <c>Asset&lt;Texture2D&gt;</c>
+    /// e' usado em centenas de pontos do shim, <c>Asset&lt;Effect&gt;</c> em
+    /// nenhum (só aparece dentro de corpos genericos). Uma chamada CONCRETA
+    /// como esta faz o compilador emitir a instanciacao certa.
+    /// </summary>
+    internal static void PrewarmEffect()
+    {
+        try
+        {
+            Mod? first = Host.Mods.Length > 0 ? Host.Mods[0] : null;
+            if (first == null)
+            {
+                Log.Info("[fx] prewarm effect: nenhum mod carregado");
+                return;
+            }
+            Asset<Effect> asset = first.Assets.Request<Effect>("__prewarm", AssetRequestMode.DoNotLoad);
+            Effect? value = asset.Value;
+            Log.Info($"[fx] prewarm effect ok (valor nulo={value == null})");
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[fx] prewarm effect falhou: {e.GetType().Name}: {e.Message}");
+        }
     }
 
     // v41: quantas linhas o caminho de shader ainda escreve.
