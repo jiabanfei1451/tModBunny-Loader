@@ -26,6 +26,18 @@ internal static class MiscShaderFrame
 
     static int framesSinceWarning;
 
+    // v46: quando pedir o rastro GL. "Mundo nao desenha" com mod ligado so'
+    // pode ser (a) a Unity emitindo zero draws de tile, ou (b) emitindo os
+    // draws mas com estado/GLSL que nao pinta. O rastro de UM quadro
+    // (graphics/GlHooks.cpp, ja' existia e nunca era chamado) responde isso
+    // pelo numero de draws e pelo fbo/viewport/programa de cada um. Duas
+    // capturas (quadro 90 e 150) para dar para comparar.
+    static int frame;
+
+    static readonly int[] TraceAt = { 90, 150 };
+
+    static int traceNext;
+
     static bool announced;
 
     internal static void Install() =>
@@ -48,6 +60,21 @@ internal static class MiscShaderFrame
         orig(self, gameTime);
         try { Submit(); }
         catch (Exception e) { ItemHooks.Report("MiscShaderFrame (frame)", e); }
+        try { TraceFrame(); }
+        catch (Exception e) { ItemHooks.Report("MiscShaderFrame (trace)", e); }
+    }
+
+    /// <summary>
+    /// v46: pede o rastro GL de um quadro nos pontos de <see cref="TraceAt"/>.
+    /// Sai uma vez por sessao; o nativo loga "rastro GL [n]:...".
+    /// </summary>
+    static unsafe void TraceFrame()
+    {
+        frame++;
+        if (traceNext >= TraceAt.Length || frame != TraceAt[traceNext]) return;
+        traceNext++;
+        Log.Info($"rastro GL: pedido no quadro {frame}");
+        Host.Native()->GlTrace();
     }
 
     static void Submit()

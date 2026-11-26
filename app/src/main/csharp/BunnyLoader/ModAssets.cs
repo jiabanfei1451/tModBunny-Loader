@@ -41,9 +41,21 @@ public sealed class ModAssets : AssetRepository
     // O caminho de shader agora tem contador proprio (effectLogLeft).
     static int requestProbeLeft = 40;
 
+    // v46: contador PROPRIO desta linha de diagnostico. O v45 gastava o
+    // orcamento compartilhado com as texturas do CalamityModMusic (16 linhas
+    // todas "Request<Texture2D>") e a ausencia de "Request<Effect>" no log foi
+    // lida como "o override nao foi chamado" — o que pode ser so' contador
+    // esgotado. Aqui a primeira linha e' incondicional e o tipo vai completo
+    // (nome + assembly), porque a suspeita e' o `Effect` do mod ser outro tipo
+    // (Assembly-CSharp) e nao o nosso shim.
+    static int dispatchProbeLeft = 40;
+
+    static readonly HashSet<string> dispatchSeen = new(StringComparer.Ordinal);
+
     public override Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
         where T : class
     {
+        DispatchProbe<T>(assetName);
         // v42: primeira linha, antes de qualquer desvio. Se o Luminance morrer
         // em NullReferenceException SEM esta linha, o NRE acontece antes do nosso
         // override (calculo de assetName ou despacho da chamada virtual) — nao
@@ -51,37 +63,84 @@ public sealed class ModAssets : AssetRepository
         // effect 1/6" nem o "[fx] asset de efeito" apareceram.
         if (System.Threading.Interlocked.Decrement(ref entryProbeLeft) >= 0)
             Log.Info($"[fx] Request<{typeof(T).Name}>({assetName}) mod={mod.Name} entrou");
-        // v41: shader tem caminho proprio, com rastro por passo e rede de
-        // seguranca. O v40 mostrou que o NRE do Luminance acontece DENTRO do
-        // Request<Effect> (o log de "Assets pedido" sai, o de "asset de efeito"
-        // nao, e nenhum Asset<Effect>.Value imprime "[asset] 1 inicio") — mas
-        // sem dizer em qual passo. Aqui cada passo e' numerado e, se estourar,
-        // devolve o stub em vez de derrubar o PostSetupContent inteiro.
-        if (AssetKinds.IsEffectType(typeof(T))) return EffectAsset<T>(assetName, mode);
-        Asset<T>.CheckSupported();
-        string extension = Extension<T>();
-        lock (requested)
+        // v46: o caminho de shader nao pode derrubar o PostSetupContent do mod.
+        // Se este override estourar (identidade de tipo, instanciacao de
+        // `Asset<T>`, arquivo ausente), devolve stub e segue — antes a excecao
+        // subia e o mod ficava com o registro de shaders vazio.
+        if (AssetKinds.IsEffectType(typeof(T)))
         {
-            if (byName.TryGetValue((assetName, extension), out object? seen)) return ((Asset<T>)seen).OnRequest(mode, false);
-        }
-        string relative = Relative(assetName);
-        string key = relative + extension;
-        Asset<T> result;
-        bool created = false;
-        lock (requested)
-        {
-            if (!requested.TryGetValue(key, out object? have))
+            try { return EffectAsset<T>(assetName, mode); }
+            catch (Exception e)
             {
-                string? file = Find(relative, extension);
-                if (file == null) throw new FileNotFoundException($"{mod.Name}: asset '{assetName}' not found in {mod.Folder}");
-                have = new Asset<T>($"{mod.Name}/{relative}", file);
-                requested[key] = have;
-                created = true;
+                Log.Error($"[fx] Request<{typeof(T).Name}>({assetName}) mod={mod.Name}: {e.GetType().Name} fora do EffectAsset: {e.Message}");
+                return new Asset<T>($"{mod.Name}/{assetName}", null);
             }
-            byName[(assetName, extension)] = have;
-            result = (Asset<T>)have;
         }
-        return result.OnRequest(mode, created);
+        // v46: o override nao pode derrubar o PostSetupContent do mod. Antes
+        // `Asset<T>.CheckSupported()` e o "asset not found" subiam crus; o
+        // Luminance morria no primeiro asset que nao existisse e ficava sem
+        // registro de shaders (o NRE dele nao vem daqui, mas o silencio sim).
+        try
+        {
+            Asset<T>.CheckSupported();
+            string extension = Extension<T>();
+            lock (requested)
+            {
+                if (byName.TryGetValue((assetName, extension), out object? seen)) return ((Asset<T>)seen).OnRequest(mode, false);
+            }
+            string relative = Relative(assetName);
+            string key = relative + extension;
+            Asset<T> result;
+            bool created = false;
+            lock (requested)
+            {
+                if (!requested.TryGetValue(key, out object? have))
+                {
+                    string? file = Find(relative, extension);
+                    if (file == null)
+                    {
+                        Log.Warn($"[fx] asset ausente: {mod.Name}/{relative}{extension} (pedido '{assetName}')");
+                        return new Asset<T>($"{mod.Name}/{relative}", null);
+                    }
+                    have = new Asset<T>($"{mod.Name}/{relative}", file);
+                    requested[key] = have;
+                    created = true;
+                }
+                byName[(assetName, extension)] = have;
+                result = (Asset<T>)have;
+            }
+            return result.OnRequest(mode, created);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[fx] Request<{typeof(T).Name}>({assetName}) mod={mod.Name}: {e.GetType().Name}: {e.Message}");
+            return new Asset<T>($"{mod.Name}/{assetName}", null);
+        }
+    }
+
+    /// <summary>
+    /// v46: uma linha por par (T, asset) com o tipo COMPLETO. Responde a pergunta
+    /// que o v45 deixou sem resposta: este override chega a ser chamado para o
+    /// <c>Effect</c> do mod, e o <c>typeof(T)</c> que chega e' o nosso shim ou o
+    /// tipo do Assembly-CSharp?
+    /// </summary>
+    void DispatchProbe<T>(string assetName) where T : class
+    {
+        if (dispatchProbeLeft <= 0) return;
+        try
+        {
+            string key = typeof(T).FullName + "|" + assetName;
+            lock (dispatchSeen)
+            {
+                if (!dispatchSeen.Add(key)) return;
+                if (dispatchSeen.Count > 40) return;
+            }
+            if (System.Threading.Interlocked.Decrement(ref dispatchProbeLeft) < 0) return;
+            Type t = typeof(T);
+            Log.Info($"[fx] req T={t.FullName} asm={t.Assembly.GetName().Name} " +
+                     $"effect={AssetKinds.IsEffectType(t)} mod={mod.Name} nome={assetName}");
+        }
+        catch { }
     }
 
     // v41: quantas linhas o caminho de shader ainda escreve.

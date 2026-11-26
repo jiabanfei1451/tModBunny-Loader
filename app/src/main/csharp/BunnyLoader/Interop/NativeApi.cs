@@ -161,6 +161,10 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<int, int, float*, int, int> FxcSetParam;
     public delegate* unmanaged<int, int, int, float*, int, int> FxcCommit;
     public delegate* unmanaged<int, int> FxcFree;
+
+    // v46: rastro GL de um quadro (graphics/GlHooks.cpp). Diagnostico do
+    // "mundo nao desenha": conta draws, fbo/viewport e programas por quadro.
+    public delegate* unmanaged<void> GlTrace;
 }
 
 [StructLayout(LayoutKind.Sequential)]

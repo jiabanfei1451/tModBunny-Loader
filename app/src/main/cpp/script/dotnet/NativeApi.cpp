@@ -39,6 +39,7 @@
 #include "core/Config.h"
 #include "graphics/ScreenApi.h"
 #include "graphics/FxcEffect.h"
+#include "graphics/GlHooks.h"
 #include "content/common/TypeTables.h"
 #include "content/items/ItemDrawStages.h"
 #include "content/items/ModEquips.h"
@@ -235,6 +236,12 @@ struct NativeApi {
     int32_t (*fxcSetParam)(int32_t id, int32_t index, const float* values, int32_t count);
     int32_t (*fxcCommit)(int32_t id, int32_t technique, int32_t pass, float* out, int32_t capacity);
     int32_t (*fxcFree)(int32_t id);
+
+    // v46 (diagnostico "mundo nao desenha"): pede um rastro GL de UM quadro
+    // inteiro (graphics/GlHooks.cpp). Sai no log como "rastro GL [n]:..." e
+    // mostra, por quadro, quantos draws a Unity emitiu, para onde (fbo/viewport)
+    // e quais programas. Sem isso so' havia hipotese.
+    void (*glTrace)();
 };
 
 // Exportados pela libil2cpp que a il2cpp::Api nao carrega.
@@ -1208,6 +1215,7 @@ const NativeApi kNativeApi{
     graphics::fxcSetParam,
     graphics::fxcCommit,
     graphics::fxcFree,
+    graphics::requestGlTrace,
 };
 
 } // namespace
