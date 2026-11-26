@@ -101,6 +101,18 @@ public sealed class FxProgram
     // Diagnostics: things the translation had to drop (matrix uniforms, ...).
     public readonly List<string> Notes = new List<string>();
 
+    // v54: o .fx tem estagio de vertice de verdade (matriz de mundo e
+    // dados por vertice). Traduzimos so' o fragmento e desenhamos um quad de
+    // TELA INTEIRA com a cor do draw — para um shader desses isso nao e' o
+    // efeito, e' uma mascara: o Luminance usa StandardPrimitiveShader, cujo
+    // pixel e' `return input.Color`, para preencher quads; desenhado de tela
+    // inteira com blDrawColor branco vira a tela toda branca (era o
+    // "mundo nao desenha"). Entao marcamos e a ponte nao o usa como filtro.
+    public bool NeedsGeometry;
+
+    // Por que foi marcado (vai para o log uma vez por shader).
+    public string GeometryReason = "";
+
     public FxUniform? Uniform(string name)
     {
         foreach (FxUniform uniform in Uniforms)
@@ -798,7 +810,6 @@ sealed class Parser
     }
 
     static bool IsAssignOp(string text) => text is "=" or "+=" or "-=" or "*=" or "/=" or "%=";
-
     static bool IsTypeName(string text) =>
         text is "float" or "float1" or "float2" or "float3" or "float4" or "float2x2" or "float3x3" or "float4x4"
             or "half" or "half2" or "half3" or "half4"
@@ -951,6 +962,13 @@ sealed class Emitter
         ["matrix"] = "mat4", ["float2x2"] = "mat2", ["float3x3"] = "mat3", ["float4x4"] = "mat4"
     };
 
+    // Matriz (de mundo/projecao). Um .fx que declara uma precisa da geometria
+    // de verdade: nao da' para virar filtro de tela inteira (ver
+    // FxProgram.NeedsGeometry).
+    static bool IsMatrixType(string type) =>
+        type is "matrix" or "float2x2" or "float3x3" or "float4x4"
+            or "half2x2" or "half3x3" or "half4x4" or "double2x2" or "double3x3" or "double4x4";
+
     static readonly HashSet<string> Intrinsics = new HashSet<string>(StringComparer.Ordinal)
     {
         // provided by the native prelude / our macro header
@@ -1008,6 +1026,16 @@ sealed class Emitter
     {
         FxFunction entry = Entry();
         CollectUsed(entry);
+
+        // v54: matriz de mundo declarada (mesmo usada so' no estagio de
+        // vertice, que a gente descarta) = shader por-vertice. Ver
+        // FxProgram.NeedsGeometry.
+        foreach (FxGlobal global in module.Globals)
+        {
+            if (!IsMatrixType(global.Type) || program.NeedsGeometry) continue;
+            program.NeedsGeometry = true;
+            program.GeometryReason = global.Name + " (" + global.Type + "): matriz de mundo, shader por-vertice";
+        }
 
         // Globals that collide with the prelude get a renamed uniform; the
         // bridge uploads the mod's parameter (HLSL name) into it.
@@ -1077,6 +1105,11 @@ sealed class Emitter
             if (components == 0)
             {
                 program.Notes.Add(global.Name + " (" + global.Type + "): sem upload de uniform, fica zerado");
+                if (IsMatrixType(global.Type) && !program.NeedsGeometry)
+                {
+                    program.NeedsGeometry = true;
+                    program.GeometryReason = global.Name + " (" + global.Type + "): matriz de mundo, shader por-vertice";
+                }
                 text.Append("uniform ").Append(MapType(global.Type)).Append(' ').Append(glsl).Append(";\n");
                 continue;
             }

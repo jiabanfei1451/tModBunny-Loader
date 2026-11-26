@@ -102,6 +102,19 @@ internal static class EffectShaderBridge
             return;
         }
 
+        // v54: shader por-vertice (declara matriz de mundo) nao e' filtro de
+        // tela. Traduzimos so' o fragmento e desenhamos um quad de tela inteira
+        // com blDrawColor branco — para esses, isso nao e' o efeito, e' uma
+        // mascara branca por cima de tudo (Luminance: StandardPrimitiveShader,
+        // cujo pixel e' `return input.Color`). Melhor nao desenhar nada: o
+        // mundo continua visivel e a falta fica visivel no log.
+        if (binding.Program.NeedsGeometry)
+        {
+            Warn(key + "#geom", $"shader {asset}: e' primitivo (por-vertice) — {binding.Program.GeometryReason}; "
+                + "nao da' para desenhar como filtro de tela inteira, entao nao desenha");
+            return;
+        }
+
         try
         {
             ScreenDraw draw = Build(owner!, binding);
