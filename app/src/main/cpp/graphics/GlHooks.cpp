@@ -261,11 +261,33 @@ void hkBindTexture(GLenum target, GLuint texture) {
 // framebuffer 0 (a tela) e imprimimos uma miniatura ASCII + a cor media.
 // - desenho presente no offscreen e ausente na tela = falha na composicao;
 // - ausente nos dois = o desenho nao pinta (estado/textura).
+// v49: tamanho de verdade da textura presa em GL_COLOR_ATTACHMENT0 do fbo.
+// Ler com glReadPixels exige a largura/altura exatas: pedir mais que o real
+// volta lixo, pedir menos mostra so' um canto.
+// (glGetTexLevelParameteriv e' ES 3.1 e o header do NDK e' ES 3.0; entao
+//  perguntamos o tamanho pelo GL_VIEWPORT corrente, que o jogo deixa no
+//  tamanho do alvo enquanto desenha.)
+bool attachmentSize(GLuint fbo, int* w, int* h) {
+    (void)fbo;
+    GLint vp[4] = {0, 0, 0, 0};
+    gl().GetIntegerv(GL_VIEWPORT, vp);
+    if (vp[2] <= 0 || vp[3] <= 0) return false;
+    *w = vp[2];
+    *h = vp[3];
+    return true;
+}
+
 void dumpFramebuffer(const char* tag, GLuint fbo, int width, int height) {
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) {
+        BL_INFO("pixel %s: tamanho invalido (%dx%d), nada lido", tag, width, height);
+        return;
+    }
     size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
     unsigned char* pixels = static_cast<unsigned char*>(std::malloc(bytes));
-    if (!pixels) return;
+    if (!pixels) {
+        BL_INFO("pixel %s: sem memoria para %zu bytes", tag, bytes);
+        return;
+    }
 
     GLint previous = 0;
     gl().GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
@@ -418,10 +440,24 @@ EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
     // no quadro rastreado. Antes do swap para a tela ainda ter o conteudo final.
     if (g_dumpPending.exchange(false) && g_dumpCount < 2) {
         g_dumpCount++;
-        const int w = g_lastDraw.viewport[2];
-        const int h = g_lastDraw.viewport[3];
-        dumpFramebuffer("offscreen", g_lastOffscreenFbo, w, h);
-        dumpFramebuffer("tela", 0, w, h);
+        int w = g_lastDraw.viewport[2];
+        int h = g_lastDraw.viewport[3];
+        GLint vp[4] = {0, 0, 0, 0};
+        gl().GetIntegerv(GL_VIEWPORT, vp);
+
+        if (w <= 0 || h <= 0) { w = vp[2]; h = vp[3]; }
+
+        // O offscreen do mundo: o ultimo FBO nao-tela que o jogo prendeu.
+        GLuint off = g_lastOffscreenFbo;
+        int offW = w, offH = h;
+        const bool haveSize = attachmentSize(off, &offW, &offH);
+        GLint err = gl().GetError();
+        BL_INFO("pixel: leitura pedida (offscreen fbo=%u %dx%d vp=%d,%d,%d,%d ultimoDraw=%d,%d,%d,%d errAntes=%d)",
+                static_cast<unsigned>(off), offW, offH, vp[0], vp[1], vp[2], vp[3],
+                g_lastDraw.viewport[0], g_lastDraw.viewport[1], g_lastDraw.viewport[2], g_lastDraw.viewport[3], (int)err);
+        dumpFramebuffer("offscreen", off, offW, offH);
+        dumpFramebuffer("tela", 0, vp[2] > 0 ? vp[2] : w, vp[3] > 0 ? vp[3] : h);
+        BL_INFO("pixel: leitura terminada errDepois=%d", (int)gl().GetError());
     }
 
     const EGLBoolean result = g_origSwap(display, surface);
