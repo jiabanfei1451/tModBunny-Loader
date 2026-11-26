@@ -151,6 +151,16 @@ internal unsafe struct NativeApi
     public delegate* unmanaged<IntPtr, int, IntPtr> ParamClass;
     public delegate* unmanaged<int, byte*, byte*, void> SetBuffTexts;
     public delegate* unmanaged<int, int, delegate* unmanaged<int, int, int, IntPtr>, int> InstallTileTextureHook;
+
+    // Upstream 0.5.13 (MojoShader): .fxc (DXBC) -> GLSL ES 3.0, feito em
+    // graphics/FxcEffect.cpp. Espelho exato do fim de `bl::dotnet::Api` em
+    // NativeApi.cpp: campo novo entra no fim dos dois lados.
+    public delegate* unmanaged<byte*, int, byte*, int, int> FxcLoad;
+    public delegate* unmanaged<int, byte*, int, int> FxcInfo;
+    public delegate* unmanaged<int, int, int, byte*, int, int> FxcPassSource;
+    public delegate* unmanaged<int, int, float*, int, int> FxcSetParam;
+    public delegate* unmanaged<int, int, int, float*, int, int> FxcCommit;
+    public delegate* unmanaged<int, int> FxcFree;
 }
 
 [StructLayout(LayoutKind.Sequential)]

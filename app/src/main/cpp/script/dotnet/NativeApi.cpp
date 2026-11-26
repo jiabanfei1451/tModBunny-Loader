@@ -38,6 +38,7 @@
 #include "content/common/ServerSyncBridge.h"
 #include "core/Config.h"
 #include "graphics/ScreenApi.h"
+#include "graphics/FxcEffect.h"
 #include "content/common/TypeTables.h"
 #include "content/items/ItemDrawStages.h"
 #include "content/items/ModEquips.h"
@@ -224,6 +225,16 @@ struct NativeApi {
     void* (*paramClass)(void* method, int32_t parameter);
     void (*setBuffTexts)(int32_t type, const char* displayName, const char* description);
     int32_t (*installTileTextureHook)(int32_t firstType, int32_t secondType, void* (*callback)(int32_t, int32_t, int32_t));
+
+    // Upstream 0.5.13 (MojoShader): .fxc (DXBC) -> GLSL ES 3.0. Quem faz e'
+    // graphics/FxcEffect.cpp; daqui so' sai o punhado que o C# usa. Campo novo
+    // sempre no FIM: o `size` faz o C# recusar uma tabela menor.
+    int32_t (*fxcLoad)(const uint8_t* data, int32_t length, char* error, int32_t capacity);
+    int32_t (*fxcInfo)(int32_t id, char* out, int32_t capacity);
+    int32_t (*fxcPassSource)(int32_t id, int32_t technique, int32_t pass, char* out, int32_t capacity);
+    int32_t (*fxcSetParam)(int32_t id, int32_t index, const float* values, int32_t count);
+    int32_t (*fxcCommit)(int32_t id, int32_t technique, int32_t pass, float* out, int32_t capacity);
+    int32_t (*fxcFree)(int32_t id);
 };
 
 // Exportados pela libil2cpp que a il2cpp::Api nao carrega.
@@ -1191,6 +1202,12 @@ const NativeApi kNativeApi{
     [](int32_t firstType, int32_t secondType, void* (*callback)(int32_t, int32_t, int32_t)) -> int32_t {
         return runtime::installTileTextureHook(firstType, secondType, callback) ? 1 : 0;
     },
+    graphics::fxcLoad,
+    graphics::fxcInfo,
+    graphics::fxcPassSource,
+    graphics::fxcSetParam,
+    graphics::fxcCommit,
+    graphics::fxcFree,
 };
 
 } // namespace

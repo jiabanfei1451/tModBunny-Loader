@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using BunnyLoader.Interop;
+using BunnyLoader.Screen;
 using ReLogic.Content;
 using Terraria.ModLoader;
 
@@ -115,6 +116,7 @@ public sealed class ModAssets : AssetRepository
             step = 4;
             string relative = Relative(assetName);
             string key = relative + extension;
+            FxcProbe(relative, log);
             step = 5;
             Asset<T> result;
             bool created = false;
@@ -143,8 +145,29 @@ public sealed class ModAssets : AssetRepository
         }
     }
 
-    public override bool HasAsset<T>(string assetName) where T : class =>
-        AssetKinds.IsEffectType(typeof(T)) ||
+    /// <summary>
+    /// Upstream 0.5.13 (MojoShader): se o mod trouxe um <c>.fxc</c> compilado
+    /// para este efeito, traduz agora e loga passagens/GLSL. E' a prova, em
+    /// aparelho, de que o tradutor nativo (graphics/FxcEffect.cpp) esta vivo.
+    /// O <c>Asset&lt;Effect&gt;</c> continua saindo como stub desta engine --
+    /// desenhar com o GLSL traduzido e' a etapa seguinte.
+    /// </summary>
+    void FxcProbe(string relative, bool log)
+    {
+        try
+        {
+            string? path = Find(relative, ".fxc");
+            if (path == null) return;
+            FxcShader.Shader? shader = FxcShader.LoadFile(path, $"{mod.Name}/{relative}", log);
+            if (shader != null) FxcShader.Free(shader);
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"[fxc] {mod.Name}/{relative}: sonda estourou: {e.GetType().Name} {e.Message}");
+        }
+    }
+
+    public override bool HasAsset<T>(string assetName) where T : class =>        AssetKinds.IsEffectType(typeof(T)) ||
         ((typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D) || AssetKinds.IsFontType(typeof(T))) &&
          Find(Relative(assetName), Extension<T>()) != null);
 
