@@ -35,6 +35,13 @@ public unsafe partial class CustomSky : IManagedEffect
 
 public sealed partial class Filter : IManagedEffect
 {
+    // O ProxyGen so' gera o factory estatico New(...); o mod compilado contra o
+    // 1.4.4.9 faz `newobj Filter::.ctor(ScreenShaderData, EffectPriority)`.
+    public Filter(Terraria.Graphics.Shaders.ScreenShaderData shader, EffectPriority priority)
+        : this(New(shader, priority).Pointer)
+    {
+    }
+
     public void Activate(Vector2 position, params object[] args) { }
 
     public void Deactivate(params object[] args) { }

@@ -130,6 +130,14 @@ public static class PlayerLoader
     internal static bool All<TState>(Player player, string method, TState state, Func<ModPlayer, TState, bool> call) =>
         All(player, Hook(method), state, call);
 
+    /// <summary>
+    /// Contrato <c>PlayerLoader.cs:1375</c>: qualquer ModPlayer pode vetar o
+    /// uso do item. Sem isto o mod morre em
+    /// <c>MissingMethodException: Boolean CanUseItem(Player, Item)</c>.
+    /// </summary>
+    public static bool CanUseItem(Player player, Item item) =>
+        All(player, nameof(ModPlayer.CanUseItem), item, static (modPlayer, useItem) => modPlayer.CanUseItem(useItem));
+
     internal static bool All<TState>(Player player, PlayerHook hook, TState state, Func<ModPlayer, TState, bool> call)
     {
         ModPlayer[] hooked = hook.Hooked;

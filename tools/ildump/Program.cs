@@ -428,6 +428,33 @@ internal static class Program
             return 0;
         }
 
+        if (args[1] == "--ldftn")
+        {
+            // uso: ildump <dll> --ldftn <substring>
+            //
+            // Pontos em que um metodo e' transformado em delegate (`ldftn`).
+            // E o que responde "quem instala este callback": um hook do MonoMod
+            // ou um IL edit nao aparece no `--calls`, que so' olha
+            // call/callvirt/newobj.
+            string filtro = args.Length > 2 ? args[2] : "";
+            int total = 0;
+            foreach (var t in module.GetTypes())
+                foreach (var m in t.Methods)
+                {
+                    if (!m.HasBody) continue;
+                    foreach (var ins in m.Body.Instructions)
+                    {
+                        if (ins.OpCode.Code is not (Code.Ldftn or Code.Ldvirtftn)) continue;
+                        if (ins.Operand is not MethodReference mr) continue;
+                        if (filtro.Length > 0 && mr.FullName.IndexOf(filtro, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        Console.WriteLine($"{m.FullName}\n     {ins}");
+                        total++;
+                    }
+                }
+            Console.WriteLine($"total: {total}");
+            return 0;
+        }
+
         string wanted = args[1];
         string method = args.Length > 2 ? args[2] : null;
         foreach (var type in module.GetTypes())

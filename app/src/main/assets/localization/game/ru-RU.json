@@ -1,4 +1,4 @@
-{
+﻿{
   "Back": "Назад",
   "Cancel": "Отмена",
   "ModConfigButton": "Настройки модов",
@@ -56,6 +56,12 @@
   "ScreenEffectsRow": "Эффекты экрана:",
   "ScreenEffectsOn": "Вкл.",
   "ScreenEffectsOff": "Выкл.",
+  "TownDebugRow": "Отладка:",
+
+  "TownDebugOpen": "Открыть",
+  "IconRow": "Значок окна:",
+  "TownDebugOn": "Вкл.",
+  "TownDebugOff": "Выкл.",
   "FxDescription": "инструменты эффектов экрана",
   "FxNone": "Нет активных эффектов.",
   "FxUnknown": "Неизвестный эффект. Доступны: {0}",

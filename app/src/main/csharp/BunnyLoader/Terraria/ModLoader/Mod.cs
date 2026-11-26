@@ -56,7 +56,21 @@ public abstract class Mod
     /// isso é <see cref="ReLogic.Content.AssetRepository"/> e não
     /// <see cref="ModAssets"/>.
     /// </summary>
-    public ReLogic.Content.AssetRepository Assets => assets ??= new ModAssets(this);
+    public ReLogic.Content.AssetRepository Assets
+    {
+        get
+        {
+            if (!loggedAssets)
+            {
+                loggedAssets = true;
+                Log.Info($"[fx] Assets pedido por {Name}");
+            }
+            return assets ??= new ModAssets(this);
+        }
+    }
+
+    /// <summary>Marcador do log de um so' disparo em <see cref="Assets"/>.</summary>
+    bool loggedAssets;
 
     public PreJITFilter PreJITFilter { get; protected set; } = new PreJITFilter();
 
@@ -117,17 +131,51 @@ public abstract class Mod
 
     public bool FileExists(string name) => ResolveFile(name) is string path && File.Exists(path);
 
+    /// <summary>
+    /// Contrato <c>Mod.cs:327</c>. O PC pergunta ao <c>RootContentSource</c>;
+    /// aqui a checagem equivalente e <see cref="ModContent.HasAsset(string)"/>,
+    /// que cobre textura/fonte (as unicas coisas que o host carrega).
+    /// </summary>
+    public bool RequestAssetIfExists<T>(string assetName, out ReLogic.Content.Asset<T> asset) where T : class
+    {
+        if (!ModContent.HasAsset(Name + "/" + assetName))
+        {
+            asset = default!;
+            return false;
+        }
+        asset = Assets.Request<T>(assetName);
+        return true;
+    }
+
     public byte[] GetFileBytes(string name) => File.ReadAllBytes(ExistingFile(name));
 
     public Stream GetFileStream(string name, bool newFileStream = false) => File.OpenRead(ExistingFile(name));
 
+    /// <summary>
+    /// v38: quantas chamadas de <see cref="GetFileNames"/> ainda logam. Interessa
+    /// saber se o <c>LoadShaders</c> do Luminance chega a chamar isto — com um
+    /// so' disparo nao dava para separar "chamou aqui" de "chamou antes".
+    /// </summary>
+    static int fileNamesLogLeft = 12;
+
     public List<string> GetFileNames()
     {
-        if (!Directory.Exists(Folder)) return new List<string>();
-        return Directory.EnumerateFiles(Folder, "*", SearchOption.AllDirectories)
+        bool log = System.Threading.Interlocked.Decrement(ref fileNamesLogLeft) >= 0;
+        if (!Directory.Exists(Folder))
+        {
+            if (log) Log.Info($"[fx] GetFileNames({Name}): pasta inexistente '{Folder}'");
+            return new List<string>();
+        }
+        List<string> list = Directory.EnumerateFiles(Folder, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(Folder, f).Replace('\\', '/'))
             .OrderBy(f => f, StringComparer.Ordinal)
             .ToList();
+        // v36: o LoadShaders do Luminance explode antes de pedir qualquer Effect.
+        // Esta linha separa "a lista chegou vazia" de "explodiu depois dela".
+        if (log)
+            Log.Info($"[fx] GetFileNames({Name}): {list.Count} entrada(s)" +
+                (list.Count == 0 ? "" : $", ex.: {string.Join(" | ", list.Take(3))}"));
+        return list;
     }
 
     internal string? ResolveFile(string name)

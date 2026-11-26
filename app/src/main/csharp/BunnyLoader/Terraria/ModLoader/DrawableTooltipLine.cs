@@ -30,6 +30,13 @@ public class DrawableTooltipLine : TooltipLine
 
     public float Spread = 2;
 
+    /// <summary>
+    /// O PC redeclara <c>Text</c> com <c>new</c> nesta classe e o IL do mod
+    /// acessa <c>DrawableTooltipLine::Text</c> direto (6
+    /// <c>MissingFieldException</c> no sandbox: BuildModifyTooltips e afins).
+    /// </summary>
+    public new readonly string Text;
+
     public DrawableTooltipLine(TooltipLine parent, int index, int x, int y, Color color) : base(parent.Mod, parent.Name, parent.Text)
     {
         IsModifier = parent.IsModifier;
@@ -41,5 +48,6 @@ public class DrawableTooltipLine : TooltipLine
         OriginalX = X = x;
         OriginalY = Y = y;
         Color = color;
+        Text = parent.Text;
     }
 }

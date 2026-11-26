@@ -39,6 +39,11 @@ internal static class PlacementFallback
     {
         ItemHooks.Once("PlaceFallback", () => On_Player.ItemCheck += ItemCheck);
         ItemHooks.Once("PlaceFallbackTile", () => On_WorldGen.PlaceTile += PlaceTile);
+        // v28: sem este gancho, `gamePlaced` ficava sempre falso no caminho de
+        // paredes. O jogo nativo colocava a parede e consumia o item, e o
+        // remendo disparava DE NOVO -> segunda chamada a PlaceWall (que troca
+        // blocos solidos) e consumo duplo onde ja' havia parede.
+        ItemHooks.Once("PlaceFallbackWall", () => On_WorldGen.PlaceWall += PlaceWall);
     }
 
     static bool PlaceTile(On_WorldGen.orig_PlaceTile orig, int i, int j, int type, bool mute, bool force, int player, int style)
@@ -46,6 +51,14 @@ internal static class PlacementFallback
         bool result = orig(i, j, type, mute, force, player, style);
         if (result && !manual) gamePlaced = true;
         return result;
+    }
+
+    static void PlaceWall(On_WorldGen.orig_PlaceWall orig, int i, int j, int type, bool mute)
+    {
+        orig(i, j, type, mute);
+        // Nao marcar quando e' o proprio remendo chamando (manual=true), para
+        // nao confundir a nossa colocacao com uma colocacao nativa.
+        if (!manual) gamePlaced = true;
     }
 
     static void ItemCheck(On_Player.orig_ItemCheck orig, Player self)
@@ -74,6 +87,34 @@ internal static class PlacementFallback
             return;
         }
 
+        // v29: o remendo precisa saber se a celulaALVO ja' tinha bloco ANTES do
+        // `orig`. Sem isso, quando o dedo cai numa celula ocupada (ou na origem
+        // de um objeto multi-tile ja' colocado) o vanilla consome o item e o
+        // remendo chama PlaceTile por cima -> tocha substitui qualquer bloco e
+        // a caixa de musica 6588 parece "nao consumir" (consome, devolve, e o
+        // jogador ve' o stack oscilar 9<->8).
+        int tx = 0, ty = 0;
+        bool alvoOcupado = false;
+        try
+        {
+            tx = Player.tileTargetX;
+            ty = Player.tileTargetY;
+            Item h = self.HeldItem;
+            if (h != null && !h.IsNull && h.createTile >= 0)
+            {
+                TileObjectData? d = TileObjectData.GetTileData(h.createTile, h.placeStyle);
+                if (d is { IsNull: false })
+                {
+                    Point16 origin = d.Origin;
+                    tx -= origin.X;
+                    ty -= origin.Y;
+                }
+            }
+            if (tx >= 0 && ty >= 0 && tx < Main.maxTilesX && ty < Main.maxTilesY)
+                alvoOcupado = Main.tile[tx, ty].HasTile;
+        }
+        catch { }
+
         gamePlaced = false;
         orig(self);
 
@@ -83,29 +124,32 @@ internal static class PlacementFallback
             if (agora == null || agora.IsNull) return;
             if (agora.type != tipo || agora.stack >= before) return;
             if (gamePlaced) return;
+            if (tile >= 0)
+            {
+                // Celula ja' ocupada antes: vanilla so' consome (nao coloca).
+                // Devolver e NAO chamar PlaceTile — e' o "tocha troca tudo".
+                if (alvoOcupado) { Devolver(agora); return; }
+                // O vanilla pode ter colocado por um caminho que o hook nao
+                // capturou (PlaceTile nativo/TileObject): celula vazia -> cheia.
+                // Nao place de novo.
+                try
+                {
+                    if (tx >= 0 && ty >= 0 && tx < Main.maxTilesX && ty < Main.maxTilesY
+                        && Main.tile[tx, ty].HasTile) return;
+                }
+                catch { }
+            }
             if (parede > 0) ColocarParede(self, agora, parede);
-            else if (tile >= 0) ColocarTile(self, agora, tile, estilo);
+            else if (tile >= 0) ColocarTile(self, agora, tile, estilo, tx, ty);
         }
         catch (Exception e) { Log.Warn($"[place] remendo falhou: {e.GetType().Name}: {e.Message}"); }
     }
 
-    static void ColocarTile(Player self, Item item, int tile, int estilo)
+    static void ColocarTile(Player self, Item item, int tile, int estilo, int x, int y)
     {
-        int x = Player.tileTargetX, y = Player.tileTargetY;
-
-        // Objetos multi-tile (a caixa de musica do VCMM e' Style2x2) usam como
-        // coordenada o canto de ORIGEM do objeto, nao a celula onde o dedo caiu.
-        // Sem esse ajuste `WorldGen.PlaceTile` recusa, o remendo devolve o item
-        // e ele so' era consumido depois de varias tentativas — quando o toque
-        // caia por acaso na celula de origem. Era o "precisa clicar 3 vezes".
-        TileObjectData? data = TileObjectData.GetTileData(tile, estilo);
-        if (data is { IsNull: false })
-        {
-            Point16 origin = data.Origin;
-            x -= origin.X;
-            y -= origin.Y;
-        }
-
+        // v29: as coordenadas ja' vem ajustadas da ItemCheck (origem de objetos
+        // multi-tile). Recalcular aqui faria o remendo mirar outra celula quando
+        // o cursor inteligente move o alvo dentro do mesmo ItemCheck.
         if (!DentroDoMundo(x, y) || ForaDeAlcance(self, x, y) || EmCimaDoJogador(self, x, y) || !Apoiado(x, y)
             || !TileHooks.ModsAllowPlace(x, y, tile))
         {
@@ -131,10 +175,35 @@ internal static class PlacementFallback
             Devolver(item);
             return;
         }
-        try { WorldGen.PlaceWall(x, y, parede, false); }
-        catch (Exception e) { Log.Warn($"[place] PlaceWall({parede}) falhou: {e.GetType().Name}"); }
 
-        if (Main.tile[x, y].wall == parede) Log.Info($"[place] shim colocou parede tipo={parede} em ({x},{y})");
+        // v28: nao reescrever uma parede ja' existente. O vanilla so' consumo
+        // o item quando a parede mudou; chegar aqui com .wall != 0 significa
+        // que (a) o nativo ja' colocou, ou (b) ha' outra parede - em ambos os
+        // casos o remendo nao deve colocar por cima (era o "replace qualquer
+        // bloco"/"consumiu onde ja' tinha parede").
+        if (Main.tile[x, y].wall != 0)
+        {
+            Devolver(item);
+            return;
+        }
+
+        // Mesmo filtro de CanPlace que o Player.PlaceThing_Walls aplica, para
+        // que o remendo nao va' alem do que o jogo permitiria.
+        try
+        {
+            if (WallLoader.GetWall(parede)?.CanPlace(x, y) == false) { Devolver(item); return; }
+            foreach (GlobalWall guard in WallLoader.Globals)
+                if (!guard.CanPlace(x, y, parede)) { Devolver(item); return; }
+        }
+        catch (Exception e) { Log.Warn($"[place] CanPlace parede {parede} falhou: {e.GetType().Name}"); }
+
+        bool ok = false;
+        manual = true;
+        try { WorldGen.PlaceWall(x, y, parede, false); ok = Main.tile[x, y].wall == parede; }
+        catch (Exception e) { Log.Warn($"[place] PlaceWall({parede}) falhou: {e.GetType().Name}"); }
+        finally { manual = false; }
+
+        if (ok) Log.Info($"[place] shim colocou parede tipo={parede} em ({x},{y})");
         else Devolver(item);
     }
 

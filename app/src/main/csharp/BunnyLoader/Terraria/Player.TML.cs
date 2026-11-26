@@ -140,4 +140,39 @@ public sealed partial class Player
     /// argumento é "veio de outro jogador", que aqui não muda o efeito.
     /// </summary>
     public void AddBuff(int type, int time, bool fromNetPvP, bool fromPlayer) => AddBuff(type, time, fromNetPvP);
+
+    /// <summary>
+    /// O jogo devolve <c>GameNullable&lt;Vector2&gt;</c> (o <c>Nullable</c> do
+    /// Il2Cpp é um struct próprio). O contrato do 1.4.4.9 e o mod usam
+    /// <c>Nullable&lt;Vector2&gt;</c>, então a geração é reservada em tipos.txt
+    /// (<c>!Terraria.Player.HandPosition</c>) e a propriedade é reescrita aqui.
+    /// </summary>
+    public Vector2? HandPosition => (Vector2?)HandPosition_;
+
+    /// <summary>
+    /// Buffer de <see cref="adjTile"/>. Nome diferente de <c>adjTile_</c> porque
+    /// esse é o nome que o ProxyGen dá à propriedade gerada quando o membro é
+    /// reservado em tipos.txt.
+    /// </summary>
+    bool[] adjTileCache = new bool[Terraria.ModLoader.TileLoader.TileCount];
+
+    /// <summary>
+    /// O jogo expõe <c>ref GameArray&lt;bool&gt;</c> (ponteiro para o Il2CppArray),
+    /// mas o contrato do 1.4.4.9 é <c>bool[]</c> e o mod escreve com
+    /// <c>stelem.i1</c> — só funciona em array gerenciado. A geração é reservada
+    /// em tipos.txt (<c>!Terraria.Player.adjTile</c>) e a propriedade refeita
+    /// aqui, com o mesmo redimensionamento do contrato
+    /// (<c>Player.cs.patch:965-972</c>).
+    /// </summary>
+    public bool[] adjTile
+    {
+        get
+        {
+            int count = Terraria.ModLoader.TileLoader.TileCount;
+            if (adjTileCache.Length != count) Array.Resize(ref adjTileCache, count);
+            return adjTileCache;
+        }
+
+        set => adjTileCache = value;
+    }
 }

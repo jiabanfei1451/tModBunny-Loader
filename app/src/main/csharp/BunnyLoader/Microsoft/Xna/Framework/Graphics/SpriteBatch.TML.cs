@@ -61,4 +61,24 @@ public sealed partial class SpriteBatch
         DepthStencilState depthStencilState, RasterizerState rasterizerState, Effect effect)
         => Begin(sortMode, blendState, samplerState, depthStencilState, rasterizerState, effect,
             default(GameNullable<Matrix>), false);
+
+    // FNA/tML tem `Begin(sortMode, blendState)` de DOIS argumentos (o resto
+    // vai default). O proxy só emitiu o de 8, entao `fs-missing.txt:98` lista
+    // esta assinatura como ASSIN. Repassa explicito para o de 8 — chamar
+    // `Begin(sortMode, blendState)` aqui seria recursao infinita.
+    public void Begin(SpriteSortMode sortMode, BlendState blendState)
+        => Begin(sortMode, blendState, default(SamplerState), default(DepthStencilState),
+            default(RasterizerState), default(Effect), default(GameNullable<Matrix>), false);
+
+    // `fs-missing.txt:526` — `Draw(Texture2D, Rectangle, Rectangle?, Color,
+    // float, Vector2, SpriteEffects, float)`. O gerado (linha 966) tem esta
+    // MESMA aridade, mas com `GameNullable<Rectangle>` no sourceRectangle:
+    // o mod compilou contra `System.Nullable<Rectangle>` e o `callvirt` nao
+    // encontra o metodo (18 chamadas: AbomBoss/AbomRitual/LifeRitual/
+    // SpiritChampion/WillRitual/MutantBoss/EaterofWorldsHead/Retinazer/
+    // WallofFlesh/EmpressRitual/MoltenAuraProj/AbomSky...).
+    public void Draw(Texture2D texture, Rectangle destinationRectangle, Rectangle? sourceRectangle,
+        Color color, float rotation, Vector2 origin, SpriteEffects effects, float layerDepth)
+        => Draw(texture, destinationRectangle, (GameNullable<Rectangle>)sourceRectangle,
+            color, rotation, origin, effects, layerDepth);
 }

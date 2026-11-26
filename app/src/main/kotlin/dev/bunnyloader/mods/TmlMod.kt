@@ -162,8 +162,11 @@ object TmlMods {
                 ?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension
             val safe = declared.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "mod" }
             val work = File(root, safe)
-            if (!File(work, "Info").isFile) {
-                val error = runCatching { extract(file, work) }.exceptionOrNull()
+            if (!File(work, "Info").isFile || !stamped(work)) {
+                val error = runCatching {
+                    extract(file, work)
+                    mark(work)
+                }.exceptionOrNull()
                 ImportLog.add(
                     context, "TML",
                     if (error == null) "extraído da pasta: ${file.name} -> $safe/"
@@ -336,6 +339,7 @@ object TmlMods {
             val work = File(modsDir(context), safe)
             ImportLog.add(context, "TML", "extraindo $safe.tmod -> ${work.name}/")
             val files = extract(stored, work) { line -> ImportLog.add(context, "TML", line) }
+            mark(work)
 
             val mod = read(context, work)
             ImportLog.add(
@@ -388,6 +392,30 @@ object TmlMods {
      */
     private fun extract(zip: File, target: File, note: (String) -> Unit = {}): Int =
         ModPackages.open(zip).use { it.extractTo(target, note) }
+
+    /**
+     * Selo da extração. `Info` existir só prova que *alguma* versão do
+     * extractor já rodou — não que ela guardou tudo o que o mod precisa.
+     *
+     * Caso real (v35, 2026-11-25): a pasta do Luminance foi extraída por uma
+     * versão antiga que não deixava os `.xnb` dos shaders; o
+     * `ShaderManager::LoadShaders` dele filtra por `.xnb`, achava zero e
+     * registrava zero shaders, e nenhum efeito desenhava. Sem selo a pasta
+     * nunca seria refeita, porque `Info` já estava lá.
+     *
+     * Trocar a constante força uma reextração de todo mundo no próximo
+     * lançamento — é o que se quer quando o extractor muda o que grava.
+     */
+    private const val STAMP = ".bunny-extract"
+    private const val STAMP_VALUE = "2026-11-25-fx1"
+
+    private fun stamped(work: File): Boolean = runCatching {
+        File(work, STAMP).readText().trim() == STAMP_VALUE
+    }.getOrDefault(false)
+
+    private fun mark(work: File) {
+        runCatching { File(work, STAMP).writeText(STAMP_VALUE) }
+    }
 
     /**
      * `Info` é texto `chave = valor`. As chaves valem em minúsculas — o

@@ -48,6 +48,14 @@ public static class SceneEffectLoader
     public static int Count => Effects.Count;
 
     static string lastMusicOwner = "";
+    // v30 diagnostic: who currently owns the scene music slot (real-time).
+    static string lastMusicDesc = "";
+
+    internal static string MusicOwnerLine()
+    {
+        var m = Of(Main.LocalPlayer).music;
+        return $"[scene] music={m.value} prio={m.priority} owner={lastMusicDesc}";
+    }
 
     internal static IReadOnlyList<ModSceneEffect> All => Effects;
 
@@ -179,6 +187,7 @@ public static class SceneEffectLoader
                 if (lastMusicOwner != key)
                 {
                     lastMusicOwner = key;
+                    lastMusicDesc = effect.GetType().Name + "/" + music;
                     Log.Info($"[scene] musica slot <- {music} por {owner} prioridade={priority} peso={effect.GetWeight(Main.LocalPlayer):F2}");
                 }
             }

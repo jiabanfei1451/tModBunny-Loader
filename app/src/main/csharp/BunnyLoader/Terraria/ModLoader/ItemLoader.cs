@@ -151,6 +151,28 @@ public static unsafe partial class ItemLoader
         return can;
     }
 
+    /// <summary>
+    /// Contrato <c>ItemLoader.cs:289</c>: pergunta ao ModItem e a todos os
+    /// GlobalItem se o item pode ser usado. Sem isto o mod morre em
+    /// <c>MissingMethodException: Boolean CanUseItem(Item, Player)</c>.
+    /// </summary>
+    public static bool CanUseItem(Item item, Player player)
+    {
+        bool can = true;
+        if (ItemHooks.ModItemOf(item) is ModItem modItem)
+        {
+            try { can &= modItem.CanUseItem(player); }
+            catch (Exception e) { ItemHooks.Report($"{modItem.FullName}.CanUseItem", e); }
+        }
+        foreach (GlobalItem? global in ItemHooks.GlobalsOf(item))
+        {
+            if (global == null) continue;
+            try { can &= global.CanUseItem(item, player); }
+            catch (Exception e) { ItemHooks.Report($"{global.FullName}.CanUseItem", e); }
+        }
+        return can;
+    }
+
     public static void PreReforge(Item item)
     {
         if (item.IsNull) return;

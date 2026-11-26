@@ -51,10 +51,45 @@ internal static class MusicHooks
     // jogo tocar. Se este valor muda e nada sai do alto-falante, o problema
     // esta' depois desse ponto, nao no mod. Loga so' quando muda.
     static int lastBox2 = -1;
+    static int lastBox2Slot = -1;
+
+    // v31: o mod escreve o slot de Silencio (Assets/Sounds/Silence.ogg) em
+    // Main.musicBox2 no fim do evento. O vanilla zera esse campo todo frame em
+    // Player.UpdateBuffs (Player.cs.patch:4641), mas neste port a maquina de
+    // eventos do mod as vezes nao limpa e o campo fica preso no Silencio ate'
+    // o usuario reentrar no mundo. Watchdog: se o mesmo slot de Silencio
+    // permanecer por SilenceTimeoutFrames, forca -1 e marca suppress para que
+    // Choose() nao volte a travar nele.
+    const int SilenceTimeoutFrames = 300; // ~5 s a 60 fps
+    static int silenceBox = -1;
+    static int silenceTicks;
+    static bool silenceSuppress;
 
     static void WatchBox2()
     {
         int box = Main.musicBox2;
+        MusicLoader.Track? t = box >= MusicID.Count ? MusicLoader.TrackOf(box) : null;
+        bool silence = t != null && t.File.EndsWith("Silence.ogg", StringComparison.OrdinalIgnoreCase);
+        if (!silence)
+        {
+            // Um slot de MUSICA real (nao silencio) encerra a supressao, para
+            // que um evento futuro possa usar silencio de novo. box == -1
+            // (nosso force ou o clear do vanilla) NAO libera a supressao.
+            if (box >= MusicID.Count) { silenceBox = -1; silenceTicks = 0; silenceSuppress = false; }
+        }
+        else
+        {
+            if (silenceBox != box) { silenceBox = box; silenceTicks = 0; }
+            else if (++silenceTicks >= SilenceTimeoutFrames)
+            {
+                if (!silenceSuppress)
+                {
+                    silenceSuppress = true;
+                    Log.Info($"[music] silence watchdog: musicBox2={box} preso por {SilenceTimeoutFrames} frames, forcando -1");
+                }
+                Main.musicBox2 = -1;
+            }
+        }
         if (box == lastBox2) return;
         lastBox2 = box;
         Log.Info($"musica: musicBox2 -> {box} (newMusic={Main.newMusic} cur={Main.curMusic} wanted={wanted})");
@@ -65,6 +100,29 @@ internal static class MusicHooks
         if (Main.gameMenu) return MenuLoader.MenuMusic();
         int box = MusicBoxHooks.Active();
         if (box > 0) return box;
+        // v28: mods como o UnCalamityModMusic tocam musicas de evento (ex.: o
+        // interludio do Hardmode apos matar o Wall of Flesh) escrevendo o slot
+        // em Main.musicBox2 -- e o vanilla tocaria esse slot direto. Nosso
+        // Choose() sempre ignorou musicBox2, entao a faixa ficava presa na
+        // scene (WoF/lugar) e o SilenceGame() calava o canal vanilla: a musica
+        // do evento nunca saia. Respeitar slots de MOD ( >= MusicID.Count )
+        // escritos em musicBox2, com prioridade sobre as scenes. Slots vanilla
+        // ( < MusicID.Count ) continuam sendo tratados pelo proprio orig().
+        int box2 = Main.musicBox2;
+        if (box2 >= MusicID.Count && MusicLoader.TrackOf(box2) != null)
+        {
+            // v31: se o watchdog ja' decidiu que este Silencio travou, nao
+            // voltar a prendre a faixa nele mesmo que o mod reescreva o slot.
+            if (!silenceSuppress || silenceBox != box2)
+            {
+                if (lastBox2Slot != box2)
+                {
+                    lastBox2Slot = box2;
+                    Log.Info($"musica: musicBox2 venceu -> faixa {box2}");
+                }
+                return box2;
+            }
+        }
         if (Main.SceneMetrics.ActiveMusicBox >= 0) return -1;
         int music = -1;
         SceneEffectPriority priority = SceneEffectPriority.None;
@@ -195,10 +253,17 @@ internal static class MusicHooks
         int current = Main.curMusic;
         bool mainAudible = main != null ? main.Fade > Audible : current <= 0 || Main.musicFade[current] > Audible;
         float volume = Main.musicVolume;
+        // v31: com faixas de MOD muda' o "dono" da musica a cada poucos frames
+        // (ex.: townNPCs oscilando em 2/3 alterna Forest e Town). Esperar o
+        // novo tema ficar audivel antes de baixar o antigo deixa os dois no ar
+        // e o tema antigo (forest) continua dominando o ouvido. Para tracks de
+        // MOD, inicia o fade-out na mesma hora que o fade-in; o caminho vanilla
+        // mantem o limite antigo.
+        bool modMain = main != null; // main so' e' na nulo quando e' faixa de MOD
         foreach (MusicLoader.Track track in MusicLoader.Tracks)
         {
             if (track == main) track.Fade = Math.Min(1, track.Fade + FadeStep);
-            else if (mainAudible) track.Fade = Math.Max(0, track.Fade - FadeStep);
+            else if (modMain || mainAudible) track.Fade = Math.Max(0, track.Fade - FadeStep);
             float v = track.Fade * volume;
             if (v == track.Sent) continue;
             MusicLoader.SetVolume(track, v);

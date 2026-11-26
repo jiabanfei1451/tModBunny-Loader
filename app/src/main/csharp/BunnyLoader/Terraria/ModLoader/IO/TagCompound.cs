@@ -82,6 +82,17 @@ public class TagCompound : IEnumerable<KeyValuePair<string, object>>, ICloneable
 
     public double GetDouble(string key) => Get<double>(key);
 
+    /// <summary>
+    /// O PC le qualquer tipo inteiro gravado no NBT e devolve <c>int</c>
+    /// (contrato <c>IO/TagCompound.cs:138</c>). Sem isto o mod morre em
+    /// <c>MissingMethodException: Int32 GetAsInt(System.String)</c>.
+    /// </summary>
+    public int GetAsInt(string key)
+    {
+        object? value = Get<object>(key);
+        return value as int? ?? value as short? ?? value as byte? ?? 0;
+    }
+
     public string GetString(string key) => Get<string>(key) ?? "";
 
     public byte[] GetByteArray(string key) => Get<byte[]>(key);

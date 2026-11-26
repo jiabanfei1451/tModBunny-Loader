@@ -23,7 +23,14 @@ public abstract class ModMount : ModType
 {
     Mount.MountData mountData;
 
-    public ref Mount.MountData MountData => ref mountData;
+    /// <summary>
+    /// O contrato expoe isto por VALOR (<c>public Mount.MountData MountData
+    /// =&gt; Entity;</c>). Devolver <c>ref</c> muda a assinatura IL para
+    /// <c>MountData&amp; get_MountData()</c> e o mod nao encontra o metodo.
+    /// <c>Mount.MountData</c> e uma classe, entao o valor e a propria
+    /// referencia — nada muda na pratica.
+    /// </summary>
+    public Mount.MountData MountData => mountData;
 
     public int Type { get; internal set; }
 
@@ -38,7 +45,7 @@ public abstract class ModMount : ModType
         {
             string extraTexture = GetExtraTexture(textureType);
             if (string.IsNullOrEmpty(extraTexture) || !ModContent.RequestIfExists<Texture2D>(extraTexture, out Asset<Texture2D> asset)) continue;
-            ref Mount.MountData data = ref mountData;
+            Mount.MountData data = mountData;
             switch (textureType)
             {
                 case MountTextureType.Back: data.backTexture = asset; break;

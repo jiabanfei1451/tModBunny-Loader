@@ -1,11 +1,68 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework.Graphics;
+using Terraria.ModLoader;
 
 namespace Terraria;
 
 public sealed unsafe partial class Main
 {
+    /// <summary>
+    /// tML 1.4.5: <c>Main.SavePath</c> e' a raiz onde ficam <c>Worlds/</c>,
+    /// <c>Players/</c> e <c>ModSources/</c>.
+    ///
+    /// No Android 1.4.5.8.6 o getter nativo nao existe: o proxy gerado chamava
+    /// <c>GameInterop.Method("string get_SavePath()")</c>, que estoura
+    /// <c>GameException</code>. Isso derrubava dois passos do Luminance —
+    /// <c>ShaderRecompilationMonitor::OnModLoad</code> e, pior, a segunda
+    /// passada do <c>ShaderManager::LoadShaders</code> (que faz
+    /// <c>Path.Combine(Main.SavePath, "ModSources", ...)</code>) — e por isso
+    /// nenhum shader era registrado no port.
+    ///
+    /// Derivacao: os mods moram em <c>&lt;raiz&gt;/bunny_packs/</code>, ao lado de
+    /// <c>Players/</code> e <c>Worlds/</code>; o pai de <c>bunny_packs</code> e'
+    /// a raiz (mesma regra que o ConfigManager ja' usa). Sem mod instalado cai
+    /// em <c>&lt;files&gt;/dotnet/../../</code>, que e' o mesmo lugar do ponto de
+    /// vista do app.
+    /// </summary>
+    public static string SavePath
+    {
+        get
+        {
+            if (savePath != null) return savePath;
+
+            try
+            {
+                foreach (Mod mod in Terraria.ModLoader.ModLoader.Mods)
+                {
+                    if (string.IsNullOrEmpty(mod?.Folder)) continue;
+                    for (DirectoryInfo? dir = new(mod.Folder); dir != null; dir = dir.Parent)
+                    {
+                        if (dir.Name != "bunny_packs" || dir.Parent == null) continue;
+                        return savePath = dir.Parent.FullName;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Sem ModLoader (ou array vazio): cai no fallback abaixo.
+            }
+
+            try
+            {
+                return savePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."));
+            }
+            catch (Exception)
+            {
+                return savePath = AppContext.BaseDirectory;
+            }
+        }
+    }
+
+    static string? savePath;
+
     // v100: campo estatico de verdade (o mod faz "ldsflda Main::tile").
     // Em types.txt: "! Terraria.Main.tile" impede o ProxyGen de gerar a
     // propriedade equivalente.

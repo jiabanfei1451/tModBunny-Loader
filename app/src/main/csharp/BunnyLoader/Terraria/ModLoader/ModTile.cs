@@ -15,7 +15,10 @@ public abstract class ModBlockType : ModTexturedType, ILocalizedModType
     public ushort Type { get; internal set; }
 
     // Contrato é PROPRIEDADE (`public SoundStyle? HitSound { get; set; }`).
-    public SoundStyle? HitSound { get; set; } = new SoundStyle(ID.SoundID.Dig);
+    // `SoundID.Dig` agora e' um `SoundStyle` (campo estatico, para o `ldsflda`
+    // do mod); antes era `const int` e o `new SoundStyle(...)` fazia a
+    // conversao. Agora a atribuicao direta e' o que o contrato escreve.
+    public SoundStyle? HitSound { get; set; } = ID.SoundID.Dig;
 
     // Contrato é PROPRIEDADE (`{ get; set; } = 0`), campo não expõe setter.
     public int DustType { get; set; }

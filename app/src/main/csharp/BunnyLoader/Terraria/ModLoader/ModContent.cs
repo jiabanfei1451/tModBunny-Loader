@@ -232,6 +232,8 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
+        BunnyLoader.TownDebugSetting.Install();
+        Core.SystemDrawHooks.WantTownDebug();
         TouchControlSizes.Install();
         yield return 0;
         Terraria.ID.SetFactory.GrowToContent();
@@ -457,6 +459,19 @@ public static class ModContent
                 yield return 0;
             }
         }
+        try
+        {
+            // v35: inventario dos .fx/.xnb no disco, uma linha por mod. Separa
+            // "a pasta do mod nao tem shader" de "tem e o nosso lado falhou".
+            BunnyLoader.Graphics.FxInventory.Report();
+        }
+        catch (Exception e) { Log.Warn($"fx inventario: {e.GetType().Name}: {e.Message}"); }
+        try
+        {
+            // E o gancho de EndCapture: sem ele o Luminance nunca aplica filtro.
+            BunnyLoader.ScreenHookProbe.Install();
+        }
+        catch (Exception e) { Log.Warn($"fx hook EndCapture: {e.GetType().Name}: {e.Message}"); }
         try { BiomeConversionLoader.PostSetupContent(); }
         catch (Exception e) { Core.ItemHooks.Report("BiomeConversionLoader.PostSetupContent", e); }
         yield return 0;
@@ -574,6 +589,24 @@ public static class ModContent
         catch (Exception e)
         {
             Log.Error($"mod {mod.Uid}: {step} threw: {e}");
+        }
+    }
+
+    /// <summary>
+    /// O contrato devolve todo o conteudo carregado de todos os mods
+    /// (<c>ContentCache.GetContentForAllMods&lt;T&gt;()</c>). Sem este membro
+    /// o mod morre em
+    /// <c>MissingMethodException: IEnumerable`1 GetContent()</c>
+    /// (FargowiltasSouls EnchantSystem::PostSetupRecipes).
+    /// </summary>
+    public static IEnumerable<T> GetContent<T>() where T : ILoadable
+    {
+        Mod[] mods = Host.Mods;
+        for (int i = 0; i < mods.Length; i++)
+        {
+            Mod mod = mods[i];
+            if (mod == null) continue;
+            foreach (T item in mod.GetContent<T>()) yield return item;
         }
     }
 }

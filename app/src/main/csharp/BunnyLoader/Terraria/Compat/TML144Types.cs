@@ -1,6 +1,7 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ReLogic.Content;
+using Terraria.UI;
 
 namespace Terraria.DataStructures
 {
@@ -38,18 +39,27 @@ namespace Terraria.UI
     ///
     /// Só os membros que o tML 1.4.4 declara — e nada além: se a interface
     /// trouxer um membro a mais, a classe do mod deixa de satisfazê-la e o
-    /// carregamento falha com "does not implement interface member". A lista
-    /// veio do IL das implementações do próprio FargowiltasSouls
-    /// (<c>NoDLCNotification</c>: ShouldBeRemoved, Scale, Opacity, Update,
-    /// DrawInGame, PushAnchor).
+    /// carregamento falha com "does not implement interface member".
+    ///
+    /// A lista vem de <c>tmodloader/patches/tModLoader/Terraria/UI/
+    /// IInGameNotification.cs.patch</c>, que só APAGA dois membros do vanilla
+    /// (<c>CreationObject</c> e <c>DrawInNotificationsArea</c>) e não acrescenta
+    /// nenhum. Sobram portanto quatro: ShouldBeRemoved, Update, DrawInGame e
+    /// PushAnchor.
+    ///
+    /// <c>Scale</c> e <c>Opacity</c> NÃO podem entrar aqui. O IL do
+    /// FargowiltasSouls mostra que os getters dessas duas propriedades em
+    /// <c>NoDLCNotification</c>/<c>NoMusicNotification</c> são
+    /// <c>Private, HideBySig, SpecialName</c> — métodos privados comuns, sem
+    /// slot de vtable. Declará-los na interface faz o CLR exigir uma
+    /// implementação virtual que não existe, e o resultado era
+    /// <c>TypeLoadException: Method 'get_Scale' in type ... does not have an
+    /// implementation</c> (três falhas no relatório do sandbox, incluindo
+    /// <c>FargoSoulsPlayer.OnEnterWorld</c>).
     /// </summary>
     public interface IInGameNotification
     {
         bool ShouldBeRemoved { get; }
-
-        float Scale { get; }
-
-        float Opacity { get; }
 
         void Update();
 
@@ -82,18 +92,9 @@ namespace Terraria
 
 namespace Terraria.Graphics.Shaders
 {
-    /// <summary>
-    /// Dados de um shader de jogo. Existe para o campo
-    /// <c>FargowiltasSouls.Content.Bosses.VanillaEternity.QueenSlime.queenSlimeBuffer</c>
-    /// resolver: sem o tipo, a classe não carrega e o mod inteiro cai.
-    ///
-    /// Os membros (<c>UseColor</c>, <c>UseImage</c>, <c>Apply</c>...) ficam de
-    /// fora de propósito: quem os chama já é quarentenado pelo reescritor, e um
-    /// método vazio aqui daria a impressão de que o shader foi aplicado.
-    /// </summary>
-    public class MiscShaderData
-    {
-    }
+    // MiscShaderData saiu daqui: agora e' uma classe de verdade em
+    // MiscShaderData.GLES.cs, porque o FargowiltasSouls registra os shaders
+    // pelo construtor e os desenha em PreDraw/PostDraw.
 }
 
 namespace Terraria.GameContent.UI.Elements
@@ -104,9 +105,21 @@ namespace Terraria.GameContent.UI.Elements
     /// O <c>FargoChinese</c> guarda uma referência num campo de closure
     /// (<c>WorldDifficulty/&lt;&gt;c.&lt;&gt;9__5_4</c>), e o tipo ausente derrubava
     /// a classe no carregamento.
+    ///
+    /// <c>_worldIcon</c> é um campo de instância do vanilla, atribuído no
+    /// construtor por <c>_worldIcon = GetIconElement();</c> (ver
+    /// <c>tmodloader/patches/tModLoader/Terraria/GameContent/UI/Elements/
+    /// UIWorldListItem.cs.patch</c>). O <c>WorldBorderSystem</c> do
+    /// FargowiltasSouls o devolve por <c>ref</c>
+    /// (<c>&lt;UseCustomBorder&gt;g__GetWorldIcon|2_0</c> retorna
+    /// <c>Terraria.UI.UIElement&amp;</c>) e em seguida chama
+    /// <c>RemoveAllChildren()</c> nele — por isso o tipo tem de ser
+    /// <c>UIElement</c>, e não o <c>Asset&lt;Texture2D&gt;</c> que se poderia
+    /// supor pelo nome.
     /// </summary>
     public class UIWorldListItem
     {
+        public UIElement _worldIcon;
     }
 }
 

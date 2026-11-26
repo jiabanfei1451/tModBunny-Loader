@@ -17,6 +17,12 @@ public sealed partial class EffectParameter
         : this(0)
         => this.name = name;
 
+    /// <summary>
+    /// O ultimo valor escrito por <c>SetValue</c>. O MiscShaderData le daqui
+    /// para saber o que mandar ao backend GLES (uColor, uImage0...).
+    /// </summary>
+    internal object? Value => stored;
+
     public string? Name
     {
         get => name;
@@ -52,4 +58,12 @@ public sealed partial class EffectParameter
     public void SetValue(float value) => stored = value;
 
     public void SetValue(float[]? value) => stored = value;
+
+    /// <summary>
+    /// O formato do PC e' fixo por parametro, mas o shim nao tem uma colecao
+    /// de tipos: o MiscShaderData escreve <c>Color</c>, <c>Texture2D</c> e
+    /// <c>object</c> pelo mesmo caminho e resolve o tipo na hora de mandar
+    /// para o GLES.
+    /// </summary>
+    internal void SetValueObject(object? value) => stored = value;
 }

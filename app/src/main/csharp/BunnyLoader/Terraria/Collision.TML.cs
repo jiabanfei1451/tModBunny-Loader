@@ -13,6 +13,22 @@ public sealed partial class Collision
         buffer.AsSpan().CopyTo(samples);
     }
 
+    /// <summary>
+    /// O jogo recebe <c>out float[]</c> (dump <c>:66061</c>), mas o ProxyGen
+    /// traduz todo <c>T[]</c> para <c>GameArray&lt;T&gt;</c> — e um parâmetro
+    /// <c>out</c> não aceita conversão implícita, então o mod ficava com
+    /// <c>MissingMethodException: AimingLaserScan(..., out float[])</c> em
+    /// <c>FindSharpTearsSpot</c>. Aqui o buffer do jogo é alocado a partir do
+    /// array gerenciado e copiado de volta, igual a <see cref="LaserScan"/>.
+    /// A sobrecarga convive com a gerada (assinaturas diferentes), então não
+    /// precisa de <c>!</c> no types.txt.
+    /// </summary>
+    public static void AimingLaserScan(Vector2 startPoint, Vector2 endPoint, float samplingWidth, int samplesToTake, out Vector2 vectorTowardsTarget, out float[] samples)
+    {
+        AimingLaserScan(startPoint, endPoint, samplingWidth, samplesToTake, out vectorTowardsTarget, out GameArray<float> buffer);
+        samples = buffer.IsNull ? Array.Empty<float>() : buffer.AsSpan().ToArray();
+    }
+
     public static bool CheckAABBvLineCollision(Vector2 objectPosition, Vector2 objectDimensions, Vector2 lineStart, Vector2 lineEnd, float lineWidth, ref float collisionPoint)
     {
         float half = lineWidth * 0.5f;

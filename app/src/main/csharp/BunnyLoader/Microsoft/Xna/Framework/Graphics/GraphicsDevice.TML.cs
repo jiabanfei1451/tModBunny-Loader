@@ -99,8 +99,18 @@ public sealed partial class GraphicsDevice
     /// <c>SetRenderTarget(target)</c> → <c>Clear</c> → Begin/Draw/End). Resolvido
     /// por nome + argc porque o dump nao traz GraphicsDevice nenhum.
     /// </summary>
+    // v37: quantas linhas de log de alvo/clear ainda cabem. E' o rastro que falta
+    // para explicar "tela branca so' com o Luminance ligado".
+    static int rtProbeLeft = 60;
+    // v38: o SetRenderTargets e' chamado TODO quadro pelo Luminance (restaurar
+    // a tela). Contador proprio para nao engolir as linhas de Clear/SetRenderTarget.
+    static int mrtProbeLeft = 8;
+
     public void SetRenderTarget(RenderTarget2D? renderTarget)
     {
+        if (System.Threading.Interlocked.Decrement(ref rtProbeLeft) >= 0)
+            global::BunnyLoader.Log.Info("[rt] SetRenderTarget(" +
+                (renderTarget is null ? "tela" : $"ptr=0x{renderTarget.Pointer:x}") + ")");
         if (Pointer == 0 || GraphicsObjectCalls.IsBroken("GraphicsDevice.SetRenderTarget")) return;
         try
         {
@@ -125,6 +135,8 @@ public sealed partial class GraphicsDevice
     /// </summary>
     public void Clear(Color color)
     {
+        if (System.Threading.Interlocked.Decrement(ref rtProbeLeft) >= 0)
+            global::BunnyLoader.Log.Info($"[rt] Clear(r={color.R} g={color.G} b={color.B} a={color.A})");
         if (Pointer == 0 || GraphicsObjectCalls.IsBroken("GraphicsDevice.Clear")) return;
         try
         {
@@ -178,6 +190,26 @@ public sealed partial class GraphicsDevice
     /// </summary>
     public void SetRenderTargets(RenderTargetBinding[]? renderTargets)
     {
+        // v38: isto NAO e' enfeite. No FNA, `SetRenderTargets(vazio)` significa
+        // "volta a desenhar na tela" — e o Luminance chama exatamente isso todo
+        // quadro (RenderTargetManager, depois de desenhar nos alvos dele). Como
+        // era stub, o device ficava preso no ultimo alvo do mod: o mundo era
+        // desenhado num render target que nunca ia para a tela e a tela ficava
+        // branca. O sintoma sumia sem o Luminance porque so' ele usa este overload.
+        int count = renderTargets?.Length ?? 0;
+        if (System.Threading.Interlocked.Decrement(ref mrtProbeLeft) >= 0)
+            global::BunnyLoader.Log.Info($"[rt] SetRenderTargets({count})" + (count == 0 ? " -> tela (backbuffer)" : ""));
+        if (count == 0)
+        {
+            SetRenderTarget(null);
+            return;
+        }
+        // O nativo so' tem SetRenderTarget de UM alvo; multi-alvo (MRT) nao
+        // existe neste build — usa o primeiro e avisa uma vez.
+        nint pointer = renderTargets![0].RenderTarget?.Pointer ?? 0;
+        if (count > 1 && System.Threading.Interlocked.Decrement(ref mrtProbeLeft) >= 0)
+            global::BunnyLoader.Log.Warn($"[rt] SetRenderTargets com {count} alvos: o nativo so' aceita 1 (usando o primeiro)");
+        SetRenderTarget(pointer == 0 ? null : new RenderTarget2D(pointer));
     }
 
     /// <summary>

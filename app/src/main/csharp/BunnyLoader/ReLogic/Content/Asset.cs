@@ -153,6 +153,12 @@ public sealed unsafe class Asset<T> where T : class
     public AssetState State => PointerSlot.Read(ref asset) != IntPtr.Zero ? AssetState.Loaded : AssetState.NotLoaded;
 
     /// <summary>
+    /// O ponteiro il2cpp do asset (Texture2D). O MiscShaderData usa para
+    /// montar <c>uImageN</c> sem passar por <see cref="Value"/>.
+    /// </summary>
+    internal IntPtr NativePointer => PointerSlot.Read(ref asset);
+
+    /// <summary>
     /// O asset de um mod pode chegar depois do Request (o Prefetch manda o
     /// nativo carregar em segundo plano). Antes de dizer "nao carregado" o
     /// State pergunta ao nativo se a textura ja' ficou pronta e adota o
@@ -203,7 +209,7 @@ public sealed unsafe class Asset<T> where T : class
             AssetTrace.Step(Tag("1 inicio"));
             bool effect = AssetKinds.IsEffectType(Element);
             AssetTrace.Step(Tag(effect ? "2 effect" : "2 textura"));
-            if (effect) return (T)(object)Effect.CreateManaged();
+            if (effect) return (T)(object)Effect.CreateManaged(Name);
             Wait();
             AssetTrace.Step(Tag("3 Wait ok"));
             IntPtr pointer = ValuePointer();

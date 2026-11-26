@@ -16,6 +16,8 @@ public class UIImage : UIElement
     // como falho e nada mais era registrado. Nao pode ser non-nullable.
     Texture2D? nonReloadingTexture;
     bool measured;
+    // v36: quantas linhas de diagnostico de desenho ainda cabem.
+    static int drawProbeLeft = 8;
     public float ImageScale = 1f;
     public float Rotation;
     public bool ScaleToFit;
@@ -90,6 +92,15 @@ public class UIImage : UIElement
         Texture2D? tex = CurrentTexture();
         if (tex is null || tex.IsNull) return;
         CalculatedStyle d = GetDimensions();
+        // v36: a pagina de configuracao desenha o icone (80x80) gigante na tela
+        // inteira. Esta linha diz se o retangulo ja' sai grande daqui (erro de
+        // layout nosso) ou se sai 80x80 e o desenho e' que estoura depois.
+        if (ScaleToFit || ImageScale != 1f)
+        {
+            if (System.Threading.Interlocked.Decrement(ref drawProbeLeft) >= 0)
+                global::BunnyLoader.Log.Info($"[ui] UIImage.DrawSelf tex={tex.Width}x{tex.Height} rect={d.ToRectangle()} " +
+                    $"scaleToFit={ScaleToFit} imageScale={ImageScale} frame={Frame?.ToString() ?? "null"}");
+        }
         if (ScaleToFit)
         {
             spriteBatch.Draw(tex, d.ToRectangle(), Frame, Color);

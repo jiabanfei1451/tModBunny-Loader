@@ -1,4 +1,4 @@
-{
+﻿{
   "Back": "返回",
   "Cancel": "取消",
   "ModConfigButton": "模组配置",
@@ -55,6 +55,11 @@
   "ScreenEffectsRow": "屏幕特效：",
   "ScreenEffectsOn": "开启",
   "ScreenEffectsOff": "关闭",
+  "TownDebugRow": "调试：",
+  "TownDebugOpen": "打开",
+  "IconRow": "悬浮窗图标：",
+  "TownDebugOn": "开启",
+  "TownDebugOff": "关闭",
   "FxDescription": "屏幕特效工具",
   "FxNone": "没有正在运行的特效。",
   "FxUnknown": "未知特效。可用：{0}",

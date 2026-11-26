@@ -19,6 +19,29 @@ namespace Terraria.Graphics.Shaders
         public ArmorShaderData(ReLogic.Content.Asset<Effect> shader, string passName) : this(New(shader, passName).Pointer)
         {
         }
+
+        /// <summary>
+        /// O 1.4.4.9 aceitava <c>Ref&lt;Effect&gt;</c> e o mod compilado ainda usa
+        /// esse construtor (o contrato so' o marcou <c>[Obsolete]</c>). No Android
+        /// nao existe <c>Asset&lt;Effect&gt;</c> por tras do <c>Ref</c> -- o .fx nunca
+        /// foi carregado pelo pipeline do XNA -- entao o objeto nasce com o asset
+        /// nulo. Os setters (<c>UseColor</c> etc.) continuam gravando nos campos
+        /// nativos; so' o desenho do efeito nao acontece.
+        /// </summary>
+        public ArmorShaderData(Terraria.Ref<Effect> shader, string passName) : this(New(null!, passName).Pointer) => LegacyShader = shader;
+
+        internal Terraria.Ref<Effect>? LegacyShader { get; }
+
+        /// <summary>
+        /// O PC declara <c>Apply(Entity entity, DrawData? drawData)</c>. O proxy
+        /// usa <c>GameNullable&lt;DrawData&gt;</c> na assinatura, o que vira
+        /// ASSIN para o IlPatcher e o mod morre em
+        /// <c>MissingMethodException</c>. A conversao implicita entre
+        /// <c>T?</c> e <c>GameNullable&lt;T&gt;</c> ja existe em
+        /// <see cref="BunnyLoader.Interop.GameNullable{T}"/>.
+        /// </summary>
+        public void Apply(Terraria.Entity entity, Terraria.DataStructures.DrawData? drawData) =>
+            Apply(entity, (GameNullable<Terraria.DataStructures.DrawData>)drawData);
     }
 
     public unsafe sealed partial class ArmorShaderDataSet
@@ -31,6 +54,12 @@ namespace Terraria.Graphics.Shaders
             new GameDictionary(_shaderLookupDictionary).Set(itemId, id);
             return shaderData;
         }
+
+        public void Apply(int shaderId, Terraria.Entity entity, Terraria.DataStructures.DrawData? drawData) =>
+            Apply(shaderId, entity, (GameNullable<Terraria.DataStructures.DrawData>)drawData);
+
+        public void ApplySecondary(int shaderId, Terraria.Entity entity, Terraria.DataStructures.DrawData? drawData) =>
+            ApplySecondary(shaderId, entity, (GameNullable<Terraria.DataStructures.DrawData>)drawData);
     }
 
     public unsafe sealed partial class HairShaderDataSet

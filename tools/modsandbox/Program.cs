@@ -619,7 +619,20 @@ internal static class Program
             Type? patcher = shim.GetType("BunnyLoader.IlPatcher");
             MethodInfo? rewrite = patcher?.GetMethod("Rewrite", BindingFlags.NonPublic | BindingFlags.Static);
             if (rewrite == null) { why = "IlPatcher.Rewrite nao encontrado"; return null; }
-            return (byte[])rewrite.Invoke(null, new object[] { dll, File.ReadAllBytes(dll) })!;
+
+            // A assinatura mudou: Rewrite(path, bytes, out List<string> warmKeys).
+            // Montar o array pelo numero de parametros do metodo, para nao voltar
+            // a quebrar quando ele ganhar outro parametro no fim.
+            ParameterInfo[] ps = rewrite.GetParameters();
+            var args = new object?[ps.Length];
+            args[0] = dll;
+            args[1] = File.ReadAllBytes(dll);
+            for (int i = 2; i < ps.Length; i++)
+                args[i] = ps[i].ParameterType.IsByRef ? null : null;
+            object? result;
+            try { result = rewrite.Invoke(null, args); }
+            catch (TargetInvocationException tie) { why = tie.InnerException?.Message ?? tie.Message; return null; }
+            return result as byte[];
         }
         catch (Exception e)
         {
@@ -640,10 +653,18 @@ internal static class Program
         // derruba o processo (SIGSEGV) ao JITar o assembly reescrito. O aparelho
         // usa o ALC default; aqui um ALC normal e o mais proximo disso.
         var alc = new AssemblyLoadContext("sandbox-" + Guid.NewGuid().ToString("N"), isCollectible: false);
+        // No aparelho todos os mods vivem no MESMO ALC (Host.LoadModCore), entao
+        // um mod referencia o outro sem cerimonia. Aqui so' carregamos UM assembly,
+        // e mods como FargowiltasSouls -> Luminance/Fargowiltas quebrariam com
+        // FileNotFoundException. BL_SANDBOX_DEPS aponta para um diretorio com os
+        // .dll dos mods dependentes (extraidos com out/tmp/unpack_tmod.ps1).
+        string[] deps = (Environment.GetEnvironmentVariable("BL_SANDBOX_DEPS") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
         alc.Resolving += (ctx, name) =>
         {
-            foreach (string dir in new[] { facade, shim, Path.GetDirectoryName(dll)! })
+            foreach (string dir in new[] { facade, shim, Path.GetDirectoryName(dll)! }.Concat(deps))
             {
+                if (string.IsNullOrEmpty(dir)) continue;
                 string p = Path.Combine(dir, name.Name + ".dll");
                 if (!File.Exists(p)) continue;
                 Say($"  resolve {name.Name} -> {Path.GetFileName(Path.GetDirectoryName(p))}/{Path.GetFileName(p)}");

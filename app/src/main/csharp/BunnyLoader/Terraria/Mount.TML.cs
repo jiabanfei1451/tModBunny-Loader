@@ -28,6 +28,16 @@ public sealed partial class Mount
 
     public sealed partial class MountData
     {
+        /// <summary>
+        /// O PC expoe <c>MountData()</c> publico (usado por
+        /// <c>new MountData { ... }</c> em mods de montaria). O proxy so gera o
+        /// construtor de ponteiro + <see cref="New()"/>, entao o mod morria em
+        /// <c>MissingMethodException: Void MountData..ctor()</c>.
+        /// </summary>
+        public MountData() : this(New().Pointer)
+        {
+        }
+
         public int[] playerYOffsets
         {
             get

@@ -28,9 +28,35 @@ public sealed class ModAssets : AssetRepository
 
     internal ModAssets(Mod mod) => this.mod = mod;
 
+    // v42: quantas linhas de entrada do Request<T> ainda cabem (contador
+    // proprio: o de baixo e' compartilhado com textura e some antes).
+    static int entryProbeLeft = 16;
+
+    // v36: quantas linhas de log de Request ainda cabem. O LoadShaders do
+    // Luminance pode pedir centenas de assets; queremos so' as primeiras.
+    // v41: este contador e' COMPARTILHADO por todos os mods, entao o orcamento
+    // de 40 era gasto por textura dos outros mods antes do Luminance e o probe
+    // "nao apareceu" foi lido como "Request nao foi chamado" — leitura errada.
+    // O caminho de shader agora tem contador proprio (effectLogLeft).
+    static int requestProbeLeft = 40;
+
     public override Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
         where T : class
     {
+        // v42: primeira linha, antes de qualquer desvio. Se o Luminance morrer
+        // em NullReferenceException SEM esta linha, o NRE acontece antes do nosso
+        // override (calculo de assetName ou despacho da chamada virtual) — nao
+        // dentro dele. A v41 provou o contrario do que eu supunha: nem o "[fx]
+        // effect 1/6" nem o "[fx] asset de efeito" apareceram.
+        if (System.Threading.Interlocked.Decrement(ref entryProbeLeft) >= 0)
+            Log.Info($"[fx] Request<{typeof(T).Name}>({assetName}) mod={mod.Name} entrou");
+        // v41: shader tem caminho proprio, com rastro por passo e rede de
+        // seguranca. O v40 mostrou que o NRE do Luminance acontece DENTRO do
+        // Request<Effect> (o log de "Assets pedido" sai, o de "asset de efeito"
+        // nao, e nenhum Asset<Effect>.Value imprime "[asset] 1 inicio") — mas
+        // sem dizer em qual passo. Aqui cada passo e' numerado e, se estourar,
+        // devolve o stub em vez de derrubar o PostSetupContent inteiro.
+        if (AssetKinds.IsEffectType(typeof(T))) return EffectAsset<T>(assetName, mode);
         Asset<T>.CheckSupported();
         string extension = Extension<T>();
         lock (requested)
@@ -45,21 +71,9 @@ public sealed class ModAssets : AssetRepository
         {
             if (!requested.TryGetValue(key, out object? have))
             {
-                if (AssetKinds.IsEffectType(typeof(T)))
-                {
-                    // Shader (.xnb / bytecode D3D9): este port nao tem runtime de
-                    // HLSL (o jogo desenha pelo Unity). Devolver o stub mantem o
-                    // mod carregando; sem isso o ShaderManager.LoadShaders do
-                    // Luminance morria em FileNotFoundException e levava o
-                    // assembly inteiro junto.
-                    have = new Asset<T>($"{mod.Name}/{relative}", null);
-                }
-                else
-                {
-                    string? file = Find(relative, extension);
-                    if (file == null) throw new FileNotFoundException($"{mod.Name}: asset '{assetName}' not found in {mod.Folder}");
-                    have = new Asset<T>($"{mod.Name}/{relative}", file);
-                }
+                string? file = Find(relative, extension);
+                if (file == null) throw new FileNotFoundException($"{mod.Name}: asset '{assetName}' not found in {mod.Folder}");
+                have = new Asset<T>($"{mod.Name}/{relative}", file);
                 requested[key] = have;
                 created = true;
             }
@@ -67,6 +81,66 @@ public sealed class ModAssets : AssetRepository
             result = (Asset<T>)have;
         }
         return result.OnRequest(mode, created);
+    }
+
+    // v41: quantas linhas o caminho de shader ainda escreve.
+    static int effectLogLeft = 24;
+
+    /// <summary>
+    /// Caminho do <c>Asset&lt;Effect&gt;</code>: nao ha .xnb para carregar
+    /// neste port (sem runtime de HLSL), o valor e' um stub gerenciado que aceita
+    /// parametros. Cada passo e' logado (so' as primeiras chamadas) porque o
+    /// Luminance morria no meio daqui com NullReferenceException e sem rastro.
+    /// </summary>
+    Asset<T> EffectAsset<T>(string assetName, AssetRequestMode mode) where T : class
+    {
+        int step = 0;
+        bool log = System.Threading.Interlocked.Decrement(ref effectLogLeft) >= 0;
+        try
+        {
+            step = 1;
+            if (log) Log.Info($"[fx] effect 1/6 nome={assetName}");
+            Asset<T>.CheckSupported();
+            step = 2;
+            string extension = Extension<T>();
+            step = 3;
+            lock (requested)
+            {
+                if (byName.TryGetValue((assetName, extension), out object? seen))
+                {
+                    if (log) Log.Info($"[fx] effect 3/6 cache {mod.Name}/{assetName}");
+                    return ((Asset<T>)seen).OnRequest(mode, false);
+                }
+            }
+            step = 4;
+            string relative = Relative(assetName);
+            string key = relative + extension;
+            step = 5;
+            Asset<T> result;
+            bool created = false;
+            lock (requested)
+            {
+                if (!requested.TryGetValue(key, out object? have))
+                {
+                    // v35: uma linha por efeito pedido. E' o marco que prova que
+                    // o LoadShaders do Luminance chegou ate aqui.
+                    Log.Info($"[fx] asset de efeito: {mod.Name}/{relative}");
+                    have = new Asset<T>($"{mod.Name}/{relative}", null);
+                    requested[key] = have;
+                    created = true;
+                }
+                byName[(assetName, extension)] = have;
+                result = (Asset<T>)have;
+            }
+            step = 6;
+            if (log) Log.Info($"[fx] effect 6/6 ok {mod.Name}/{relative}");
+            return result.OnRequest(mode, created);
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[fx] Request<{typeof(T).Name}>({assetName}) mod={mod.Name} estourou no passo {step}: {e}");
+            return new Asset<T>($"{mod.Name}/{assetName}", null);
+        }
     }
 
     public override bool HasAsset<T>(string assetName) where T : class =>

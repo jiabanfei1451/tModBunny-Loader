@@ -15,6 +15,16 @@ namespace Terraria.ModLoader.Core;
 /// </summary>
 public static class LoaderUtils
 {
+    /// <summary>
+    /// A sobrecarga sem <c>F</c>, que e a que o mod chama de fato: o IL de
+    /// <c>AccessoryEffectPlayer.SetStaticDefaults</c> pede
+    /// <c>WhereMethodIsOverridden&lt;AccessoryEffect&gt;(IEnumerable`1&lt;!!0&gt;,
+    /// Expression`1&lt;Func`2&lt;!!0,Delegate&gt;&gt;)</c>. Sem ela o metodo inteiro
+    /// morria em <c>MissingMethodException</c> (contrato: LoaderUtils.cs:241).
+    /// </summary>
+    public static IEnumerable<T> WhereMethodIsOverridden<T>(this IEnumerable<T> providers, Expression<Func<T, Delegate>> expr)
+        => WhereMethodIsOverridden<T, Delegate>(providers, expr);
+
     public static IEnumerable<T> WhereMethodIsOverridden<T, F>(this IEnumerable<T> providers, Expression<Func<T, F>> expr)
         where F : Delegate
     {

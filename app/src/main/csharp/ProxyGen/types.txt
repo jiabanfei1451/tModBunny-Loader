@@ -11,12 +11,30 @@ Terraria.Main
 # sob demanda ate NPCCount, porque o SetStaticDefaults dos itens roda antes do
 # tick que aumenta as tabelas de NPC (v41, log 2026-11-12-device-v40.txt).
 !Terraria.Main.npcFrameCount
+# SavePath: o getter nativo nao existe no 1.4.5.8.6 do Android
+# (GameInterop.Method("string get_SavePath()") estoura GameException). Escrito a
+# mao em Terraria/Main.TML.cs derivando a raiz de salvamento da pasta dos mods.
+# v35: sem isso o ShaderManager.LoadShaders do Luminance morria na segunda
+# passada (Path.Combine(Main.SavePath, "ModSources", ...)).
+!Terraria.Main.SavePath
 Terraria.Entity
 Terraria.Player
+# HandPosition: o jogo devolve GameNullable<Vector2>, o contrato do 1.4.4.9 e o
+# mod usam Nullable<Vector2>. Escrito a mao em Terraria/Player.TML.cs.
+!Terraria.Player.HandPosition
+# adjTile: o jogo expoe `ref GameArray<bool>` (ponteiro Il2CppArray), mas o mod
+# escreve com `stelem.i1` — precisa de bool[] gerenciado. Escrito a mao em
+# Terraria/Player.TML.cs com o Array.Resize do contrato (Player.cs.patch:965).
+!Terraria.Player.adjTile
 Terraria.Item
 Terraria.Item+NewItemModifier
 Terraria.NPC
 Terraria.Projectile
+# GetFairyQueenWeaponsColor: o contrato do 1.4.4.9 declara o terceiro parametro
+# como `float?`; no dump ele e Nullable<float>, que o ProxyGen so sabe gerar como
+# GameNullable<float>. Metodo e dupla orig_/hook_ escritos a mao em
+# Terraria/On.Projectile.TML.cs (`!!` = nome reservado + dupla suprimida).
+!!Terraria.Projectile.GetFairyQueenWeaponsColor
 Terraria.WorldGen
 Terraria.WorldItem
 Terraria.Dust
@@ -593,6 +611,35 @@ Terraria.GameContent.Creative.ItemsSacrificedUnlocksTracker
 !Terraria.ID.SoundID.MenuClose
 !Terraria.ID.SoundID.MenuOpen
 
+# Segunda leva (FargowiltasSouls): `out/tmp/fs-missing.txt` lista estes como
+# ASSIN — o gerado os declara `const int` e o mod faz `ldsflda`. Viram campos
+# `static readonly SoundStyle` em ID/SoundID.TML.cs.
+!Terraria.ID.SoundID.Dig
+!Terraria.ID.SoundID.Drown
+!Terraria.ID.SoundID.ForceRoar
+!Terraria.ID.SoundID.Grab
+!Terraria.ID.SoundID.Grass
+!Terraria.ID.SoundID.MaxMana
+!Terraria.ID.SoundID.MenuTick
+!Terraria.ID.SoundID.Meowmere
+!Terraria.ID.SoundID.Pixie
+!Terraria.ID.SoundID.Run
+!Terraria.ID.SoundID.Thunder
+!Terraria.ID.SoundID.Tink
+!Terraria.ID.SoundID.Unlock
+
+# Estes nem existem no dump 1.4.5.8 (sao do tML) -> SEM. Escritos a mao em
+# ID/SoundID.TML.cs com um id legado aproximado.
+!Terraria.ID.SoundID.ScaryScream
+!Terraria.ID.SoundID.ForceRoarPitched
+!Terraria.ID.SoundID.Zombie20
+!Terraria.ID.SoundID.Zombie21
+!Terraria.ID.SoundID.Zombie82
+!Terraria.ID.SoundID.Zombie102
+!Terraria.ID.SoundID.Zombie103
+!Terraria.ID.SoundID.Zombie104
+!Terraria.ID.SoundID.Zombie125
+
 # tML patch faz `ItemID.Count`/`NPCID.Count` virarem `static readonly short`
 # (ItemLoader.ItemCount / NPCLoader.NPCCount). O gerado sa铆a `const short`, que
 # n茫o tem armazenamento em runtime -> `ldsfld` quebra. Viram `static readonly
@@ -681,3 +728,15 @@ Microsoft.Xna.Framework.Graphics.RenderTargetBinding
 # sem o proxy completo o IlPatcher nao acha o metodo e esvazia o PreAI
 # (era o que fazia o OverloadSummon gerar so 1 boss).
 Terraria.GameContent.TownRoomManager
+
+# `DelegateMethods.CastLight` etc: no 1.4.4.9 (PC) sao METODOS estaticos; o dump
+# 1.4.5.8 so tem os CAMPOS delegados. O mod faz `ldftn CastLight(int,int)` para
+# montar o delegate (`newobj TileActionAttempt`) -> MissingMethodException.
+# O gerado expoe os campos como propriedades (`CastLight`); para poder escrever
+# `public static bool CastLight(int,int)` a mao em DelegateMethods.TML.cs, o
+# gerado tem de largar o nome (`CastLight_`). A implementacao manual so chama
+# `CastLightFunc`/`CastLightOpenFunc`/`CutTilesImp`, que o gerado ja tem.
+!Terraria.DelegateMethods.CastLight
+!Terraria.DelegateMethods.CastLightOpen
+!Terraria.DelegateMethods.CutTiles
+!Terraria.DelegateMethods.SearchAvoidedByNPCs

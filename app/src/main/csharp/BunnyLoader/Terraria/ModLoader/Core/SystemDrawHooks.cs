@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
 using BunnyLoader.Interop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -32,6 +34,10 @@ internal static class SystemDrawHooks
         if (has(nameof(ModSystem.PostDrawFullscreenMap))) postFullscreenMap = true;
         if (preMapIcons || postFullscreenMap) WantMapIcons();
     }
+
+    // v29: town NPC debug corner. Reuses the same MouseText interface stage as
+    // PostDrawInterface; called from ModContent setup, independent of mod hooks.
+    internal static void WantTownDebug() => ItemHooks.Once("TownDebug", () => On_Main.DrawInterface_33_MouseText += DrawTownDebug);
 
     internal static void WantMapIcons() => ItemHooks.Once("SystemMapIcons", () => On_MapIconOverlay.Draw += DrawMapIcons);
 
@@ -80,6 +86,107 @@ internal static class SystemDrawHooks
     {
         if (!Main.gameMenu) SystemLoader.PostDrawInterface(Main.spriteBatch);
         orig(self);
+    }
+
+    // v29: town NPC debug corner (merged from the temporary TownDebugOverlay).
+    const float TownLeft = 20f;
+    const float TownTop = 40f;
+    const float TownLineHeight = 22f;
+
+    // v30: real-time read of UnCalamityModMusic.Common.MusicFlags. Cached because
+    // reflection over every loaded assembly is far too costly per frame.
+    static Type? flagsType;
+    static bool flagsProbed;
+    static readonly string[] FlagNames =
+    {
+        "Town", "Forest", "Desert", "Surface", "Underground", "Night",
+        "NearThreeVillagers", "NotInTownAverseBiome", "NotInTownAverseEvent",
+        "WorkshopAnyTier", "Rain", "Sandstorm", "Party", "DayTime"
+    };
+    static readonly FieldInfo?[] FlagFields = new FieldInfo?[FlagNames.Length];
+    static string BadgeState(FieldInfo? f)
+    {
+        if (f == null) return "?";
+        try { return f.GetValue(null) is bool b && b ? "1" : "0"; }
+        catch { return "?"; }
+    }
+
+    static string MusicFlagsLine()
+    {
+        if (!flagsProbed)
+        {
+            flagsProbed = true;
+            try
+            {
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type? t = asm.GetType("UnCalamityModMusic.Common.MusicFlags");
+                    if (t == null) continue;
+                    flagsType = t;
+                    for (int i = 0; i < FlagNames.Length; i++)
+                        FlagFields[i] = t.GetField(FlagNames[i], BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    break;
+                }
+            }
+            catch { }
+        }
+        if (flagsType == null) return "[ucmm] MusicFlags not found";
+        var sb = new StringBuilder("[ucmm] ");
+        for (int i = 0; i < FlagNames.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(FlagNames[i]).Append('=').Append(BadgeState(FlagFields[i]));
+        }
+        return sb.ToString();
+    }
+
+    static void DrawTownDebug(On_Main.orig_DrawInterface_33_MouseText orig, Main self)
+    {
+        try
+        {
+            BunnyLoader.TownDebugSetting.Restore();
+            if (BunnyLoader.TownDebugSetting.Enabled && !Main.gameMenu)
+                PaintTownDebug(Main.spriteBatch);
+        }
+        catch (Exception e) { ItemHooks.Report("TownDebug (draw)", e); }
+        orig(self);
+    }
+
+    /// <summary>
+    /// v39: as mesmas linhas do angulo, montadas uma vez para quem quiser lista-las
+    /// (a janela de depuracao desenha isto numa caixa rolavel).
+    /// </summary>
+    internal static List<string> DebugLines()
+    {
+        var p = Main.LocalPlayer;
+        int townNpcs = p.IsNull ? -1 : p.townNPCs;
+        int metrics = Main.SceneMetrics.IsNull ? -1 : Main.SceneMetrics.TownNPCCount;
+        string state = townNpcs > 2 ? "TOWN" : "WILD";
+        return new List<string>
+        {
+            $"[town] townNPCs={townNpcs} (need >2) -> {state}",
+            $"[town] metricsTownNPCCount={metrics}",
+            $"[town] day={Main.dayTime} time={Main.time:0}",
+            $"[town] musicBox2={Main.musicBox2}",
+            $"[town] boxActive={MusicBoxHooks.Active()} wanted={MusicHooks.Wanted} playing={MusicHooks.Playing}",
+            SceneEffectLoader.MusicOwnerLine(),
+            MusicFlagsLine(),
+        };
+    }
+
+    static void PaintTownDebug(SpriteBatch batch)
+    {
+        if (batch is null || batch.Pointer == 0) return;
+        Color color = new(255, 235, 120, 255);
+        float y = TownTop;
+        foreach (string text in DebugLines())
+            TownDebugLine(batch, text, ref y, color);
+    }
+
+    static void TownDebugLine(SpriteBatch batch, string text, ref float y, Color color)
+    {
+        Utils.DrawBorderString(batch, text, new Vector2(TownLeft, y), color, 1f, 0f, 0f, -1);
+        y += TownLineHeight;
     }
 
     static void DrawMapIcons(On_MapIconOverlay.orig_Draw orig, MapIconOverlay self, Vector2 mapPosition, Vector2 mapOffset,

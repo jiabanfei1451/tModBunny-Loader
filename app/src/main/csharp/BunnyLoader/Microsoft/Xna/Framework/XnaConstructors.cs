@@ -135,6 +135,17 @@ namespace Microsoft.Xna.Framework
         public Color(float r, float g, float b, float a)
             : this((int)(r * 255f + 0.5f), (int)(g * 255f + 0.5f), (int)(b * 255f + 0.5f), (int)(a * 255f + 0.5f)) { }
 
+        /// <summary>
+        /// FNA: <c>public Color(Vector3 vector) : this(vector.X, vector.Y, vector.Z)</c>
+        /// (alfa 255). O dump do port tem o construtor
+        /// (<c>refs/dump.cs:42022</c>) mas o ProxyGen nao o expoe — sem ele o mod
+        /// nao compila nem JITa (<c>Color..ctor(Vector3)</c>).
+        /// </summary>
+        public Color(Vector3 vector) : this(vector.X, vector.Y, vector.Z) { }
+
+        /// <summary>FNA: <c>public Color(Vector4 vector) : this(vector.X, vector.Y, vector.Z, vector.W)</c>.</summary>
+        public Color(Vector4 vector) : this(vector.X, vector.Y, vector.Z, vector.W) { }
+
         public override readonly string ToString() => $"{{R:{R} G:{G} B:{B} A:{A}}}";
     }
 }

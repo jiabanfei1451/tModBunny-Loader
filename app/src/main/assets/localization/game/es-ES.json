@@ -1,4 +1,4 @@
-{
+﻿{
   "Back": "Volver",
   "Cancel": "Cancelar",
   "ModConfigButton": "Configuración de mods",
@@ -56,6 +56,12 @@
   "ScreenEffectsRow": "Efectos de pantalla:",
   "ScreenEffectsOn": "Activados",
   "ScreenEffectsOff": "Desactivados",
+  "TownDebugRow": "Depuración:",
+
+  "TownDebugOpen": "Abrir",
+  "IconRow": "Icono en pantalla:",
+  "TownDebugOn": "Activado",
+  "TownDebugOff": "Desactivado",
   "FxDescription": "herramientas de efectos de pantalla",
   "FxNone": "No hay efectos activos.",
   "FxUnknown": "Efecto desconocido. Disponibles: {0}",
