@@ -11,9 +11,11 @@
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
 #include <mutex>
+#include <string>
 #include <sys/prctl.h>
 
 namespace bl::graphics {
@@ -36,6 +38,8 @@ using BlendFuncSeparateFn = void (*)(GLenum, GLenum, GLenum, GLenum);
 using ClearColorFn = void (*)(GLfloat, GLfloat, GLfloat, GLfloat);
 using DepthMaskFn = void (*)(GLboolean);
 using DepthFuncFn = void (*)(GLenum);
+using BlendEquationFn = void (*)(GLenum);
+using BindTextureFn = void (*)(GLenum, GLuint);
 
 SwapFn g_origSwap = nullptr;
 BindFramebufferFn g_origBindFramebuffer = nullptr;
@@ -56,6 +60,8 @@ BlendFuncSeparateFn g_origBlendFuncSeparate = nullptr;
 ClearColorFn g_origClearColor = nullptr;
 DepthMaskFn g_origDepthMask = nullptr;
 DepthFuncFn g_origDepthFunc = nullptr;
+BlendEquationFn g_origBlendEquation = nullptr;
+BindTextureFn g_origBindTexture = nullptr;
 
 // As nossas proprias chamadas GL (o desenho do efeito) passam pelos mesmos
 // hooks: nao entram no rastro nem mudam o espelho do estado da Unity.
@@ -122,6 +128,10 @@ void noteDraw() {
 // O rastro: pedido pela thread do jogo, gravado pela de render entre dois
 // eglSwapBuffers.
 std::atomic<bool> g_traceRequested{false};
+// v49: no quadro rastreado tambem lemos os pixels (ver dumpFramebuffer).
+std::atomic<bool> g_dumpPending{false};
+GLuint g_lastOffscreenFbo = 0;
+int g_dumpCount = 0;
 bool g_tracing = false;
 std::string g_trace;
 int g_pendingDraws = 0;
@@ -170,6 +180,8 @@ void hkBindFramebuffer(GLenum target, GLuint fbo) {
     if (tracked()) {
         if (target != GL_READ_FRAMEBUFFER) g_shadow.drawFbo = fbo;
         if (target != GL_DRAW_FRAMEBUFFER) g_shadow.readFbo = fbo;
+        // v49: o ultimo alvo NAO-tela e' onde o mundo foi desenhado.
+        if (fbo != 0) g_lastOffscreenFbo = fbo;
         traceEvent("FB%s(%u)", target == GL_READ_FRAMEBUFFER ? "r" : target == GL_DRAW_FRAMEBUFFER ? "d" : "", fbo);
     }
     g_origBindFramebuffer(target, fbo);
@@ -227,6 +239,71 @@ void hkDepthFunc(GLenum func) {
     g_origDepthFunc(func);
 }
 
+void hkBlendEquation(GLenum mode) {
+    if (tracked()) traceEvent("BE(%d)", (int)mode);
+    g_origBlendEquation(mode);
+}
+
+void hkBindTexture(GLenum target, GLuint texture) {
+    if (tracked()) {
+        int unit = static_cast<int>(g_shadow.activeTexture) - static_cast<int>(GL_TEXTURE0);
+        traceEvent("TX(%d,%u)", unit, static_cast<unsigned>(texture));
+    }
+    g_origBindTexture(target, texture);
+}
+
+// ---- v49: leitura de pixels ----------------------------------------------
+//
+// O rastro provou que os dois casos (com e sem mod) emitem a MESMA sequencia
+// de draws/programas (395 vs 379 draws, mesma ordem). Entao o problema nao e'
+// "nao desenha": e' o que sai no pixel. Aqui, no quadro rastreado, lemos o
+// framebuffer de destino (o offscreen onde o mundo foi desenhado) e o
+// framebuffer 0 (a tela) e imprimimos uma miniatura ASCII + a cor media.
+// - desenho presente no offscreen e ausente na tela = falha na composicao;
+// - ausente nos dois = o desenho nao pinta (estado/textura).
+void dumpFramebuffer(const char* tag, GLuint fbo, int width, int height) {
+    if (width <= 0 || height <= 0) return;
+    size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+    unsigned char* pixels = static_cast<unsigned char*>(std::malloc(bytes));
+    if (!pixels) return;
+
+    GLint previous = 0;
+    gl().GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
+    g_origBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+    gl().ReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    g_origBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previous));
+
+    const int cols = 48, rows = 16;
+    const char* ramp = " .:-=+*#%@";
+    int rampLen = 10;
+    std::string art;
+    double sumR = 0, sumG = 0, sumB = 0;
+    long samples = 0;
+    for (int row = 0; row < rows; ++row) {
+        // GL le de baixo para cima; invertemos para a miniatura ficar "de pe".
+        int y = height - 1 - (row * height + height / 2) / rows;
+        if (y < 0) y = 0;
+        if (y >= height) y = height - 1;
+        for (int col = 0; col < cols; ++col) {
+            int x = (col * width + width / 2) / cols;
+            if (x < 0) x = 0;
+            if (x >= width) x = width - 1;
+            const unsigned char* p = pixels + (static_cast<size_t>(y) * width + x) * 4;
+            double luma = (0.30 * p[0] + 0.59 * p[1] + 0.11 * p[2]) / 255.0;
+            art.push_back(ramp[static_cast<int>(luma * (rampLen - 1) + 0.5)]);
+            sumR += p[0]; sumG += p[1]; sumB += p[2];
+            samples++;
+        }
+        art.push_back('|');
+    }
+    std::free(pixels);
+    if (samples == 0) return;
+    BL_INFO("pixel %s fbo=%u %dx%d media=%.0f,%.0f,%.0f", tag, static_cast<unsigned>(fbo), width, height,
+            sumR / samples, sumG / samples, sumB / samples);
+    for (int row = 0; row < rows; ++row)
+        BL_INFO("pixel %s [%2d] %s", tag, row, art.substr(static_cast<size_t>(row) * (cols + 1), cols + 1).c_str());
+}
+
 void hkBindVertexArray(GLuint vao) {
     if (tracked()) g_shadow.vertexArray = vao;
     g_origBindVertexArray(vao);
@@ -251,6 +328,7 @@ bool* capSlot(GLenum cap) {
 void hkEnable(GLenum cap) {
     if (tracked()) {
         if (bool* slot = capSlot(cap)) *slot = true;
+        traceEvent("EN(%d)", (int)cap);
     }
     g_origEnable(cap);
 }
@@ -258,6 +336,7 @@ void hkEnable(GLenum cap) {
 void hkDisable(GLenum cap) {
     if (tracked()) {
         if (bool* slot = capSlot(cap)) *slot = false;
+        traceEvent("DIS(%d)", (int)cap);
     }
     g_origDisable(cap);
 }
@@ -268,6 +347,7 @@ void hkColorMask(GLboolean r, GLboolean gr, GLboolean b, GLboolean a) {
         g_shadow.colorMask[1] = gr;
         g_shadow.colorMask[2] = b;
         g_shadow.colorMask[3] = a;
+        traceEvent("CM(%d%d%d%d)", (int)r, (int)gr, (int)b, (int)a);
     }
     g_origColorMask(r, gr, b, a);
 }
@@ -333,6 +413,17 @@ EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
     // O quadro inteiro na GPU, de um swap ao outro, em quadros alternados (os
     // outros medem o efeito sozinho; consultas de tempo nao se aninham).
     GpuTimer::End(GpuChannel::Frame);
+
+    // v49: miniatura ASCII do offscreen (onde o mundo foi desenhado) e da tela,
+    // no quadro rastreado. Antes do swap para a tela ainda ter o conteudo final.
+    if (g_dumpPending.exchange(false) && g_dumpCount < 2) {
+        g_dumpCount++;
+        const int w = g_lastDraw.viewport[2];
+        const int h = g_lastDraw.viewport[3];
+        dumpFramebuffer("offscreen", g_lastOffscreenFbo, w, h);
+        dumpFramebuffer("tela", 0, w, h);
+    }
+
     const EGLBoolean result = g_origSwap(display, surface);
     if (++g_frame % 2 == 0) GpuTimer::Begin(GpuChannel::Frame);
     return result;
@@ -376,6 +467,8 @@ void installGlHooks() {
         ok &= hookGl("glClearColor", reinterpret_cast<void*>(g.ClearColor), hkClearColor, &g_origClearColor);
         ok &= hookGl("glDepthMask", reinterpret_cast<void*>(g.DepthMask), hkDepthMask, &g_origDepthMask);
         ok &= hookGl("glDepthFunc", reinterpret_cast<void*>(g.DepthFunc), hkDepthFunc, &g_origDepthFunc);
+        ok &= hookGl("glBlendEquation", reinterpret_cast<void*>(g.BlendEquation), hkBlendEquation, &g_origBlendEquation);
+        ok &= hookGl("glBindTexture", reinterpret_cast<void*>(g.BindTexture), hkBindTexture, &g_origBindTexture);
         BL_INFO("efeitos de tela: hooks GL %s", ok ? "ok" : "com falha");
     });
 }
@@ -383,6 +476,8 @@ void installGlHooks() {
 void requestGlTrace() {
     installGlHooks();
     g_traceRequested.store(true);
+    // v49: junto com o rastro, a leitura de pixels do mesmo quadro.
+    g_dumpPending.store(true);
 }
 
 void fillGlHookStats(RenderStats& stats) {
