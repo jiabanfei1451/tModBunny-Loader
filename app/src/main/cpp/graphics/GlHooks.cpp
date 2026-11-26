@@ -382,12 +382,38 @@ void hkClear(GLbitfield mask) {
     g_origClear(mask);
 }
 
+// v51: leitura de pixels NO MEIO do quadro, a cada N desenhos. O rastro provou
+// que os dois casos emitem quase a mesma sequencia (a diferenca e' 4 desenhos
+// no programa 7, bem no comeco); a miniatura no fim do quadro so' mostra branco
+// por igual. Lendo a cada N desenhos da' para ver em QUE desenho o quadro
+// vira branco, e o programa esta no rotulo.
+std::atomic<bool> g_midDump{false};
+int g_midFrames = 0;
+int g_frameDraws = 0;
+const int kMidGates[] = {6, 12, 20, 26, 30, 34, 38, 44, 60, 90};
+
+void midDumpMaybe() {
+    if (!g_midDump) return;
+    ++g_frameDraws;
+    bool gate = false;
+    for (int g : kMidGates) if (g == g_frameDraws) gate = true;
+    if (!gate) return;
+    GLint vp[4] = {0, 0, 0, 0};
+    gl().GetIntegerv(GL_VIEWPORT, vp);
+    GLint fbo = 0;
+    gl().GetIntegerv(GL_FRAMEBUFFER_BINDING, &fbo);
+    char tag[40];
+    snprintf(tag, sizeof tag, "meio%d-p%u", g_frameDraws, static_cast<unsigned>(g_shadow.program));
+    dumpFramebuffer(tag, static_cast<GLuint>(fbo), vp[2], vp[3]);
+}
+
 void hkDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     if (tracked()) {
         noteDraw();
         if (g_tracing) g_pendingDraws++;
     }
     g_origDrawElements(mode, count, type, indices);
+    if (tracked()) midDumpMaybe();
 }
 
 void hkDrawArrays(GLenum mode, GLint first, GLsizei count) {
@@ -396,6 +422,7 @@ void hkDrawArrays(GLenum mode, GLint first, GLsizei count) {
         if (g_tracing) g_pendingDraws++;
     }
     g_origDrawArrays(mode, first, count);
+    if (tracked()) midDumpMaybe();
 }
 
 void hkBlit(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1,
@@ -412,11 +439,17 @@ EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
     if (g_tracing) {
         traceEvent("SWAP");
         g_tracing = false;
+        g_midDump.store(false);
         logTrace();
         g_trace.clear();
     } else if (g_traceRequested.exchange(false)) {
         g_tracing = true;
         g_trace = "SWAP";
+        g_frameDraws = 0;
+        // So' no primeiro quadro rastreado: 10 leituras de 2400x1080 travam o
+        // quadro, e a pergunta ("em que desenho vira branco") uma vez basta.
+        g_midDump.store(g_midFrames < 1);
+        if (g_midFrames < 1) g_midFrames++;
     }
 
     // A camada Screen (e os do mundo, quando nao ha marcador): no fim do
