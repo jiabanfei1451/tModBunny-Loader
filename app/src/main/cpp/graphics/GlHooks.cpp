@@ -437,6 +437,7 @@ void hkBlit(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GL
 }
 
 int g_frame = 0;
+bool g_programsDumped = false;
 
 // v52: quem e' o programa N. Guardamos o texto do glShaderSource e, no
 // glLinkProgram, imprimimos o programa e os shaders presos a ele. Sem isso
@@ -482,6 +483,40 @@ void hkLinkProgram(GLuint program) {
     BL_INFO("[gl] link programa %u ok=%d n=%d:%s", static_cast<unsigned>(program), (int)ok, (int)n, joined.c_str());
 }
 
+// v53: os programas da Unity foram ligados ANTES de os nossos hooks existirem
+// (o glLinkProgram so' e' hookado no primeiro pedido de rastro, no quadro 12),
+// entao o v52 nao viu nenhum link. Aqui perguntamos na hora: para cada id,
+// quem sao os shaders presos e o comeco do texto deles. Assim da' para ver
+// se o programa que pinta o quadro de branco e' do jogo ou um que nos
+// compilamos.
+void dumpPrograms() {
+    if (!gl().GetAttachedShaders || !gl().GetShaderSource) {
+        BL_INFO("[gl] sem GetAttachedShaders/GetShaderSource, nao da' para listar programas");
+        return;
+    }
+    for (GLuint p = 1; p <= 48; ++p) {
+        GLuint ids[4] = {0, 0, 0, 0};
+        GLsizei n = 0;
+        gl().GetAttachedShaders(p, 4, &n, ids);
+        if (n <= 0) continue;
+        std::string joined;
+        for (GLsizei i = 0; i < n; ++i) {
+            GLint type = 0;
+            gl().GetShaderiv(ids[i], GL_SHADER_TYPE, &type);
+            char buf[280];
+            buf[0] = 0;
+            gl().GetShaderSource(ids[i], sizeof buf, nullptr, buf);
+            std::string one(buf);
+            for (char& c : one) if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+            if (!joined.empty()) joined += " || ";
+            joined += (type == GL_VERTEX_SHADER ? "VS " : "FS ") + one;
+        }
+        BL_INFO("[gl] programa %u: %s", static_cast<unsigned>(p), joined.c_str());
+    }
+    while (gl().GetError() != GL_NO_ERROR) {
+    }
+}
+
 EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
     if (!unityThread()) return g_origSwap(display, surface);
 
@@ -495,6 +530,10 @@ EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
         g_tracing = true;
         g_trace = "SWAP";
         g_frameDraws = 0;
+        if (!g_programsDumped) {
+            g_programsDumped = true;
+            dumpPrograms();
+        }
         // So' no primeiro quadro rastreado: 10 leituras de 2400x1080 travam o
         // quadro, e a pergunta ("em que desenho vira branco") uma vez basta.
         g_midDump.store(g_midFrames < 1);
