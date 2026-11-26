@@ -8,6 +8,7 @@
 #include "hook/HookManager.h"
 
 #include <EGL/egl.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdarg>
 #include <cstdio>
@@ -642,6 +643,113 @@ void requestGlTrace() {
 void fillGlHookStats(RenderStats& stats) {
     stats.shadowChecks = g_shadowChecks.load();
     stats.shadowMismatches = g_shadowMismatches.load();
+}
+
+namespace {
+
+// v55: qual e' o layout de vertex que a Unity tem agora. Para desenhar um
+// shader por-vertice de mod com a geometria do proprio jogo, o programa dele
+// precisa dos mesmos nomes/slots de atributo que o programa do jogo que esta'
+// ligado neste momento (o vertex buffer ja' esta' montado para esses slots).
+// Aqui: le' o programa atual, seus atributos ativos locais e liga um programa
+// de teste com os nossos nomes nos mesmos slots. Dry run: apaga no fim.
+int32_t primProbeImpl(const char* vs, const char* fs, char* out, int32_t capacity) {
+    installGlHooks();
+    auto& g = gl();
+    if (!g.load() || !vs || !fs || capacity <= 0) return 0;
+    out[0] = '\0';
+
+    std::string report;
+    GLint current = 0;
+    g.GetIntegerv(GL_CURRENT_PROGRAM, &current);
+    report += "atual=" + std::to_string((int)current);
+    GLint count = 0;
+    if (current) g.GetProgramiv(current, GL_ACTIVE_ATTRIBUTES, &count);
+    report += " atribs=" + std::to_string((int)count) + "[";
+    for (GLint i = 0; i < count; ++i) {
+        char name[64] = {0};
+        GLint len = 0, size = 0;
+        GLenum type = 0;
+        g.GetActiveAttrib(current, static_cast<GLuint>(i), sizeof name, &len, &size, &type, name);
+        const GLint loc = g.GetAttribLocation(current, name);
+        if (i > 0) report += " ";
+        report += name;
+        report += "@" + std::to_string((int)loc);
+    }
+    report += "]";
+
+    const char* vsVersion = "#version 300 es\nprecision highp float;\n";
+    const char* fsVersion = "#version 300 es\nprecision highp float;\n";
+    std::string vsFull = std::string(vsVersion) + vs;
+    std::string fsFull = std::string(fsVersion) + "out vec4 fragColor;\n" + fs;
+
+    auto compile = [&](GLenum stage, const std::string& text) -> GLuint {
+        GLuint s = g.CreateShader(stage);
+        const char* p = text.c_str();
+        g.ShaderSource(s, 1, &p, nullptr);
+        g.CompileShader(s);
+        GLint ok = 0;
+        g.GetShaderiv(s, GL_COMPILE_STATUS, &ok);
+        if (!ok) {
+            char log[256] = {0};
+            g.GetShaderInfoLog(s, sizeof log, nullptr, log);
+            report += " | " + std::string(stage == GL_VERTEX_SHADER ? "VS" : "FS") + " falhou: " + log;
+            g.DeleteShader(s);
+            return 0;
+        }
+        return s;
+    };
+
+    GLuint v = compile(GL_VERTEX_SHADER, vsFull);
+    GLuint f = v ? compile(GL_FRAGMENT_SHADER, fsFull) : 0;
+    if (v && f) {
+        GLuint p = g.CreateProgram();
+        g.AttachShader(p, v);
+        g.AttachShader(p, f);
+        // Os slots do jogo: procuramos nomes conhecidos dele para herdar o
+        // local; sem isso, 0/1/2.
+        const char* ours[3] = {"aPosition", "aColor", "aTexCoord"};
+        const char* like[3] = {"in.vertex", "in.color", "in.texcoord0"};
+        for (int i = 0; i < 3; ++i) {
+            GLint loc = -1;
+            for (int j = 0; j < count && loc < 0; ++j) {
+                char name[64] = {0};
+                GLint len = 0, size = 0;
+                GLenum type = 0;
+                g.GetActiveAttrib(current, static_cast<GLuint>(j), sizeof name, &len, &size, &type, name);
+                for (int k = 0; k < 3; ++k)
+                    if (std::strcmp(name, like[k]) == 0 && k == i) loc = g.GetAttribLocation(current, name);
+                if (loc < 0 && std::strcmp(name, ours[i]) == 0) loc = g.GetAttribLocation(current, name);
+            }
+            if (loc < 0) loc = i;
+            g.BindAttribLocation(p, static_cast<GLuint>(loc), ours[i]);
+            report += std::string(" ") + ours[i] + "->" + std::to_string((int)loc);
+        }
+        g.LinkProgram(p);
+        GLint linked = 0;
+        g.GetProgramiv(p, GL_LINK_STATUS, &linked);
+        report += linked ? " link=ok" : " link=falhou";
+        if (!linked) {
+            char log[256] = {0};
+            g.GetProgramInfoLog(p, sizeof log, nullptr, log);
+            report += " ";
+            report += log;
+        }
+        g.DeleteProgram(p);
+    }
+    g.DeleteShader(v);
+    g.DeleteShader(f);
+
+    const int32_t n = static_cast<int32_t>(std::min(report.size(), static_cast<size_t>(capacity - 1)));
+    std::memcpy(out, report.c_str(), static_cast<size_t>(n));
+    out[n] = '\0';
+    return 1;
+}
+
+} // namespace
+
+int32_t primProbe(const char* vs, const char* fs, char* out, int32_t capacity) {
+    return primProbeImpl(vs, fs, out, capacity);
 }
 
 } // namespace bl::graphics

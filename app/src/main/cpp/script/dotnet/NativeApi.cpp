@@ -242,6 +242,11 @@ struct NativeApi {
     // mostra, por quadro, quantos draws a Unity emitiu, para onde (fbo/viewport)
     // e quais programas. Sem isso so' havia hipotese.
     void (*glTrace)();
+
+    // v55: diagnostico do estagio de vertice (graphics/GlHooks.cpp). Liga um
+    // programa de teste com o VS/FS do mod nos slots de atributo do programa
+    // do jogo que esta' ligado agora, e devolve o relatorio em `out`.
+    int32_t (*primProbe)(const char* vs, const char* fs, char* out, int32_t capacity);
 };
 
 // Exportados pela libil2cpp que a il2cpp::Api nao carrega.
@@ -1216,6 +1221,7 @@ const NativeApi kNativeApi{
     graphics::fxcCommit,
     graphics::fxcFree,
     graphics::requestGlTrace,
+    graphics::primProbe,
 };
 
 } // namespace

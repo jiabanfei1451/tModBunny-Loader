@@ -165,6 +165,11 @@ internal unsafe struct NativeApi
     // v46: rastro GL de um quadro (graphics/GlHooks.cpp). Diagnostico do
     // "mundo nao desenha": conta draws, fbo/viewport e programas por quadro.
     public delegate* unmanaged<void> GlTrace;
+
+    // v55: estagio de vertice. Liga um programa de teste (VS do tradutor + FS
+    // do mod) nos slots de atributo do programa GL atual e escreve o relatorio
+    // num buffer; usado so' para diagnostico por enquanto.
+    public delegate* unmanaged<byte*, byte*, byte*, int, int> PrimProbe;
 }
 
 [StructLayout(LayoutKind.Sequential)]

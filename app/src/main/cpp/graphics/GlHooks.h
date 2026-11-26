@@ -22,4 +22,9 @@ void requestGlTrace();
 // Os contadores do espelho do estado GL (GlShadow.h).
 void fillGlHookStats(RenderStats& stats);
 
+// v55: diagnostico do estagio de vertice. Le' o programa GL atual, liga um
+// programa de teste com o VS/FS do shader de mod nos mesmos slots de atributo
+// e devolve o relatorio em `out` (dry run: o programa e' apagado no fim).
+int32_t primProbe(const char* vs, const char* fs, char* out, int32_t capacity);
+
 } // namespace bl::graphics

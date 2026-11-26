@@ -112,6 +112,7 @@ internal static class EffectShaderBridge
         {
             Warn(key + "#geom", $"shader {asset}: e' primitivo (por-vertice) — {binding.Program.GeometryReason}; "
                 + "nao da' para desenhar como filtro de tela inteira, entao nao desenha");
+            ProbeVertex(binding.Program, asset);
             return;
         }
 
@@ -219,5 +220,40 @@ internal static class EffectShaderBridge
             if (!Reported.Add(key)) return;
         }
         Log.Warn(message);
+    }
+
+    static readonly HashSet<string> probed = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// v55: diagnostico do estagio de vertice. Liga (dry run) um programa com o
+    /// VS do tradutor + o FS do mod nos slots de atributo do programa GL que
+    /// esta' ligado agora, e joga o relatorio no log. Uma vez por shader.
+    /// </summary>
+    static unsafe void ProbeVertex(FxProgram program, string asset)
+    {
+        if (program.VertexGlsl.Length == 0) return;
+        lock (Gate)
+        {
+            if (!probed.Add(asset)) return;
+        }
+        byte* vs = Host.Utf8(program.VertexGlsl);
+        byte* fs = Host.Utf8(program.Glsl);
+        byte* report = stackalloc byte[1024];
+        report[0] = 0;
+        try
+        {
+            int ok = Host.Native()->PrimProbe(vs, fs, report, 1024);
+            string text = new string((sbyte*)report);
+            Log.Info($"[fx] vertice {asset}: ok={ok} {text}");
+        }
+        catch (Exception e)
+        {
+            Log.Info($"[fx] vertice {asset}: falhou {e.GetType().Name} {e.Message}");
+        }
+        finally
+        {
+            Host.FreeUtf8(vs);
+            Host.FreeUtf8(fs);
+        }
     }
 }

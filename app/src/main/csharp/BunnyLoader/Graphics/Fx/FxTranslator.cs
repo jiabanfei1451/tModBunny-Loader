@@ -113,6 +113,13 @@ public sealed class FxProgram
     // Por que foi marcado (vai para o log uma vez por shader).
     public string GeometryReason = "";
 
+    // v55: o estagio de vertice que faltava. Para os shaders por-vertice
+    // emitimos tambem um VS (passa posicao pela matriz de mundo e manda cor e
+    // UV como varying); o fragmento desses le' os varyings em vez das
+    // constantes de quad de tela inteira. Sem isto o shader nao tem como
+    // desenhar a geometria que o mod mandou.
+    public string VertexGlsl = "";
+
     public FxUniform? Uniform(string name)
     {
         foreach (FxUniform uniform in Uniforms)
@@ -1015,6 +1022,9 @@ sealed class Emitter
         _ => 0
     };
 
+    // v55: shader por-vertice (le' varying do vertex buffer).
+    bool primitive;
+
     public Emitter(FxProgram program, FxModule module)
     {
         this.program = program;
@@ -1042,6 +1052,11 @@ sealed class Emitter
         foreach (FxGlobal global in module.Globals)
             if (usedGlobals.Contains(global.Name)) renames[global.Name] = GlslName(global.Name);
         foreach (FxSampler sampler in module.Samplers) sampler.Glsl = GlslName(sampler.Name);
+
+        // v55: shader por-vertice le' cor/UV do vertex buffer, nao das
+        // constantes do quad de tela inteira.
+        primitive = program.NeedsGeometry;
+        if (primitive) program.VertexGlsl = PassThroughVertex();
 
         var text = new StringBuilder();
         text.Append("// Translated from HLSL by Bunny Loader (fragment only).\n");
@@ -1197,17 +1212,50 @@ sealed class Emitter
         return wrote;
     }
 
+    // v55: VS dos shaders por-vertice. Os atributos tem nome fixo
+    // (aPosition/aColor/aTexCoord) e o nativo os amarra nas mesmas posicoes
+    // que o programa do jogo usa naquele momento (glBindAttribLocation), entao
+    // o layout do vertex buffer da Unity nao precisa ser conhecido aqui.
+    string PassThroughVertex() => string.Join("\n",
+        "// Vertex stage for a per-vertex effect (Bunny Loader).",
+        "in vec4 aPosition;",
+        "in vec4 aColor;",
+        "in vec3 aTexCoord;",
+        "uniform mat4 uWorldViewProjection;",
+        "out vec4 vColor;",
+        "out vec3 vTexCoord;",
+        "void main() {",
+        "    vColor = aColor;",
+        "    vTexCoord = aTexCoord;",
+        "    gl_Position = uWorldViewProjection * aPosition;",
+        "}",
+        "");
+
     string SemanticValue(string semantic, string type, string name)
     {
         string upper = semantic.ToUpperInvariant();
         // COLOR0 is the sprite colour the mod drew with, not the shader's
         // uColor parameter (Tanren: in TML sampleColor comes from the vertex).
-        if (upper.StartsWith("COLOR", StringComparison.Ordinal)) return type + "(" + "blDrawColor" + ")";
+        if (upper.StartsWith("COLOR", StringComparison.Ordinal))
+        {
+            // v55: por-vertice a cor vem do vertex buffer.
+            if (primitive) return type == "vec4" ? "vColor" : type + "(vColor)";
+            return type + "(" + "blDrawColor" + ")";
+        }
         if (upper.StartsWith("TEXCOORD", StringComparison.Ordinal) || upper.StartsWith("UV", StringComparison.Ordinal))
         {
             // blUvRect maps the drawn quad onto the sampled texture: (0,0,1,1)
             // for a quad that covers the whole texture/screen, the sprite rect
             // inside the sheet for an armor shader.
+            if (primitive)
+                return type switch
+                {
+                    "vec2" => "vTexCoord.xy",
+                    "vec3" => "vTexCoord",
+                    "vec4" => "vec4(vTexCoord, 1.0)",
+                    "float" => "vTexCoord.x",
+                    _ => "vTexCoord.xy"
+                };
             string uv = "(blUvRect.xy + vUV * blUvRect.zw)";
             return type switch
             {
