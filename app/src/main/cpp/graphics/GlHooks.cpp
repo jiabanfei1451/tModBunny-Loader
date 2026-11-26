@@ -29,6 +29,12 @@ using BindFramebufferFn = void (*)(GLenum, GLuint);
 using ViewportFn = void (*)(GLint, GLint, GLsizei, GLsizei);
 using ClearFn = void (*)(GLbitfield);
 using DrawElementsFn = void (*)(GLenum, GLsizei, GLenum, const void*);
+
+// v55: substituicao do programa nos draws por-vertice (definidas no fim do
+// arquivo, junto do estado do prim).
+bool primTakeOver();
+void primRestore();
+void primOnUseProgram(GLuint program);
 using DrawArraysFn = void (*)(GLenum, GLint, GLsizei);
 using BlitFn = void (*)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 using UintFn = void (*)(GLuint);
@@ -208,6 +214,9 @@ void hkViewport(GLint x, GLint y, GLsizei w, GLsizei h) {
 void hkUseProgram(GLuint program) {
     if (tracked()) {
         g_shadow.program = program;
+        // v55: o mod so' troca de programa quando o lote dele acabou; a
+        // substituicao vale enquanto o programa for aquele do Apply.
+        primOnUseProgram(program);
         // v48: o rastro precisa saber SOB QUAL programa cada bloco de draws
         // saiu; sem isso "112 draws" nao diz nada sobre o estado.
         traceEvent("PG(%u)", program);
@@ -418,7 +427,11 @@ void hkDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
         noteDraw();
         if (g_tracing) g_pendingDraws++;
     }
+    // v55: draw de um shader por-vertice que o mod aplicou sai com o nosso
+    // programa (mesmo vertex buffer/atributos, mesmo estado de blend).
+    bool taken = primTakeOver();
     g_origDrawElements(mode, count, type, indices);
+    if (taken) primRestore();
     if (tracked()) midDumpMaybe();
 }
 
@@ -427,7 +440,9 @@ void hkDrawArrays(GLenum mode, GLint first, GLsizei count) {
         noteDraw();
         if (g_tracing) g_pendingDraws++;
     }
+    bool taken = primTakeOver();
     g_origDrawArrays(mode, first, count);
+    if (taken) primRestore();
     if (tracked()) midDumpMaybe();
 }
 
@@ -647,42 +662,104 @@ void fillGlHookStats(RenderStats& stats) {
 
 namespace {
 
-// v55: qual e' o layout de vertex que a Unity tem agora. Para desenhar um
-// shader por-vertice de mod com a geometria do proprio jogo, o programa dele
-// precisa dos mesmos nomes/slots de atributo que o programa do jogo que esta'
-// ligado neste momento (o vertex buffer ja' esta' montado para esses slots).
-// Aqui: le' o programa atual, seus atributos ativos locais e liga um programa
-// de teste com os nossos nomes nos mesmos slots. Dry run: apaga no fim.
-int32_t primProbeImpl(const char* vs, const char* fs, char* out, int32_t capacity) {
-    installGlHooks();
-    auto& g = gl();
-    if (!g.load() || !vs || !fs || capacity <= 0) return 0;
-    out[0] = '\0';
+// v55: uma substituicao de programa por vez. O mod aplica o efeito (o jogo
+// esta' com o programa dele ligado), desenha os quads dele com o vertex buffer
+// da propria Unity, e o SpriteBatch troca de programa no fim do lote. Entao:
+// no Apply lembramos qual programa o jogo tinha + qual e' o nosso; no desenho,
+// se o programa ainda for aquele, liga o nosso, desenha, e volta.
+struct PrimState {
+    GLuint ours = 0;   // programa traduzido (VS do tradutor + FS do mod)
+    GLuint host = 0;   // programa do jogo por baixo do Apply
+    GLint mvpLoc = -1; // uWorldViewProjection no nosso programa
+    bool active = false;
+    std::string key;   // hash de vs+fs: se mudou, o programa e' outro
+};
 
-    std::string report;
-    GLint current = 0;
-    g.GetIntegerv(GL_CURRENT_PROGRAM, &current);
-    report += "atual=" + std::to_string((int)current);
-    GLint count = 0;
-    if (current) g.GetProgramiv(current, GL_ACTIVE_ATTRIBUTES, &count);
-    report += " atribs=" + std::to_string((int)count) + "[";
+PrimState g_prim;
+
+uint64_t hashText(const std::string& a, const std::string& b) {
+    uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : a) {
+        h ^= static_cast<uint64_t>(c);
+        h *= 1099511628211ull;
+    }
+    h ^= 0x9e3779b9ull;
+    for (unsigned char c : b) {
+        h ^= static_cast<uint64_t>(c);
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+void writeReport(const std::string& report, char* out, int32_t capacity) {
+    if (!out || capacity <= 0) return;
+    const int32_t n = static_cast<int32_t>(std::min(report.size(), static_cast<size_t>(capacity - 1)));
+    std::memcpy(out, report.c_str(), static_cast<size_t>(n));
+    out[n] = '\0';
+}
+
+// O vertex buffer que a Unity montou agora: nomes/slots de atributo do
+// programa ligado. E' essa a unica informacao sobre o layout que temos (nada
+// e' perguntado ao mod), por isso o nosso programa amarra os mesmos slots.
+std::string describeAttributes(GLuint program, GLint count, std::string& mapping, GLint* slots) {
+    auto& g = gl();
+    std::string text = " atribs=" + std::to_string(static_cast<int>(count)) + "[";
+    const char* ours[3] = {"aPosition", "aColor", "aTexCoord"};
+    const char* like[3] = {"in.vertex", "in.color", "in.texcoord0"};
     for (GLint i = 0; i < count; ++i) {
         char name[64] = {0};
         GLint len = 0, size = 0;
         GLenum type = 0;
-        g.GetActiveAttrib(current, static_cast<GLuint>(i), sizeof name, &len, &size, &type, name);
-        const GLint loc = g.GetAttribLocation(current, name);
-        if (i > 0) report += " ";
-        report += name;
-        report += "@" + std::to_string((int)loc);
+        g.GetActiveAttrib(program, static_cast<GLuint>(i), sizeof name, &len, &size, &type, name);
+        const GLint loc = g.GetAttribLocation(program, name);
+        if (i > 0) text += " ";
+        text += name + ("@" + std::to_string(static_cast<int>(loc)));
     }
-    report += "]";
+    text += "]";
+    for (int i = 0; i < 3; ++i) {
+        GLint loc = -1;
+        for (GLint j = 0; j < count && loc < 0; ++j) {
+            char name[64] = {0};
+            GLint len = 0, size = 0;
+            GLenum type = 0;
+            g.GetActiveAttrib(program, static_cast<GLuint>(j), sizeof name, &len, &size, &type, name);
+            if (std::strcmp(name, like[i]) == 0 || std::strcmp(name, ours[i]) == 0) loc = g.GetAttribLocation(program, name);
+        }
+        slots[i] = loc >= 0 ? loc : i;
+        mapping += std::string(" ") + ours[i] + "->" + std::to_string(static_cast<int>(slots[i]));
+    }
+    return text;
+}
 
-    const char* vsVersion = "#version 300 es\nprecision highp float;\n";
-    const char* fsVersion = "#version 300 es\nprecision highp float;\n";
-    std::string vsFull = std::string(vsVersion) + vs;
-    std::string fsFull = std::string(fsVersion) + "out vec4 fragColor;\n" + fs;
+int32_t primBuildImpl(const char* vs, const char* fs, char* out, int32_t capacity) {
+    installGlHooks();
+    auto& g = gl();
+    if (!g.load() || !vs || !fs) return 0;
+    const std::string vsText(vs), fsText(fs);
+    const std::string key = std::to_string(hashText(vsText, fsText));
+    if (g_prim.ours && g_prim.key == key) {
+        writeReport("reaproveitado p=" + std::to_string(static_cast<int>(g_prim.ours)), out, capacity);
+        return static_cast<int32_t>(g_prim.ours);
+    }
+    if (g_prim.ours) {
+        g.DeleteProgram(g_prim.ours);
+        g_prim.ours = 0;
+    }
+    g_prim.active = false;
 
+    // Declaracoes que o fragmento traduzido espera (o mesmo preludio do
+    // caminho de tela, menos vUV e sem o composite contra a tela).
+    const char* vsHead = "#version 300 es\nprecision highp float;\n";
+    const char* fsHead = "#version 300 es\nprecision highp float;\n"
+                         "in vec4 vColor;\n"
+                         "in vec3 vTexCoord;\n"
+                         "out vec4 fragColor;\n"
+                         "#define gl_FragColor fragColor\n"
+                         "#define texture2D texture\n";
+    const std::string vsFull = std::string(vsHead) + vsText;
+    const std::string fsFull = std::string(fsHead) + fsText;
+
+    std::string report;
     auto compile = [&](GLenum stage, const std::string& text) -> GLuint {
         GLuint s = g.CreateShader(stage);
         const char* p = text.c_str();
@@ -691,9 +768,9 @@ int32_t primProbeImpl(const char* vs, const char* fs, char* out, int32_t capacit
         GLint ok = 0;
         g.GetShaderiv(s, GL_COMPILE_STATUS, &ok);
         if (!ok) {
-            char log[256] = {0};
+            char log[512] = {0};
             g.GetShaderInfoLog(s, sizeof log, nullptr, log);
-            report += " | " + std::string(stage == GL_VERTEX_SHADER ? "VS" : "FS") + " falhou: " + log;
+            report += std::string(" | ") + (stage == GL_VERTEX_SHADER ? "VS" : "FS") + " falhou: " + log;
             g.DeleteShader(s);
             return 0;
         }
@@ -702,54 +779,109 @@ int32_t primProbeImpl(const char* vs, const char* fs, char* out, int32_t capacit
 
     GLuint v = compile(GL_VERTEX_SHADER, vsFull);
     GLuint f = v ? compile(GL_FRAGMENT_SHADER, fsFull) : 0;
-    if (v && f) {
-        GLuint p = g.CreateProgram();
-        g.AttachShader(p, v);
-        g.AttachShader(p, f);
-        // Os slots do jogo: procuramos nomes conhecidos dele para herdar o
-        // local; sem isso, 0/1/2.
-        const char* ours[3] = {"aPosition", "aColor", "aTexCoord"};
-        const char* like[3] = {"in.vertex", "in.color", "in.texcoord0"};
-        for (int i = 0; i < 3; ++i) {
-            GLint loc = -1;
-            for (int j = 0; j < count && loc < 0; ++j) {
-                char name[64] = {0};
-                GLint len = 0, size = 0;
-                GLenum type = 0;
-                g.GetActiveAttrib(current, static_cast<GLuint>(j), sizeof name, &len, &size, &type, name);
-                for (int k = 0; k < 3; ++k)
-                    if (std::strcmp(name, like[k]) == 0 && k == i) loc = g.GetAttribLocation(current, name);
-                if (loc < 0 && std::strcmp(name, ours[i]) == 0) loc = g.GetAttribLocation(current, name);
-            }
-            if (loc < 0) loc = i;
-            g.BindAttribLocation(p, static_cast<GLuint>(loc), ours[i]);
-            report += std::string(" ") + ours[i] + "->" + std::to_string((int)loc);
-        }
-        g.LinkProgram(p);
-        GLint linked = 0;
-        g.GetProgramiv(p, GL_LINK_STATUS, &linked);
-        report += linked ? " link=ok" : " link=falhou";
-        if (!linked) {
-            char log[256] = {0};
-            g.GetProgramInfoLog(p, sizeof log, nullptr, log);
-            report += " ";
-            report += log;
-        }
-        g.DeleteProgram(p);
+    if (!v || !f) {
+        g.DeleteShader(v);
+        g.DeleteShader(f);
+        writeReport(report + " programa=0", out, capacity);
+        BL_INFO("[prim] %s", report.c_str());
+        return 0;
     }
+
+    GLint host = 0;
+    g.GetIntegerv(GL_CURRENT_PROGRAM, &host);
+    GLint count = 0;
+    if (host) g.GetProgramiv(static_cast<GLuint>(host), GL_ACTIVE_ATTRIBUTES, &count);
+    std::string mapping;
+    GLint slots[3] = {0, 1, 2};
+    const std::string attrs = describeAttributes(static_cast<GLuint>(host), count, mapping, slots);
+
+    GLuint p = g.CreateProgram();
+    g.AttachShader(p, v);
+    g.AttachShader(p, f);
+    const char* ours[3] = {"aPosition", "aColor", "aTexCoord"};
+    for (int i = 0; i < 3; ++i) g.BindAttribLocation(p, static_cast<GLuint>(slots[i]), ours[i]);
+    g.LinkProgram(p);
+    GLint linked = 0;
+    g.GetProgramiv(p, GL_LINK_STATUS, &linked);
     g.DeleteShader(v);
     g.DeleteShader(f);
+    if (!linked) {
+        char log[512] = {0};
+        g.GetProgramInfoLog(p, sizeof log, nullptr, log);
+        g.DeleteProgram(p);
+        report += " link=falhou " + std::string(log);
+        writeReport(report, out, capacity);
+        BL_INFO("[prim] %s%s", attrs.c_str(), report.c_str());
+        return 0;
+    }
 
-    const int32_t n = static_cast<int32_t>(std::min(report.size(), static_cast<size_t>(capacity - 1)));
-    std::memcpy(out, report.c_str(), static_cast<size_t>(n));
-    out[n] = '\0';
-    return 1;
+    // Um programa de substituicao le' a textura que o mod amarrou na unidade
+    // que o jogo ja' deixou ligada: todas as amostras vao para a unidade 0.
+    GLint uniforms = 0;
+    g.GetProgramiv(p, GL_ACTIVE_UNIFORMS, &uniforms);
+    for (GLint i = 0; i < uniforms; ++i) {
+        char name[96] = {0};
+        GLint len = 0, size = 0;
+        GLenum type = 0;
+        g.GetActiveUniform(p, static_cast<GLuint>(i), sizeof name, &len, &size, &type, name);
+        if (type == GL_SAMPLER_2D) g.Uniform1i(g.GetUniformLocation(p, name), 0);
+    }
+
+    g_prim.ours = p;
+    g_prim.key = key;
+    g_prim.mvpLoc = g.GetUniformLocation(p, "uWorldViewProjection");
+    writeReport("p=" + std::to_string(static_cast<int>(p)) + " host=" + std::to_string(static_cast<int>(host))
+                    + attrs + mapping + " link=ok", out, capacity);
+    BL_INFO("[prim] programa=%d host=%d%s%s link=ok", p, host, attrs.c_str(), mapping.c_str());
+    return static_cast<int32_t>(p);
 }
+
+// Chamado no Apply: guarda a matriz de mundo e arma a substituicao para o
+// programa que o jogo tem agora. Devolve o programa do jogo (0 = nao armou).
+int32_t primBindImpl(int32_t program, const float* mvp) {
+    installGlHooks();
+    auto& g = gl();
+    if (!g.load()) return 0;
+    if (!program || !g_prim.ours || g_prim.ours != static_cast<GLuint>(program)) {
+        g_prim.active = false;
+        return 0;
+    }
+    GLint host = 0;
+    g.GetIntegerv(GL_CURRENT_PROGRAM, &host);
+    g_prim.host = static_cast<GLuint>(host);
+    g_prim.active = true;
+    if (mvp && g_prim.mvpLoc >= 0) {
+        g.UseProgram(g_prim.ours);
+        g.UniformMatrix4fv(g_prim.mvpLoc, 1, GL_FALSE, mvp);
+        g.UseProgram(static_cast<GLuint>(host));
+    }
+    return host;
+}
+
+void primReleaseImpl() { g_prim.active = false; }
+
+void primOnUseProgram(GLuint program) {
+    if (g_prim.active && program != g_prim.host) g_prim.active = false;
+}
+
+// No desenho: se o programa do jogo ainda e' o do Apply, o quad dele sai com o
+// nosso shader (mesmos atributos, mesmo vertex buffer, mesmo estado de blend).
+bool primTakeOver() {
+    if (!g_prim.active || !g_prim.ours || g_shadow.program != g_prim.host) return false;
+    gl().UseProgram(g_prim.ours);
+    return true;
+}
+
+void primRestore() { gl().UseProgram(g_prim.host); }
 
 } // namespace
 
-int32_t primProbe(const char* vs, const char* fs, char* out, int32_t capacity) {
-    return primProbeImpl(vs, fs, out, capacity);
+int32_t primBuild(const char* vs, const char* fs, char* out, int32_t capacity) {
+    return primBuildImpl(vs, fs, out, capacity);
 }
+
+int32_t primBind(int32_t program, const float* mvp) { return primBindImpl(program, mvp); }
+
+void primRelease() { primReleaseImpl(); }
 
 } // namespace bl::graphics

@@ -243,10 +243,13 @@ struct NativeApi {
     // e quais programas. Sem isso so' havia hipotese.
     void (*glTrace)();
 
-    // v55: diagnostico do estagio de vertice (graphics/GlHooks.cpp). Liga um
-    // programa de teste com o VS/FS do mod nos slots de atributo do programa
-    // do jogo que esta' ligado agora, e devolve o relatorio em `out`.
-    int32_t (*primProbe)(const char* vs, const char* fs, char* out, int32_t capacity);
+    // v55: estagio de vertice dos shaders por-vertice (graphics/GlHooks.cpp).
+    // Build liga o programa (VS do tradutor + FS do mod) nos slots de atributo
+    // do programa do jogo atual; Bind arma a substituicao e manda a matriz de
+    // mundo; Release desarma.
+    int32_t (*primBuild)(const char* vs, const char* fs, char* out, int32_t capacity);
+    int32_t (*primBind)(int32_t program, const float* mvp);
+    void (*primRelease)();
 };
 
 // Exportados pela libil2cpp que a il2cpp::Api nao carrega.
@@ -1221,7 +1224,9 @@ const NativeApi kNativeApi{
     graphics::fxcCommit,
     graphics::fxcFree,
     graphics::requestGlTrace,
-    graphics::primProbe,
+    graphics::primBuild,
+    graphics::primBind,
+    graphics::primRelease,
 };
 
 } // namespace

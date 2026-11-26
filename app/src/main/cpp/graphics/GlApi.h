@@ -22,7 +22,8 @@ namespace bl::graphics {
     X(DrawArrays) X(DrawElements) X(Clear) X(GenSamplers) X(SamplerParameteri) X(PixelStorei) \
     X(Scissor) X(BlendFunc) X(BlendFuncSeparate) X(ClearColor) X(DepthMask) X(DepthFunc) \
     X(BlendEquation) X(ReadPixels) X(GetAttachedShaders) X(GetShaderSource) \
-    X(BindAttribLocation) X(GetActiveAttrib) X(GetAttribLocation) X(DeleteProgram)
+    X(BindAttribLocation) X(GetActiveAttrib) X(GetAttribLocation) X(DeleteProgram) \
+    X(GetActiveUniform) X(UniformMatrix4fv)
 
 struct GlApi {
 #define BL_GL_SLOT(name) decltype(&::gl##name) name = nullptr;

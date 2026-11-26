@@ -112,7 +112,7 @@ internal static class EffectShaderBridge
         {
             Warn(key + "#geom", $"shader {asset}: e' primitivo (por-vertice) — {binding.Program.GeometryReason}; "
                 + "nao da' para desenhar como filtro de tela inteira, entao nao desenha");
-            ProbeVertex(binding.Program, asset);
+            PrimeVertex(binding.Program, asset, owner!);
             return;
         }
 
@@ -222,38 +222,90 @@ internal static class EffectShaderBridge
         Log.Warn(message);
     }
 
-    static readonly HashSet<string> probed = new(StringComparer.Ordinal);
+    static readonly Dictionary<string, int> primPrograms = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// v55: diagnostico do estagio de vertice. Liga (dry run) um programa com o
-    /// VS do tradutor + o FS do mod nos slots de atributo do programa GL que
-    /// esta' ligado agora, e joga o relatorio no log. Uma vez por shader.
+    /// v55: um shader por-vertice nao vira filtro de tela: o programa dele
+    /// (VS do tradutor + FS do mod) e' montado uma vez e armado no Apply, com a
+    /// matriz de mundo que o mod escreveu. No desenho, o nativo troca o
+    /// programa do jogo pelo nosso e desenha a geometria que o mod mandou
+    /// (mesmo vertex buffer, mesmos slots de atributo).
     /// </summary>
-    static unsafe void ProbeVertex(FxProgram program, string asset)
+    static unsafe void PrimeVertex(FxProgram program, string asset, Effect effect)
     {
         if (program.VertexGlsl.Length == 0) return;
-        lock (Gate)
+        int handle;
+        lock (Gate) primPrograms.TryGetValue(asset, out handle);
+
+        if (handle == 0)
         {
-            if (!probed.Add(asset)) return;
+            byte* vs = Host.Utf8(program.VertexGlsl);
+            byte* fs = Host.Utf8(program.Glsl);
+            byte* report = stackalloc byte[1024];
+            report[0] = 0;
+            try
+            {
+                handle = Host.Native()->PrimBuild(vs, fs, report, 1024);
+                Log.Info($"[fx] vertice {asset}: {new string((sbyte*)report)}");
+            }
+            catch (Exception e)
+            {
+                Log.Info($"[fx] vertice {asset}: build falhou {e.GetType().Name} {e.Message}");
+                return;
+            }
+            finally
+            {
+                Host.FreeUtf8(vs);
+                Host.FreeUtf8(fs);
+            }
+            if (handle == 0) return;
+            lock (Gate) primPrograms[asset] = handle;
         }
-        byte* vs = Host.Utf8(program.VertexGlsl);
-        byte* fs = Host.Utf8(program.Glsl);
-        byte* report = stackalloc byte[1024];
-        report[0] = 0;
+
+        if (!TryWorldMatrix(effect, program, out Matrix mvp)) return;
+        float* m = stackalloc float[16];
+        m[0] = mvp.M11; m[1] = mvp.M12; m[2] = mvp.M13; m[3] = mvp.M14;
+        m[4] = mvp.M21; m[5] = mvp.M22; m[6] = mvp.M23; m[7] = mvp.M24;
+        m[8] = mvp.M31; m[9] = mvp.M32; m[10] = mvp.M33; m[11] = mvp.M34;
+        m[12] = mvp.M41; m[13] = mvp.M42; m[14] = mvp.M43; m[15] = mvp.M44;
         try
         {
-            int ok = Host.Native()->PrimProbe(vs, fs, report, 1024);
-            string text = new string((sbyte*)report);
-            Log.Info($"[fx] vertice {asset}: ok={ok} {text}");
+            int host = Host.Native()->PrimBind(handle, m);
+            Warn(asset + "#prim", $"shader {asset}: primitivo montado p={handle}, armado sobre o programa {host}");
         }
         catch (Exception e)
         {
-            Log.Info($"[fx] vertice {asset}: falhou {e.GetType().Name} {e.Message}");
+            Log.Info($"[fx] vertice {asset}: bind falhou {e.GetType().Name} {e.Message}");
         }
-        finally
+    }
+
+    /// <summary>
+    /// A matriz que o mod escreveu em <c>uWorldViewProjection</c> (ou no global
+    /// de matriz do .fx). Sem ela o quad sairia na escala errada, entao' sem
+    /// matriz nao armamos nada.
+    /// </summary>
+    static bool TryWorldMatrix(Effect effect, FxProgram program, out Matrix value)
+    {
+        value = Matrix.Identity;
+        EffectParameterCollection? parameters = effect.Parameters;
+        if (parameters == null) return false;
+        // Os globais de matriz que o .fx declara (uWorldViewProjection no
+        // Luminance), mais os nomes que o TML usa no mesmo papel.
+        string found = null!;
+        string[] candidates = { "uWorldViewProjection", "WorldViewProjection", "uMatrixTransform", "uProjection" };
+        foreach (FxUniform uniform in program.Uniforms)
+            if (uniform.Components == 0)
+                foreach (string name in candidates)
+                    if (uniform.Name == name) { found = name; break; }
+        if (found == null)
+            foreach (string name in candidates)
+                if (parameters[name]?.Value is Matrix) { found = name; break; }
+        if (found == null) return false;
+        if (parameters[found]?.Value is Matrix m)
         {
-            Host.FreeUtf8(vs);
-            Host.FreeUtf8(fs);
+            value = m;
+            return true;
         }
+        return false;
     }
 }

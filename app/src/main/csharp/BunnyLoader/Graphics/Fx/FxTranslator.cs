@@ -1084,10 +1084,21 @@ sealed class Emitter
         text.Append("uniform float uStretch;\n");
         text.Append("// The pipeline draws over the screen without GL blending, so alpha < 1 is\n");
         text.Append("// composited against the screen here instead of being thrown away.\n");
-        text.Append("vec4 blComposite(vec4 c) {\n");
-        text.Append("    float a = clamp(c.a, 0.0, 1.0);\n");
-        text.Append("    return vec4(mix(blScreen(vUV).rgb, c.rgb, a), 1.0);\n");
-        text.Append("}\n\n");
+        if (primitive)
+        {
+            // v55: um quad de mod e' geometria de verdade, com o blend do jogo
+            // ligado — nao ha o que compor contra a tela (e vUV nem existe aqui).
+            text.Append("vec4 blComposite(vec4 c) {\n");
+            text.Append("    return c;\n");
+            text.Append("}\n\n");
+        }
+        else
+        {
+            text.Append("vec4 blComposite(vec4 c) {\n");
+            text.Append("    float a = clamp(c.a, 0.0, 1.0);\n");
+            text.Append("    return vec4(mix(blScreen(vUV).rgb, c.rgb, a), 1.0);\n");
+            text.Append("}\n\n");
+        }
 
         // structs used by the entry signature / functions
         foreach (KeyValuePair<string, List<FxField>> entry2 in module.Structs)

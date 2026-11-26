@@ -166,10 +166,12 @@ internal unsafe struct NativeApi
     // "mundo nao desenha": conta draws, fbo/viewport e programas por quadro.
     public delegate* unmanaged<void> GlTrace;
 
-    // v55: estagio de vertice. Liga um programa de teste (VS do tradutor + FS
-    // do mod) nos slots de atributo do programa GL atual e escreve o relatorio
-    // num buffer; usado so' para diagnostico por enquanto.
-    public delegate* unmanaged<byte*, byte*, byte*, int, int> PrimProbe;
+    // v55: estagio de vertice. PrimBuild monta o programa (VS do tradutor + FS
+    // do mod) nos slots de atributo do programa GL atual; PrimBind arma a
+    // substituicao e manda a matriz de mundo; PrimRelease desarma.
+    public delegate* unmanaged<byte*, byte*, byte*, int, int> PrimBuild;
+    public delegate* unmanaged<int, float*, int> PrimBind;
+    public delegate* unmanaged<void> PrimRelease;
 }
 
 [StructLayout(LayoutKind.Sequential)]
