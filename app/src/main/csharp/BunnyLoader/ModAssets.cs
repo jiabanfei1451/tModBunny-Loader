@@ -127,6 +127,10 @@ public sealed class ModAssets : AssetRepository
     void DispatchProbe<T>(string assetName) where T : class
     {
         if (dispatchProbeLeft <= 0) return;
+        // v47: textura nao interessa e consome o orcamento (no v46 as 40 linhas
+        // foram todas do CalamityModMusic, e o Luminance ficou sem sonda de novo).
+        // So' tipos "de verdade": Effect, fonte, o que aparecer de novo.
+        if (typeof(T) == typeof(Microsoft.Xna.Framework.Graphics.Texture2D)) return;
         try
         {
             string key = typeof(T).FullName + "|" + assetName;

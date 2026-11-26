@@ -232,6 +232,12 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
+        // v47: o MiscShaderFrame era instalado so' no primeiro desenho de shader
+        // (GlesShaderBridge.EnsureFrame), e o v46 provou que isso nunca acontece
+        // quando o registro de shaders do mod fica vazio: sem instalacao o
+        // On_Main.DoDraw nem e' assinado, e todo o caminho por quadro (submit +
+        // rastro GL) fica morto. Instalar aqui custa um hook e sempre roda.
+        BunnyLoader.MiscShaderFrame.Install();
         // Upstream 0.5.13: linha "Frame Skip" nas configuracoes. Precisa do
         // On_Game que agora o ProxyGen gera (types.txt).
         FrameSkipSetting.Install();
