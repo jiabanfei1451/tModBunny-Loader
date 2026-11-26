@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#include <map>
 #include <mutex>
 #include <string>
 #include <sys/prctl.h>
@@ -40,6 +41,8 @@ using DepthMaskFn = void (*)(GLboolean);
 using DepthFuncFn = void (*)(GLenum);
 using BlendEquationFn = void (*)(GLenum);
 using BindTextureFn = void (*)(GLenum, GLuint);
+using ShaderSourceFn = void (*)(GLuint, GLsizei, const GLchar* const*, const GLint*);
+using LinkProgramFn = void (*)(GLuint);
 
 SwapFn g_origSwap = nullptr;
 BindFramebufferFn g_origBindFramebuffer = nullptr;
@@ -62,6 +65,8 @@ DepthMaskFn g_origDepthMask = nullptr;
 DepthFuncFn g_origDepthFunc = nullptr;
 BlendEquationFn g_origBlendEquation = nullptr;
 BindTextureFn g_origBindTexture = nullptr;
+ShaderSourceFn g_origShaderSource = nullptr;
+LinkProgramFn g_origLinkProgram = nullptr;
 
 // As nossas proprias chamadas GL (o desenho do efeito) passam pelos mesmos
 // hooks: nao entram no rastro nem mudam o espelho do estado da Unity.
@@ -433,6 +438,50 @@ void hkBlit(GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GL
 
 int g_frame = 0;
 
+// v52: quem e' o programa N. Guardamos o texto do glShaderSource e, no
+// glLinkProgram, imprimimos o programa e os shaders presos a ele. Sem isso
+// "programa 8 pinta o quadro de branco" nao diz de quem e' o programa (do jogo
+// ou um que nos mesmos compilamos).
+std::mutex g_shaderGate;
+std::map<GLuint, std::string> g_shaderSrc;
+int g_linkLogged = 0;
+
+void hkShaderSource(GLuint shader, GLsizei count, const GLchar* const* strings, const GLint* lengths) {
+    if (count > 0 && strings) {
+        std::string src;
+        for (GLsizei i = 0; i < count && src.size() < 260; ++i) {
+            if (!strings[i]) continue;
+            GLint len = lengths ? lengths[i] : -1;
+            src.append(strings[i], len > 0 ? static_cast<size_t>(len) : std::strlen(strings[i]));
+            if (src.size() > 260) src.resize(260);
+        }
+        std::lock_guard<std::mutex> lock(g_shaderGate);
+        if (g_shaderSrc.size() < 128) g_shaderSrc[shader] = src;
+    }
+    g_origShaderSource(shader, count, strings, lengths);
+}
+
+void hkLinkProgram(GLuint program) {
+    g_origLinkProgram(program);
+    if (g_linkLogged >= 200) return;
+    GLint ok = 0;
+    gl().GetProgramiv(program, GL_LINK_STATUS, &ok);
+    GLuint ids[4] = {0, 0, 0, 0};
+    GLsizei n = 0;
+    if (gl().GetAttachedShaders) gl().GetAttachedShaders(program, 4, &n, ids);
+    std::string joined;
+    for (GLsizei i = 0; i < n; ++i) {
+        std::lock_guard<std::mutex> lock(g_shaderGate);
+        auto it = g_shaderSrc.find(ids[i]);
+        if (it == g_shaderSrc.end()) continue;
+        std::string one = it->second;
+        for (char& c : one) if (c == '\n' || c == '\r') c = ' ';
+        joined += " || " + one;
+    }
+    ++g_linkLogged;
+    BL_INFO("[gl] link programa %u ok=%d n=%d:%s", static_cast<unsigned>(program), (int)ok, (int)n, joined.c_str());
+}
+
 EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
     if (!unityThread()) return g_origSwap(display, surface);
 
@@ -538,6 +587,8 @@ void installGlHooks() {
         ok &= hookGl("glDepthFunc", reinterpret_cast<void*>(g.DepthFunc), hkDepthFunc, &g_origDepthFunc);
         ok &= hookGl("glBlendEquation", reinterpret_cast<void*>(g.BlendEquation), hkBlendEquation, &g_origBlendEquation);
         ok &= hookGl("glBindTexture", reinterpret_cast<void*>(g.BindTexture), hkBindTexture, &g_origBindTexture);
+        ok &= hookGl("glShaderSource", reinterpret_cast<void*>(g.ShaderSource), hkShaderSource, &g_origShaderSource);
+        ok &= hookGl("glLinkProgram", reinterpret_cast<void*>(g.LinkProgram), hkLinkProgram, &g_origLinkProgram);
         BL_INFO("efeitos de tela: hooks GL %s", ok ? "ok" : "com falha");
     });
 }
