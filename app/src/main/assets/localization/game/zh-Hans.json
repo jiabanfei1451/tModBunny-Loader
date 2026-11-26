@@ -55,11 +55,10 @@
   "ScreenEffectsRow": "屏幕特效：",
   "ScreenEffectsOn": "开启",
   "ScreenEffectsOff": "关闭",
-  "TownDebugRow": "调试：",
-  "TownDebugOpen": "打开",
-  "IconRow": "悬浮窗图标：",
-  "TownDebugOn": "开启",
-  "TownDebugOff": "关闭",
+  "FrameSkipRow": "跳帧：",
+  "FrameSkipAuto": "自动",
+  "FrameSkipOn": "开启",
+  "FrameSkipOff": "关闭",
   "FxDescription": "屏幕特效工具",
   "FxNone": "没有正在运行的特效。",
   "FxUnknown": "未知特效。可用：{0}",
@@ -94,5 +93,10 @@
   "SubworldSeconds": "{0} 秒",
   "SubworldNobodyAccepted": "没有人同意前往{0}。",
   "SubworldOnlyHost": "只有房主可以开启维度。",
-  "SubworldBusy": "房主正在切换维度，请稍后再试。"
+  "SubworldBusy": "房主正在切换维度，请稍后再试。",
+  "TownDebugRow": "调试：",
+  "TownDebugOpen": "打开",
+  "IconRow": "悬浮窗图标：",
+  "TownDebugOn": "开启",
+  "TownDebugOff": "关闭"
 }

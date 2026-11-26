@@ -56,12 +56,10 @@
   "ScreenEffectsRow": "Screen Effects:",
   "ScreenEffectsOn": "On",
   "ScreenEffectsOff": "Off",
-  "TownDebugRow": "Debug:",
-
-  "TownDebugOpen": "Open",
-  "IconRow": "Hud icon:",
-  "TownDebugOn": "On",
-  "TownDebugOff": "Off",
+  "FrameSkipRow": "Frame Skip:",
+  "FrameSkipAuto": "Auto",
+  "FrameSkipOn": "On",
+  "FrameSkipOff": "Off",
   "FxDescription": "screen effect tools",
   "FxNone": "No live effects.",
   "FxUnknown": "Unknown effect. Known: {0}",
@@ -96,5 +94,10 @@
   "SubworldSeconds": "{0} s",
   "SubworldNobodyAccepted": "Nobody accepted the trip to {0}.",
   "SubworldOnlyHost": "Only the host can open dimensions.",
-  "SubworldBusy": "The host is changing dimension. Try again in a moment."
+  "SubworldBusy": "The host is changing dimension. Try again in a moment.",
+  "TownDebugRow": "Debug:",
+  "TownDebugOpen": "Open",
+  "IconRow": "Hud icon:",
+  "TownDebugOn": "On",
+  "TownDebugOff": "Off"
 }

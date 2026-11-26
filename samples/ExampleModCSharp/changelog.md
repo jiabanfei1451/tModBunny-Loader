@@ -1,5 +1,20 @@
 # Novidades
 
+## 0.46.0
+
+- Corante de Exemplo: agora usa o próprio shader, o `ExampleEffect.fx` do
+  tModLoader compilado para `.fxc`, que troca a cor da armadura a cada segundo.
+- Animação de Morte de Exemplo: um NPC que, ao morrer, se desfaz aos poucos
+  com uma borda rosa. É um `MiscShaderData` com textura de ruído, aplicado no
+  `PreDraw` como nos mods do tModLoader.
+
+## 0.45.0
+
+- Aura do Chefe Minion: enquanto o Chefe Minion está vivo, anéis saem dele e o
+  mundo em volta perde a cor, cada vez mais conforme ele perde vida (vermelho no
+  segundo estágio). É um efeito `.fxc` compilado de HLSL, o mesmo tipo de
+  arquivo dos mods do tModLoader, desenhado por um `FxcScreenEffect`.
+
 ## 0.44.0
 
 - Botão Animado de Exemplo: um botão de toque com um círculo de carregamento

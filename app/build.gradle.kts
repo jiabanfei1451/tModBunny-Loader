@@ -91,7 +91,9 @@ android {
         // recusam atualizar no lugar com versionCode igual. -Pbl.versionCode=N
         // permite subir entre iteracoes locais sem editar este arquivo.
         versionCode = (project.findProperty("bl.versionCode") as String?)?.toInt() ?: commitCount
-        versionName = "0.5.8-beta"
+        // 合并上游 0.5.13：基础版本号跟上游走，side 变体仍然在下面把
+        // versionName 改写成自己的 0.1.2 线。
+        versionName = "0.5.13-beta"
 
         // -Pbl.bench=true: o app de medicao (com.bunnyloader.bench), ao lado
         // do Bunny Loader de verdade. Traz os testes de BENCH_TESTS ligados e
@@ -651,8 +653,24 @@ val buildMonoModFacades by tasks.registering {
     }
 }
 
+// 合并上游 0.5.13：AOT 缓存键（BunnyLoader.dll 的 sha + Mono 版本）。上游
+// 用它判断 PC 上预编译的 mod 代码能不能复用；我们保留这个产物，方便以后
+// 接 AOT 时两边口径一致。
+val writeAotKey by tasks.registering {
+    dependsOn(buildBunnyLoaderCs)
+    val api = layout.buildDirectory.file("csharp/BunnyLoader/BunnyLoader.dll")
+    val out = layout.buildDirectory.file("generated/dotnetAotKey/aot-key.txt")
+    inputs.file(api)
+    inputs.property("mono", monoVersion)
+    outputs.file(out)
+    doLast {
+        val key = sha256(api.get().asFile).take(16) + "-" + monoVersion
+        out.get().asFile.apply { parentFile.mkdirs() }.writeText(key + "\n")
+    }
+}
+
 val syncDotnetAssets by tasks.registering(Sync::class) {
-    dependsOn(fetchMonoRuntime, buildBunnyLoaderCs, buildTmlFacade, buildFnaFacade, buildReLogicFacade, buildTerrariaHooksFacade, buildLog4netFacade, buildMonoModFacades, writeDotnetReferences)
+    dependsOn(fetchMonoRuntime, buildBunnyLoaderCs, buildTmlFacade, buildFnaFacade, buildReLogicFacade, buildTerrariaHooksFacade, buildLog4netFacade, buildMonoModFacades, writeDotnetReferences, writeAotKey)
     inputs.property("libs", monoShippedLibs)
     from(monoPack.map { zipTree(it) }) {
         include("runtimes/android-arm64/native/System.Private.CoreLib.dll")
@@ -681,6 +699,7 @@ val syncDotnetAssets by tasks.registering(Sync::class) {
         include("MonoMod.RuntimeDetour.dll")
     }
     from(writeDotnetReferences)
+    from(writeAotKey)
     includeEmptyDirs = false
     into(layout.buildDirectory.dir("generated/blAssets/dotnet"))
 }

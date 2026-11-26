@@ -87,6 +87,16 @@ import kotlinx.coroutines.flow.collectLatest
 
 // ------------------------------- sprites -------------------------------
 
+// Upstream 0.5.13 trouxe `pixelImage`; a Community.kt dele usa. Cache por
+// recurso, como la'.
+private val resourceImages = HashMap<Int, ImageBitmap>()
+
+@Composable
+fun pixelImage(res: Int): ImageBitmap {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    return resourceImages.getOrPut(res) { ImageBitmap.imageResource(resources, res) }
+}
+
 @Composable
 fun PixelIcon(res: Int, size: Dp, modifier: Modifier = Modifier, alpha: Float = 1f) {
     Image(

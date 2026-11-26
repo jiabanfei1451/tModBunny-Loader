@@ -263,6 +263,7 @@ internal static unsafe class NPCEventHooks
         // Se um NPC aparece ao brandir, o pedido veio de outro lugar: esta linha
         // diz o tipo e as duas primeiras molduras do chamador.
         Log.Info($"[mod] NewNPC type={Type} pos={X},{Y} src={source?.GetType().Name ?? "null"}{Held()} por {Caller()}");
+        ForgetSpawn();
         int index = orig(source, X, Y, Type, Start, ai0, ai1, ai2, ai3, Target);
         if ((uint)index < 200u && Main.npc[index].active)
         {
@@ -274,8 +275,45 @@ internal static unsafe class NPCEventHooks
             Log.Info($"[mod] NewNPC -> #{index} type={fresh.type} friendly={fresh.friendly} town={fresh.townNPC} target={fresh.target} vida={fresh.lifeMax} mao={Held()}");
             NPCLoader.OnSpawn(fresh, source);
             Log.Info($"[mod] NewNPC pos-ganchos #{index} type={fresh.type} friendly={fresh.friendly} town={fresh.townNPC} target={fresh.target}");
+            ForgetSpawn();
+            if (fresh.active && source != null && !source.IsNull)
+            {
+                // Upstream 0.5.13: o NPC criado aqui ainda passa pelo SetDefaults de
+                // spawn, que zera campos. Guardamos a referencia e o tick para o
+                // OnSpawn rodar de novo depois dos defaults (ver AfterDefaults).
+                spawned = fresh.Pointer;
+                spawnedTick = Main.GameUpdateCount;
+                spawnedSource = new GameHandle(source.Pointer);
+            }
         }
         return index;
+    }
+
+    // Upstream 0.5.13: OnSpawn depois do SetDefaults de spawn.
+    static IntPtr spawned;
+    static uint spawnedTick;
+    static GameHandle? spawnedSource;
+
+    static void ForgetSpawn()
+    {
+        spawned = IntPtr.Zero;
+        spawnedSource?.Dispose();
+        spawnedSource = null;
+    }
+
+    internal static void AfterDefaults(NPC npc)
+    {
+        if (spawned == IntPtr.Zero || npc.Pointer != spawned) return;
+        GameHandle? handle = spawnedSource;
+        spawnedSource = null;
+        bool same = Main.GameUpdateCount == spawnedTick && npc.active && npc.type > 0;
+        spawned = IntPtr.Zero;
+        try
+        {
+            IntPtr target = handle?.Target ?? IntPtr.Zero;
+            if (same && target != IntPtr.Zero) NPCLoader.OnSpawn(npc, new IEntitySource(target));
+        }
+        finally { handle?.Dispose(); }
     }
 
     // v66: o que o jogador tem na mao NESTE instante. Se o item segurado nao

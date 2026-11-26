@@ -12,6 +12,12 @@ find_package(shadowhook REQUIRED CONFIG)
 file(GLOB_RECURSE BL_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 list(FILTER BL_SOURCES EXCLUDE REGEX "/compile/")
 
+# Upstream 0.5.13: FxcEffect/SpriteFx (MojoShader) e JitRecorder (AOT) ficam
+# guardados na arvore mas fora do build: dependem de entradas do NativeApi
+# desta engine que ainda nao existem (SpriteFx*, fxc). Ligar quando a porta
+# desses recursos for feita.
+list(FILTER BL_SOURCES EXCLUDE REGEX "/(FxcEffect|SpriteFx|JitRecorder)\\.cpp$")
+
 add_library(blcompile SHARED compile/CompilerHost.cpp)
 target_link_libraries(blcompile log dl)
 

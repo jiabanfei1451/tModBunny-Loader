@@ -56,12 +56,10 @@
   "ScreenEffectsRow": "Efeitos de Tela:",
   "ScreenEffectsOn": "Ligados",
   "ScreenEffectsOff": "Desligados",
-  "TownDebugRow": "Depuração:",
-
-  "TownDebugOpen": "Abrir",
-  "IconRow": "Ícone na tela:",
-  "TownDebugOn": "Ligado",
-  "TownDebugOff": "Desligado",
+  "FrameSkipRow": "Pular Quadros:",
+  "FrameSkipAuto": "Automático",
+  "FrameSkipOn": "Ligado",
+  "FrameSkipOff": "Desligado",
   "FxDescription": "ferramentas dos efeitos de tela",
   "FxNone": "Nenhum efeito vivo.",
   "FxUnknown": "Efeito desconhecido. Há: {0}",
@@ -96,5 +94,10 @@
   "SubworldSeconds": "{0} s",
   "SubworldNobodyAccepted": "Ninguém aceitou a viagem para {0}.",
   "SubworldOnlyHost": "Só o host pode abrir dimensões.",
-  "SubworldBusy": "O host está trocando de dimensão. Tente de novo em instantes."
+  "SubworldBusy": "O host está trocando de dimensão. Tente de novo em instantes.",
+  "TownDebugRow": "Depuração:",
+  "TownDebugOpen": "Abrir",
+  "IconRow": "Ícone na tela:",
+  "TownDebugOn": "Ligado",
+  "TownDebugOff": "Desligado"
 }

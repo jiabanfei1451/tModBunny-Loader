@@ -184,6 +184,9 @@ public static class ScreenEffects
             }
             catch (Exception e) { ItemHooks.Report($"ScreenEffects.Reload {shader.Name}", e); }
         }
+        // O ramo .fxc do upstream (FxcEffect.ReloadAll) fica de fora: os natives
+        // SpriteFx ainda nao existem nesta engine, o codigo esta' guardado em
+        // Screen/Fxc*.cs e sai do build no csproj.
         return changed;
     }
 
