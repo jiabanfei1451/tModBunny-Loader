@@ -53,19 +53,18 @@
     <Compile Remove="Terraria/ModLoader/Core/AltFunctionTouchHooks.cs" />
   </ItemGroup>
 
-  <!-- Upstream 0.5.13 (fxc/MojoShader + AOT): estes arquivos ainda dependem de
-       natives que este fork nao tem (`SpriteFx*`, `FxcEffect.cpp`), de proxies
-       `On_Game`/`On_GUIShop` que o ProxyGen nao gera, e de um
+  <!-- Upstream 0.5.13 (fxc/MojoShader): estes arquivos ainda dependem de
+       natives que este fork nao tem (`SpriteFx*`, `FxcEffect.cpp`) e de um
        `MiscShaderData`/`GameShaders` em `struct` que colide com o nosso
        `MiscShaderData.GLES.cs` (class). Ficam fora do build ate' a porta
-       desses recursos; o codigo continua na arvore para a segunda etapa. -->
+       desses recursos; o codigo continua na arvore para a segunda etapa.
+       FrameSkipSetting/ShopSavingsHooks ja' entraram: os proxies On_Game e
+       On_GUIShop agora existem (types.txt). -->
   <ItemGroup>
     <Compile Remove="Screen/FxcEffect.cs" />
     <Compile Remove="Screen/FxcGameEffect.cs" />
     <Compile Remove="Screen/FxcScreenEffect.cs" />
     <Compile Remove="Terraria/Graphics/Shaders/MiscShaders.TML.cs" />
-    <Compile Remove="Terraria/ModLoader/Core/FrameSkipSetting.cs" />
-    <Compile Remove="Terraria/ModLoader/Core/ShopSavingsHooks.cs" />
   </ItemGroup>
 
   <Target Name="IncludeGameProxies" AfterTargets="GenerateGameProxies" BeforeTargets="CoreCompile">

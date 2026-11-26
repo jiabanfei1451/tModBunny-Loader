@@ -740,3 +740,14 @@ Terraria.GameContent.TownRoomManager
 !Terraria.DelegateMethods.CastLightOpen
 !Terraria.DelegateMethods.CutTiles
 !Terraria.DelegateMethods.SearchAvoidedByNPCs
+
+# Upstream 0.5.13: a linha "Frame Skip" se pendura em On_Game.UnityUpdate e o
+# conserto da loja em On_GUIShop.Draw. Os dois tipos ja' aparecem nas assinaturas
+# (entao existem so' como ponteiro); entram aqui para ganhar proxy completa e o
+# On_<Tipo>. Sem isto: "On_Game"/"On_GUIShop" nao existem e os dois .cs ficam
+# fora do build.
+# GraphicsDevice: escrito a mao em Game.TML.cs (mods fazem Main.instance.GraphicsDevice
+# e o getter nativo pode faltar). O gerado larga o nome.
+!Microsoft.Xna.Framework.Game.GraphicsDevice
+Microsoft.Xna.Framework.Game
+GUIShop

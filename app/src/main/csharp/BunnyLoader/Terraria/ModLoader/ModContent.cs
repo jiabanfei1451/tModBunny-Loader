@@ -232,6 +232,9 @@ public static class ModContent
         yield return 0;
         BunnyLoader.ScreenEffectsSetting.Install();
         BunnyLoader.ScreenFxCommand.Install();
+        // Upstream 0.5.13: linha "Frame Skip" nas configuracoes. Precisa do
+        // On_Game que agora o ProxyGen gera (types.txt).
+        FrameSkipSetting.Install();
         BunnyLoader.TownDebugSetting.Install();
         Core.SystemDrawHooks.WantTownDebug();
         TouchControlSizes.Install();

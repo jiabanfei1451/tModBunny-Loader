@@ -9,6 +9,8 @@ internal static class TownShopHooks
     internal static void Install()
     {
         PageIconHooks.Install();
+        // Upstream 0.5.13: troco/devolucao na loja (On_GUIShop.Draw).
+        ShopSavingsHooks.Install();
         ItemHooks.Once("TownShops", () => On_InventoryStorage.SetupShop += SetupShop);
     }
     internal static void InstallTravel() => ItemHooks.Once("TownTravelShop", () => On_InventoryStorage.SetupTravelShop += Travel);
