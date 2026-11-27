@@ -21,6 +21,37 @@ public sealed partial class RenderTarget2D
 {
     static int warned;
 
+    /// <summary>
+    /// v67: alvos criados por mods e se estão "vazios" (limpos e nada desenhado
+    /// dentro desde então). O Luminance desenha os alvos de pixelação/metaball
+    /// por cima do mundo com <c>Color.White</c>; quando o alvo está vazio isso
+    /// vira um quad branco de tela inteira (céu e tiles somem, sobra NPC/jogador
+    /// porque são desenhados depois). Enquanto o conteúdo do alvo não existir,
+    /// o desenho dele não contribui nada — então pulamos.
+    /// </summary>
+    static readonly System.Collections.Generic.Dictionary<nint, bool> emptyTargets = new();
+
+    internal static void MarkEmpty(nint pointer)
+    {
+        if (pointer == 0) return;
+        lock (emptyTargets) emptyTargets[pointer] = true;
+    }
+
+    internal static void MarkFilled(nint pointer)
+    {
+        if (pointer == 0) return;
+        lock (emptyTargets) emptyTargets[pointer] = false;
+    }
+
+    internal static bool IsEmpty(nint pointer)
+    {
+        if (pointer == 0) return false;
+        lock (emptyTargets) return emptyTargets.TryGetValue(pointer, out bool empty) && empty;
+    }
+
+    /// <summary>v67: quantos desenhos de alvo vazio já foram pulados.</summary>
+    internal static long skippedEmptyTargetDraws;
+
     /// <summary>v62: quantos alvos novos ainda logam (tamanho + ponteiro).</summary>
     static int createLogLeft = 12;
 
@@ -64,6 +95,12 @@ public sealed partial class RenderTarget2D
             call.Invoke(fn);
             if (System.Threading.Interlocked.Decrement(ref createLogLeft) >= 0)
                 Log.Info($"[rt] novo alvo nativo {width}x{height} ptr=0x{obj:x}");
+
+            // v65: alvo novo nasce com conteudo indefinido (branco neste driver).
+            // O Luminance desenha esses alvos por cima da tela antes de ter
+            // desenhado dentro deles, entao limpar aqui evita a tela branca.
+            graphicsDevice.ClearNewModTarget(obj);
+            MarkEmpty(obj);
             return obj;
         }
         catch (Exception e)

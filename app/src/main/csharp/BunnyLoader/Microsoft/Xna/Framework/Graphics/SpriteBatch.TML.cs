@@ -19,17 +19,54 @@ namespace Microsoft.Xna.Framework.Graphics;
 /// </summary>
 public sealed partial class SpriteBatch
 {
+    /// <summary>v67: quantos desenhos de alvo de mod já logamos.</summary>
+    static int emptyTargetLogLeft = 6;
+
+    /// <summary>
+    /// v67: o Luminance desenha alvos de pixelação/metaball por cima do mundo com
+    /// <c>Color.White</c>. Quando o alvo foi limpo e nada foi desenhado dentro
+    /// dele no quadro, o desenho não contribui nada — mas no driver daqui sai
+    /// **branco de tela inteira** (era a tela branca do mundo). Pulamos esse
+    /// desenho; assim que o mod desenhar algo dentro do alvo, ele volta a ser
+    /// composto normalmente.
+    /// </summary>
+    static bool SkipEmptyModTarget(Texture2D texture)
+    {
+        if (texture is null) return false;
+
+        nint pointer = texture.Pointer;
+        nint target = GraphicsDevice.CurrentTargetPointer;
+
+        // Qualquer desenho feito DENTRO de um alvo do mod conta como conteúdo.
+        if (target != 0 && target != pointer)
+            RenderTarget2D.MarkFilled(target);
+
+        if (target == pointer) return false;
+        if (!RenderTarget2D.IsEmpty(pointer)) return false;
+
+        System.Threading.Interlocked.Increment(ref RenderTarget2D.skippedEmptyTargetDraws);
+        if (System.Threading.Interlocked.Decrement(ref emptyTargetLogLeft) >= 0)
+            BunnyLoader.Log.Info($"[rt] desenho de alvo vazio pulado (ptr=0x{pointer:x})");
+        return true;
+    }
+
     public void Draw(Texture2D texture, Vector2 position, Rectangle? sourceRectangle,
         Color color, float rotation, Vector2 origin, Vector2 scale,
         SpriteEffects effects, float layerDepth)
-        => Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
+    {
+        if (SkipEmptyModTarget(texture)) return;
+        Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
             color, rotation, origin, scale, effects, layerDepth);
+    }
 
     public void Draw(Texture2D texture, Vector2 position, Rectangle? sourceRectangle,
         Color color, float rotation, Vector2 origin, float scale,
         SpriteEffects effects, float layerDepth)
-        => Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
+    {
+        if (SkipEmptyModTarget(texture)) return;
+        Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
             color, rotation, origin, scale, effects, layerDepth);
+    }
 
     // Sem estes dois, qualquer chamada INTERNA do shim que passe um Rectangle
     // (nao null) fica ambigua entre `Rectangle?` e `GameNullable<Rectangle>`:
@@ -38,14 +75,20 @@ public sealed partial class SpriteBatch
     public void Draw(Texture2D texture, Vector2 position, Rectangle sourceRectangle,
         Color color, float rotation, Vector2 origin, Vector2 scale,
         SpriteEffects effects, float layerDepth)
-        => Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
+    {
+        if (SkipEmptyModTarget(texture)) return;
+        Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
             color, rotation, origin, scale, effects, layerDepth);
+    }
 
     public void Draw(Texture2D texture, Vector2 position, Rectangle sourceRectangle,
         Color color, float rotation, Vector2 origin, float scale,
         SpriteEffects effects, float layerDepth)
-        => Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
+    {
+        if (SkipEmptyModTarget(texture)) return;
+        Draw(texture, position, (GameNullable<Rectangle>)sourceRectangle,
             color, rotation, origin, scale, effects, layerDepth);
+    }
 
     // FNA tem Begin de 6 e 7 argumentos (o ultimo é `Matrix`, NAO `Matrix?`);
     // o proxy só emitiu o de 8 (com GameNullable<Matrix> + bool). Sem estes,
@@ -79,6 +122,9 @@ public sealed partial class SpriteBatch
     // WallofFlesh/EmpressRitual/MoltenAuraProj/AbomSky...).
     public void Draw(Texture2D texture, Rectangle destinationRectangle, Rectangle? sourceRectangle,
         Color color, float rotation, Vector2 origin, SpriteEffects effects, float layerDepth)
-        => Draw(texture, destinationRectangle, (GameNullable<Rectangle>)sourceRectangle,
+    {
+        if (SkipEmptyModTarget(texture)) return;
+        Draw(texture, destinationRectangle, (GameNullable<Rectangle>)sourceRectangle,
             color, rotation, origin, effects, layerDepth);
+    }
 }

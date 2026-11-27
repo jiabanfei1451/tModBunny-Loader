@@ -105,6 +105,9 @@ public sealed partial class GraphicsDevice
     // e ha' contadores por quadro no resumo do MiscShaderFrame.
     static int modTargetProbeLeft = 24;
 
+    /// <summary>v66: quantas vezes ainda logamos a normalização de alfa 0 no Clear.</summary>
+    static int transparentClearLog = 6;
+
     static int mrtWarned;
 
     internal static int ModTargetBindings;
@@ -142,6 +145,9 @@ public sealed partial class GraphicsDevice
     /// <summary>v64: último alvo passado ao nativo (0 = tela).</summary>
     static nint currentTarget;
 
+    /// <summary>v67: alvo atual exposto para o SpriteBatch saber onde está desenhando.</summary>
+    internal static nint CurrentTargetPointer => currentTarget;
+
     public void SetRenderTarget(RenderTarget2D? renderTarget)
     {
         TargetIsScreen = renderTarget is null;
@@ -178,8 +184,69 @@ public sealed partial class GraphicsDevice
     /// argumentos). <c>Color</c> e um struct de 4 bytes com layout ABGR, entao vai
     /// por valor no registrador, como o nativo espera.
     /// </summary>
+    /// <summary>
+    /// v65: limpa um alvo recém-criado por mod antes de entregá-lo.
+    ///
+    /// O <c>PrimitivePixelationSystem</c> do Luminance cria 4 alvos de meia tela no
+    /// <c>Load</c>, desenha os alvos escalados (2x, <c>Color.White</c>) em
+    /// <c>DoDraw_DrawNPCsOverTiles</c>/<c>DrawProjectiles</c> — 4 quads de tela
+    /// inteira por quadro — e só limpa/desenha dentro deles no hook de
+    /// <c>Main.CheckMonoliths</c>, que neste port não dispara. Resultado: os 4
+    /// quads amostram a textura de um RenderTarget que nunca foi escrito, e no
+    /// driver daqui o conteúdo inicial sai **branco** (era a tela branca do
+    /// mundo, com UI/player por cima). Limpar na criação deixa a textura
+    /// transparente; se o hook um dia disparar, o comportamento do mod não muda.
+    /// </summary>
+    internal void ClearNewModTarget(nint pointer)
+    {
+        if (pointer == 0 || Pointer == 0) return;
+
+        nint previous = currentTarget;
+        try
+        {
+            SetRenderTarget(new RenderTarget2D(pointer));
+            // v66: preto-transparente de verdade (Color.Transparent tem RGB=255).
+            Clear(new Color(0, 0, 0, 0));
+        }
+        catch (Exception e)
+        {
+            GraphicsObjectCalls.Break("GraphicsDevice.ClearNewModTarget", e);
+        }
+        finally
+        {
+            try { SetRenderTarget(previous == 0 ? null : new RenderTarget2D(previous)); }
+            catch (Exception) { /* restaurar é melhor esforço */ }
+        }
+    }
+
     public void Clear(Color color)
     {
+        // v66: A CAUSA DA TELA BRANCA.
+        //
+        // `Color.Transparent` no XNA NAO e' preto-transparente: e'
+        // (255,255,255,0). O `SpriteBatch` do jogo usa `BlendState.AlphaBlend`,
+        // que e' PREMULTIPLICADO (src + dst*(1-a)). Pintar um alvo com
+        // (1,1,1,0) e depois desenha-lo com AlphaBlend da' 1 + dst -> branco
+        // puro. E' exatamente o que o Luminance faz: `SwapToRenderTarget()`
+        // limpa os 4 alvos de pixelacao com `Color.Transparent` em todo quadro
+        // (`DrawingUtilities.RenderTargets`) e, quando nao ha primitivas
+        // enfileiradas, desenha esses alvos "vazios" por cima do mundo
+        // (2 quads em DoDraw_DrawNPCsOverTiles + 2 em DrawProjectiles).
+        //
+        // Como o alvo nunca recebe conteudo opaco nesse port (as primitivas
+        // dependem de shaders que ainda nao desenham), o branco cobria ceu e
+        // tiles e sobrava NPC/jogador/UI, desenhados depois.
+        //
+        // Correcao: alfa 0 vira preto-transparente de verdade. Em alfa 0 o RGB
+        // nao carrega informacao nenhuma (premultiplied), entao zerar nao muda
+        // o resultado de nenhum mod que limpe para Transparent.
+        if (color.A == 0 && (color.R != 0 || color.G != 0 || color.B != 0))
+        {
+            if (System.Threading.Interlocked.Decrement(ref transparentClearLog) >= 0)
+                global::BunnyLoader.Log.Info($"[rt] Clear alfa=0 normalizado: (r={color.R} g={color.G} b={color.B} a=0) -> (0,0,0,0)");
+            color = new Color(0, 0, 0, 0);
+        }
+
         if (!TargetIsScreen)
         {
             ModTargetClears++;
@@ -195,6 +262,9 @@ public sealed partial class GraphicsDevice
             call.Arg(color);
             call.Arg(info);
             call.Invoke(fn);
+
+            // v67: alvo do mod acabou de ser limpo — nada desenhado dentro ainda.
+            if (currentTarget != 0) RenderTarget2D.MarkEmpty(currentTarget);
         }
         catch (Exception e)
         {
