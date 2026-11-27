@@ -863,6 +863,64 @@ internal static class IlPatcher
         return true;
     }
 
+    /// <summary>Quantos <c>Request&lt;Effect&gt;</code> já foram trocados (log curto).</summary>
+    static int effectRequestRewrites;
+
+    /// <summary>
+    /// v60: troca <c>callvirt AssetRepository::Request&lt;Effect&gt;</code> por
+    /// <c>call FxRequest.RequestEffect</c>.
+    ///
+    /// Por quê: no Mono do aparelho esse callvirt de MÉTODO GENÉRICO estoura
+    /// <c>NullReferenceException</c> sem frame nenhum — o corpo do
+    /// <c>Request&lt;Effect&gt;</code> do shim nunca roda (provado no v58/v59:
+    /// sai a linha de <c>get_Assets()</c> e 13 ms depois o NRE no
+    /// <c>ShaderManager.LoadShaders</c>, sem nenhuma linha <c>[fx] req T=</code>).
+    /// Com o NRE, o <c>PostSetupContent</code> do Luminance aborta: registro de
+    /// shaders vazio, <c>AtlasManager</code>/<c>ParticleManager</code> não
+    /// inicializam, <c>HasFinishedLoading</code> fica falso e o mundo fica
+    /// branco. Trocando por uma chamada estática comum, a instanciação
+    /// genérica passa a ser feita no NOSSO assembly (que o prewarm do v48 já
+    /// provou funcionar).
+    /// </summary>
+    static bool RewriteEffectRequest(ModuleDefinition module, Instruction ins, MethodReference called)
+    {
+        if (called.Name != "Request") return false;
+
+        string? dono;
+        try { dono = called.DeclaringType?.FullName; }
+        catch (Exception) { return false; }
+        if (dono != "ReLogic.Content.AssetRepository" && dono != "BunnyLoader.ModAssets") return false;
+
+        if (called is not GenericInstanceMethod generico) return false;
+
+        IList<TypeReference> argumentos;
+        try { argumentos = generico.GenericArguments; }
+        catch (Exception) { return false; }
+        if (argumentos.Count != 1) return false;
+
+        string? alvo;
+        try { alvo = argumentos[0].FullName; }
+        catch (Exception) { return false; }
+        if (alvo != "Microsoft.Xna.Framework.Graphics.Effect") return false;
+
+        MethodInfo? ajuda = typeof(BunnyLoader.Graphics.FxRequest).GetMethod(
+            "RequestEffect",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+            null,
+            new[] { typeof(ReLogic.Content.AssetRepository), typeof(string), typeof(ReLogic.Content.AssetRequestMode) },
+            null);
+        if (ajuda == null) return false;
+
+        try { ins.Operand = module.ImportReference(ajuda); }
+        catch (Exception) { return false; }
+        ins.OpCode = OpCodes.Call;
+
+        effectRequestRewrites++;
+        if (effectRequestRewrites <= 8)
+            Log.Info($"il patch: callvirt Request<Effect> trocado por FxRequest.RequestEffect ({dono})");
+        return true;
+    }
+
     static void PatchMethod(ModuleDefinition module, MethodDefinition method,
         Dictionary<string, Type> map, ref int rewritten, ref int missing, ref int stubbed, SortedSet<string> absent)
     {
@@ -897,6 +955,13 @@ internal static class IlPatcher
             if (ins.Operand is MethodReference called && ins.OpCode.Code is Code.Call or Code.Callvirt)
             {
                 int before = rewritten;
+                // v60: `callvirt AssetRepository::Request<Effect>` de um mod
+                // estoura NullReferenceException SEM frame no Mono do aparelho
+                // (nem o corpo do Request<Effect> do shim roda). Era o NRE do
+                // ShaderManager.LoadShaders do Luminance. A chamada vira
+                // `call FxRequest.RequestEffect` (estática, não-genérica para o
+                // mod) e a instanciação genérica fica DENTRO do nosso assembly.
+                if (RewriteEffectRequest(module, ins, called)) { rewritten++; continue; }
                 PatchMethodToField(module, ins, called, map, ref rewritten);
                 // Método do jogo que o shim não tem (1.4.5 deletou): o `call`
                 // fica apontando para membro inexistente e o JIT do Mono cai

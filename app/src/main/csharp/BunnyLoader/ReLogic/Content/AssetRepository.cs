@@ -26,8 +26,26 @@ namespace ReLogic.Content;
 /// </summary>
 public abstract class AssetRepository : IDisposable
 {
-    public abstract Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
-        where T : class;
+    public Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
+        where T : class
+    {
+        // v59: NAO e' virtual de proposito.
+        //
+        // O mod compilado no PC chama
+        // `callvirt Asset`1<!!0> AssetRepository::Request<T>(string, AssetRequestMode)`.
+        // Callvirt em metodo virtual generico precisa de um slot de vtable por
+        // instanciacao; no aparelho o slot de `Request<Effect>` nao existia e o
+        // callvirt estourava NullReferenceException SEM frame na pilha — era
+        // exatamente o NRE do `Luminance.ShaderManager.LoadShaders`, na linha
+        // `mod.Assets.Request<Effect>(...)`, sem nenhuma linha
+        // `[fx] Request<Effect>` antes (o corpo do override nunca rodava).
+        // Metodo concreto = chamada direta: sem slot, sem depender de
+        // instanciacao de override generico.
+        if (this is BunnyLoader.ModAssets mod)
+            return mod.RequestConcrete<T>(assetName, mode);
+
+        return new Asset<T>(assetName, null);
+    }
 
     public virtual bool HasAsset<T>(string assetName) where T : class => false;
 

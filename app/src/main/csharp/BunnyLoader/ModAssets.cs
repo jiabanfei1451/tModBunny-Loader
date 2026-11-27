@@ -30,6 +30,9 @@ public sealed class ModAssets : AssetRepository
 
     internal ModAssets(Mod mod) => this.mod = mod;
 
+    /// <summary>v60: nome do mod dono, só para o log do <see cref="FxRequest"/>.</summary>
+    internal string ModName => mod.Name;
+
     // v42: quantas linhas de entrada do Request<T> ainda cabem (contador
     // proprio: o de baixo e' compartilhado com textura e some antes).
     static int entryProbeLeft = 16;
@@ -53,7 +56,7 @@ public sealed class ModAssets : AssetRepository
 
     static readonly HashSet<string> dispatchSeen = new(StringComparer.Ordinal);
 
-    public override Asset<T> Request<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
+    internal Asset<T> RequestConcrete<T>(string assetName, AssetRequestMode mode = AssetRequestMode.AsyncLoad)
         where T : class
     {
         DispatchProbe<T>(assetName);

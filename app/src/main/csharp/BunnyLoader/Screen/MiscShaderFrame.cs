@@ -54,7 +54,9 @@ internal static class MiscShaderFrame
         // v58: resumo periodico. "nenhum #alvo no log" sozinho nao diz se o
         // caminho nunca foi percorrido ou se passou reto; com o numero, diz.
         if (++frameTick % 300 == 0)
-            Log.Info($"[fx] resumo: apply={EffectShaderBridge.Applied} submit={EffectShaderBridge.Submitted}");
+            Log.Info($"[fx] resumo: apply={EffectShaderBridge.Applied} submit={EffectShaderBridge.Submitted} "
+                + $"alvosMod={Microsoft.Xna.Framework.Graphics.GraphicsDevice.ModTargetBindings} "
+                + $"clarosMod={Microsoft.Xna.Framework.Graphics.GraphicsDevice.ModTargetClears}");
     }
 
     static void Submit()

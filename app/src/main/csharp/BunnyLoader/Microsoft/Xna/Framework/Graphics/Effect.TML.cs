@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Microsoft.Xna.Framework.Graphics;
 
@@ -67,4 +68,24 @@ public sealed partial class Effect
     }
 
     public Effect Clone() => CreateManaged(AssetName);
+
+    // v59: um stub ESTAVEL por asset. Antes, cada `Asset<Effect>.Value` criava
+    // um Effect novo: o mod escrevia os parametros num objeto descartavel,
+    // `Ref<Effect>`/`ManagedShader` ficavam com outro, e no Apply nao havia
+    // parametro nenhum para subir para a GPU (o efeito sairia errado mesmo
+    // depois de a ponte ser chamada). O Luminance tambem guarda o Ref<Effect>
+    // e compara identidade; objeto novo a cada leitura quebra isso.
+    static readonly Dictionary<string, Effect> Cached = new(StringComparer.Ordinal);
+
+    internal static Effect CachedOrCreate(string? assetName)
+    {
+        string key = assetName ?? "";
+        lock (Cached)
+        {
+            if (Cached.TryGetValue(key, out Effect? have)) return have;
+            Effect created = CreateManaged(assetName);
+            Cached[key] = created;
+            return created;
+        }
+    }
 }

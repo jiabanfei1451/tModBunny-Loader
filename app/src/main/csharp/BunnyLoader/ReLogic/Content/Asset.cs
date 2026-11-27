@@ -209,7 +209,7 @@ public sealed unsafe class Asset<T> where T : class
             AssetTrace.Step(Tag("1 inicio"));
             bool effect = AssetKinds.IsEffectType(Element);
             AssetTrace.Step(Tag(effect ? "2 effect" : "2 textura"));
-            if (effect) return (T)(object)Effect.CreateManaged(Name);
+            if (effect) return (T)(object)Effect.CachedOrCreate(Name);
             Wait();
             AssetTrace.Step(Tag("3 Wait ok"));
             IntPtr pointer = ValuePointer();

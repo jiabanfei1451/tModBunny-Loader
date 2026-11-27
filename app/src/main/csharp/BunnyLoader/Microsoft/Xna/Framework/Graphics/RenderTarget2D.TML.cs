@@ -21,6 +21,9 @@ public sealed partial class RenderTarget2D
 {
     static int warned;
 
+    /// <summary>v62: quantos alvos novos ainda logam (tamanho + ponteiro).</summary>
+    static int createLogLeft = 12;
+
     public RenderTarget2D(GraphicsDevice graphicsDevice, int width, int height)
         : this(Create(graphicsDevice, width, height))
     {
@@ -59,6 +62,8 @@ public sealed partial class RenderTarget2D
             call.Arg((long)height);
             call.Arg(info);
             call.Invoke(fn);
+            if (System.Threading.Interlocked.Decrement(ref createLogLeft) >= 0)
+                Log.Info($"[rt] novo alvo nativo {width}x{height} ptr=0x{obj:x}");
             return obj;
         }
         catch (Exception e)

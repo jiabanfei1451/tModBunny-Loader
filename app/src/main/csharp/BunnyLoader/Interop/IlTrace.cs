@@ -17,7 +17,7 @@ namespace BunnyLoader.Interop;
 /// </summary>
 public static class IlTrace
 {
-    const int Budget = 20000;
+    const int Budget = 400;
 
     /// <summary>
     /// Alvos padrao: os unicos SetStaticDefaults do FargowiltasSouls que escrevem
@@ -30,15 +30,18 @@ public static class IlTrace
     /// </summary>
     static readonly string[] Defaults =
     {
-        "FargowiltasSouls.Content.Bosses.Champions.Earth.EarthChampion",
-        "FargowiltasSouls.Content.Bosses.Champions.Nature.NatureChampion",
-        "FargowiltasSouls.Content.Bosses.Champions.Life.LifeChampion",
-        "FargowiltasSouls.Content.Bosses.Champions.Cosmos.CosmosChampion",
-        "FargowiltasSouls.Content.Bosses.Champions.Terra.TerraChampion",
-        "FargowiltasSouls.Content.Bosses.Champions.Spirit.SpiritChampion",
-        "FargowiltasSouls.Content.Bosses.TrojanSquirrel.TrojanSquirrel",
-        "FargowiltasSouls.Content.Bosses.Lifelight.LifeChallenger",
+        // v63: a lista da v62 (ShaderManager, MetaballType, ParticleManager...)
+        // derrubou o app no meio da carga: instrumentar tipo quente do Luminance
+        // (getters de propriedade, iteradores, metodos abstratos) gera IL que o
+        // Mono recusa e o processo morre. Rastreamento volta a ficar VAZIO por
+        // padrao; para ligar de novo, use BL_TRACE=Tipo::Metodo e alvos frios.
     };
+
+    /// <summary>v62: o mesmo texto sai no maximo N vezes (metodo de draw roda
+    /// 60x por segundo; sem isto o log vira uma parede e nada mais aparece).</summary>
+    const int Repeticoes = 3;
+
+    static readonly System.Collections.Generic.Dictionary<string, int> seen = new();
 
     static string[]? entries;
     static string? fingerprint;
@@ -103,10 +106,18 @@ public static class IlTrace
     {
         try
         {
+            int vezes;
+            lock (seen)
+            {
+                if (seen.TryGetValue(text, out vezes)) seen[text] = vezes + 1;
+                else seen[text] = 1;
+            }
+            if (vezes >= Repeticoes) return;
+
             if (emitted < Budget)
             {
                 emitted++;
-                Log.Info(text);
+                Log.Info(text + (vezes == 0 ? "" : $" (rep {vezes + 1})"));
                 return;
             }
             if (warned) return;

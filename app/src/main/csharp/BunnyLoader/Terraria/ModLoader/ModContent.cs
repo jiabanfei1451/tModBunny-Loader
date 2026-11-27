@@ -481,6 +481,15 @@ public static class ModContent
         catch (Exception e) { Log.Warn($"fx inventario: {e.GetType().Name}: {e.Message}"); }
         try
         {
+            // v60: se a reescrita de IL nao pegou todos os Request<Effect> (ou o
+            // mod inscreve shader por outro caminho), o registro dele fica vazio
+            // e o draw estoura KeyNotFound. Aqui inscrevemos os .fx do mod no
+            // registro do proprio mod, so' o que ainda falta.
+            BunnyLoader.Graphics.FxShaderFallback.RegisterAll();
+        }
+        catch (Exception e) { Log.Warn($"fx fallback: {e.GetType().Name}: {e.Message}"); }
+        try
+        {
             // E o gancho de EndCapture: sem ele o Luminance nunca aplica filtro.
             BunnyLoader.ScreenHookProbe.Install();
         }

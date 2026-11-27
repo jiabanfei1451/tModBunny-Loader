@@ -99,12 +99,19 @@ public sealed partial class GraphicsDevice
     /// <c>SetRenderTarget(target)</c> → <c>Clear</c> → Begin/Draw/End). Resolvido
     /// por nome + argc porque o dump nao traz GraphicsDevice nenhum.
     /// </summary>
-    // v37: quantas linhas de log de alvo/clear ainda cabem. E' o rastro que falta
-    // para explicar "tela branca so' com o Luminance ligado".
-    static int rtProbeLeft = 60;
-    // v38: o SetRenderTargets e' chamado TODO quadro pelo Luminance (restaurar
-    // a tela). Contador proprio para nao engolir as linhas de Clear/SetRenderTarget.
-    static int mrtProbeLeft = 8;
+    // v62: a sonda antiga gastava as 60 linhas nos primeiros 0,3 s (menu), e a
+    // pergunta que importa — "o Luminance chega a trocar o alvo durante o
+    // desenho do mundo?" — ficava sem resposta. Agora so' alvo de MOD conta,
+    // e ha' contadores por quadro no resumo do MiscShaderFrame.
+    static int modTargetProbeLeft = 24;
+
+    static int mrtWarned;
+
+    internal static int ModTargetBindings;
+
+    internal static int ModTargetClears;
+
+    internal static int ScreenBindings;
 
     // v57: se o alvo atual e' a tela (backbuffer) ou um render target do mod.
     // O Luminance aplica os filtros de tela dentro de um alvo (ping-pong
@@ -113,12 +120,42 @@ public sealed partial class GraphicsDevice
     // pinta o quadro por cima no fim do frame (era a "tela branca").
     internal static bool TargetIsScreen = true;
 
+    /// <summary>
+    /// v64: o alvo que o MOD viu na última chamada de <c>GetRenderTargets()</code>.
+    ///
+    /// O Luminance faz, TODO quadro em <c>Main.OnPreDraw</code>:
+    /// <c>GetRenderTargets()</code> → desenha os alvos dele →
+    /// <c>SetRenderTargets(oldTargets)</code>. Se o <c>GetRenderTargets</code> daqui
+    /// devolve vazio (a leitura do array nativo falha), o
+    /// <c>SetRenderTargets</code> cai no caminho "volta para a tela" e **arranca
+    /// o alvo em que o jogo estava desenhando**. O quadro do mundo termina num
+    /// alvo que ninguém desenhou (branco) e a tela fica branca — exatamente o
+    /// sintoma que só aparece com o Luminance ligado.
+    ///
+    /// Em vez de confiar na leitura do array, guardamos o ponteiro aqui e
+    /// restauramos por ele.
+    /// </summary>
+    static nint targetSnapshot;
+
+    static int snapshotProbeLeft = 10;
+
+    /// <summary>v64: último alvo passado ao nativo (0 = tela).</summary>
+    static nint currentTarget;
+
     public void SetRenderTarget(RenderTarget2D? renderTarget)
     {
         TargetIsScreen = renderTarget is null;
-        if (System.Threading.Interlocked.Decrement(ref rtProbeLeft) >= 0)
-            global::BunnyLoader.Log.Info("[rt] SetRenderTarget(" +
-                (renderTarget is null ? "tela" : $"ptr=0x{renderTarget.Pointer:x}") + ")");
+        currentTarget = renderTarget?.Pointer ?? 0;
+        if (renderTarget is null)
+        {
+            ScreenBindings++;
+        }
+        else
+        {
+            ModTargetBindings++;
+            if (System.Threading.Interlocked.Decrement(ref modTargetProbeLeft) >= 0)
+                global::BunnyLoader.Log.Info("[rt] SetRenderTarget(mod) ptr=0x" + renderTarget.Pointer.ToString("x"));
+        }
         if (Pointer == 0 || GraphicsObjectCalls.IsBroken("GraphicsDevice.SetRenderTarget")) return;
         try
         {
@@ -143,8 +180,12 @@ public sealed partial class GraphicsDevice
     /// </summary>
     public void Clear(Color color)
     {
-        if (System.Threading.Interlocked.Decrement(ref rtProbeLeft) >= 0)
-            global::BunnyLoader.Log.Info($"[rt] Clear(r={color.R} g={color.G} b={color.B} a={color.A})");
+        if (!TargetIsScreen)
+        {
+            ModTargetClears++;
+            if (System.Threading.Interlocked.Decrement(ref modTargetProbeLeft) >= 0)
+                global::BunnyLoader.Log.Info($"[rt] Clear no alvo do mod (r={color.R} g={color.G} b={color.B} a={color.A})");
+        }
         if (Pointer == 0 || GraphicsObjectCalls.IsBroken("GraphicsDevice.Clear")) return;
         try
         {
@@ -169,6 +210,13 @@ public sealed partial class GraphicsDevice
     /// </summary>
     public RenderTargetBinding[] GetRenderTargets()
     {
+        // v64: o que importa não é a leitura do array nativo (que pode falhar
+        // e devolver vazio), e sim LEMBRAR o alvo para o SetRenderTargets
+        // seguinte poder restaurar. O snapshot é o alvo que o nativo tem agora.
+        targetSnapshot = currentTarget;
+        if (System.Threading.Interlocked.Decrement(ref snapshotProbeLeft) >= 0)
+            global::BunnyLoader.Log.Info($"[rt] GetRenderTargets() snapshot=0x{targetSnapshot:x}");
+
         if (Pointer == 0 || GraphicsObjectCalls.IsBroken("GraphicsDevice.GetRenderTargets")) return Array.Empty<RenderTargetBinding>();
         try
         {
@@ -198,26 +246,30 @@ public sealed partial class GraphicsDevice
     /// </summary>
     public void SetRenderTargets(RenderTargetBinding[]? renderTargets)
     {
-        // v38: isto NAO e' enfeite. No FNA, `SetRenderTargets(vazio)` significa
-        // "volta a desenhar na tela" — e o Luminance chama exatamente isso todo
-        // quadro (RenderTargetManager, depois de desenhar nos alvos dele). Como
-        // era stub, o device ficava preso no ultimo alvo do mod: o mundo era
-        // desenhado num render target que nunca ia para a tela e a tela ficava
-        // branca. O sintoma sumia sem o Luminance porque so' ele usa este overload.
+        // v38: no FNA, `SetRenderTargets(vazio)` = "volta para a tela". O
+        // Luminance chama isso todo quadro (RenderTargetManager).
+        // v64: MAS o array que ele passa é o resultado do NOSSO
+        // GetRenderTargets(), que pode vir vazio por falha de leitura. Voltar
+        // para a tela nesse caso arranca o alvo em que o jogo desenhava e o
+        // quadro do mundo termina num alvo em branco. Por isso: se o array não
+        // traz um ponteiro válido, restaura o SNAPSHOT (o alvo que o nativo
+        // tinha quando o mod perguntou).
         int count = renderTargets?.Length ?? 0;
-        if (System.Threading.Interlocked.Decrement(ref mrtProbeLeft) >= 0)
-            global::BunnyLoader.Log.Info($"[rt] SetRenderTargets({count})" + (count == 0 ? " -> tela (backbuffer)" : ""));
-        if (count == 0)
+        nint pointer = 0;
+        if (count > 0)
         {
-            SetRenderTarget(null);
-            return;
+            try { pointer = renderTargets![0].RenderTarget?.Pointer ?? 0; }
+            catch (Exception) { pointer = 0; }
         }
-        // O nativo so' tem SetRenderTarget de UM alvo; multi-alvo (MRT) nao
-        // existe neste build — usa o primeiro e avisa uma vez.
-        nint pointer = renderTargets![0].RenderTarget?.Pointer ?? 0;
-        if (count > 1 && System.Threading.Interlocked.Decrement(ref mrtProbeLeft) >= 0)
+        if (count > 1 && System.Threading.Interlocked.Exchange(ref mrtWarned, 1) == 0)
             global::BunnyLoader.Log.Warn($"[rt] SetRenderTargets com {count} alvos: o nativo so' aceita 1 (usando o primeiro)");
-        SetRenderTarget(pointer == 0 ? null : new RenderTarget2D(pointer));
+
+        nint restore = pointer != 0 ? pointer : targetSnapshot;
+        if (System.Threading.Interlocked.Decrement(ref snapshotProbeLeft) >= 0)
+            global::BunnyLoader.Log.Info($"[rt] SetRenderTargets({count}) -> restaura 0x{restore:x}"
+                + (restore == 0 ? " (tela)" : ""));
+
+        SetRenderTarget(restore == 0 ? null : new RenderTarget2D(restore));
     }
 
     /// <summary>
