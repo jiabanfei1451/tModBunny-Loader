@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BunnyLoader.Graphics;
 using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ModLoader.Core;
@@ -43,11 +44,17 @@ internal static class MiscShaderFrame
     {
         lock (Gate) Pending.Add(draw);
     }
+    static int frameTick;
     static void DoDraw(On_Main.orig_DoDraw orig, Main self, GameTime gameTime)
     {
         orig(self, gameTime);
         try { Submit(); }
         catch (Exception e) { ItemHooks.Report("MiscShaderFrame (frame)", e); }
+
+        // v58: resumo periodico. "nenhum #alvo no log" sozinho nao diz se o
+        // caminho nunca foi percorrido ou se passou reto; com o numero, diz.
+        if (++frameTick % 300 == 0)
+            Log.Info($"[fx] resumo: apply={EffectShaderBridge.Applied} submit={EffectShaderBridge.Submitted}");
     }
 
     static void Submit()

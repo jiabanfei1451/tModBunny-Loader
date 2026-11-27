@@ -50,6 +50,17 @@ using BlendEquationFn = void (*)(GLenum);
 using BindTextureFn = void (*)(GLenum, GLuint);
 using ShaderSourceFn = void (*)(GLuint, GLsizei, const GLchar* const*, const GLint*);
 using LinkProgramFn = void (*)(GLuint);
+// v58: "TX(0,3) pinta branco" nao diz quem e' a textura 3. Duas leituras
+// possiveis, e o conserto e' outro em cada uma:
+//   - 3 e' um branco de 1x1 (a cor TINHA que vir do vertice) => o shader
+//     ignora a cor do vertice e sai branco;
+//   - 3 e' a copia do quadro presa em algum FBO (a cor vem do alvo) => o alvo
+//     ja' estava branco, e o branco nasceu antes.
+// E ainda: amostrar a textura presa no FBO que esta' sendo desenhado (laco)
+// nao tem resultado definido no GL — no driver da Adreno sai branco. Por isso
+// aqui guardamos tamanho de textura e o mapa fbo -> textura de cor.
+using TexImage2DFn = void (*)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
+using FramebufferTexture2DFn = void (*)(GLenum, GLenum, GLenum, GLuint, GLint);
 
 SwapFn g_origSwap = nullptr;
 BindFramebufferFn g_origBindFramebuffer = nullptr;
@@ -74,6 +85,8 @@ BlendEquationFn g_origBlendEquation = nullptr;
 BindTextureFn g_origBindTexture = nullptr;
 ShaderSourceFn g_origShaderSource = nullptr;
 LinkProgramFn g_origLinkProgram = nullptr;
+TexImage2DFn g_origTexImage2D = nullptr;
+FramebufferTexture2DFn g_origFramebufferTexture2D = nullptr;
 
 // As nossas proprias chamadas GL (o desenho do efeito) passam pelos mesmos
 // hooks: nao entram no rastro nem mudam o espelho do estado da Unity.
@@ -147,10 +160,22 @@ int g_dumpCount = 0;
 bool g_tracing = false;
 std::string g_trace;
 int g_pendingDraws = 0;
+// v58: ver o comentario dos typedefs TexImage2DFn/FramebufferTexture2DFn.
+struct TexInfo {
+    int w = 0;
+    int h = 0;
+};
+std::map<GLuint, TexInfo> g_texInfo;         // textura -> tamanho conhecido
+std::map<GLuint, GLuint> g_fboColorTex;      // fbo -> textura em COLOR_ATTACHMENT0
+GLuint g_boundTex[8] = {0};                  // textura presa em cada unidade
+GLsizei g_lastCount = 0;                     // vertices/indices do ultimo draw
 
 void flushDraws() {
     if (g_pendingDraws == 0) return;
     g_trace += " D" + std::to_string(g_pendingDraws);
+    // "D3/6" = tres draws seguidos, o ultimo com 6 vertices: um quad de tela
+    // inteira pede 6, um lote de tiles pede milhares.
+    if (g_lastCount > 0) g_trace += "/" + std::to_string(static_cast<int>(g_lastCount));
     g_pendingDraws = 0;
 }
 
@@ -259,12 +284,68 @@ void hkBlendEquation(GLenum mode) {
     g_origBlendEquation(mode);
 }
 
+// A textura ja' sabida (1x1 branco do jogo, a copia do quadro, atlas do mod)
+// sai junto do id; e o laco (amostrar a textura presa no fbo de destino) sai
+// marcado, porque no driver isso vira branco sem aviso.
+// A cor presa no fbo de destino e' perguntada na hora (o alvo ja' esta' ligado);
+// assim o mapa vale mesmo para alvos criados antes dos hooks.
+GLuint colorTexOfDrawTarget() {
+    const GLuint fbo = static_cast<GLuint>(g_shadow.drawFbo);
+    if (fbo == 0) return 0;
+    auto it = g_fboColorTex.find(fbo);
+    if (it != g_fboColorTex.end()) return it->second;
+    GLint type = 0, name = 0;
+    gl().GetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                                             &type);
+    if (type == GL_TEXTURE)
+        gl().GetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                                                 &name);
+    g_fboColorTex[fbo] = static_cast<GLuint>(name);
+    return static_cast<GLuint>(name);
+}
+
 void hkBindTexture(GLenum target, GLuint texture) {
     if (tracked()) {
         int unit = static_cast<int>(g_shadow.activeTexture) - static_cast<int>(GL_TEXTURE0);
-        traceEvent("TX(%d,%u)", unit, static_cast<unsigned>(texture));
+        if (unit >= 0 && unit < 8 && target == GL_TEXTURE_2D) g_boundTex[unit] = texture;
+        if (g_tracing) {
+            bool loop = target == GL_TEXTURE_2D && texture != 0 && colorTexOfDrawTarget() == texture;
+            auto it = g_texInfo.find(texture);
+            if (it != g_texInfo.end())
+                traceEvent("TX(%d,%u:%dx%d%s)", unit, static_cast<unsigned>(texture), it->second.w, it->second.h, loop ? "!LACO" : "");
+            else
+                traceEvent("TX(%d,%u%s)", unit, static_cast<unsigned>(texture), loop ? "!LACO" : "");
+        }
     }
     g_origBindTexture(target, texture);
+}
+
+// v58: tamanho da textura vem da criacao (o ES 3.0 nao tem como perguntar
+// depois: glGetTexLevelParameteriv e' 3.1).
+void hkTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format,
+                  GLenum type, const void* pixels) {
+    if (tracked() && target == GL_TEXTURE_2D && level == 0) {
+        int unit = static_cast<int>(g_shadow.activeTexture) - static_cast<int>(GL_TEXTURE0);
+        if (unit >= 0 && unit < 8 && g_boundTex[unit] != 0) {
+            TexInfo& info = g_texInfo[g_boundTex[unit]];
+            info.w = static_cast<int>(width);
+            info.h = static_cast<int>(height);
+        }
+    }
+    g_origTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
+}
+
+// v58: qual textura cada fbo le' em COLOR_ATTACHMENT0. Com isso "TX(0,3)" tem
+// nome: se 3 aparece aqui, 3 e' a copia de um alvo, nao um branco de 1x1.
+void hkFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
+    if (tracked() && attachment == GL_COLOR_ATTACHMENT0 && textarget == GL_TEXTURE_2D) {
+        const GLuint fbo = static_cast<GLuint>(g_shadow.drawFbo);
+        if (texture == 0)
+            g_fboColorTex.erase(fbo);
+        else
+            g_fboColorTex[fbo] = texture;
+    }
+    g_origFramebufferTexture2D(target, attachment, textarget, texture, level);
 }
 
 // ---- v49: leitura de pixels ----------------------------------------------
@@ -424,6 +505,7 @@ void midDumpMaybe() {
 
 void hkDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
     if (tracked()) {
+        g_lastCount = count;
         noteDraw();
         if (g_tracing) g_pendingDraws++;
     }
@@ -437,6 +519,7 @@ void hkDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
 
 void hkDrawArrays(GLenum mode, GLint first, GLsizei count) {
     if (tracked()) {
+        g_lastCount = count;
         noteDraw();
         if (g_tracing) g_pendingDraws++;
     }
@@ -533,8 +616,35 @@ void dumpPrograms() {
     }
 }
 
-EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
-    if (!unityThread()) return g_origSwap(display, surface);
+// v58: o rastro so' mostra ids de textura ("TX(0,3)"); aqui sai o mapa
+// fbo -> textura de cor. Duas fontes: o que os hooks viram criar e a sonda
+// viva (os alvos do jogo nascem antes dos hooks, e a sonda pega todos).
+void dumpTextureMap() {
+    BL_INFO("[gl] texturas conhecidas: %zu; fbos com cor vistos: %zu", g_texInfo.size(), g_fboColorTex.size());
+    GLint previous = 0;
+    gl().GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &previous);
+    int n = 0;
+    for (GLuint fbo = 1; fbo <= 48 && n < 12; ++fbo) {
+        g_origBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        if (gl().CheckFramebufferStatus(GL_READ_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) continue;
+        GLint type = 0, name = 0;
+        gl().GetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+                                                 &type);
+        if (type != GL_TEXTURE) continue;
+        gl().GetFramebufferAttachmentParameteriv(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
+                                                 &name);
+        auto it = g_texInfo.find(static_cast<GLuint>(name));
+        char size[24] = "tamanho desconhecido";
+        if (it != g_texInfo.end()) snprintf(size, sizeof size, "%dx%d", it->second.w, it->second.h);
+        BL_INFO("[gl] sonda fbo %u -> textura %d (%s)", static_cast<unsigned>(fbo), name, size);
+        ++n;
+    }
+    g_origBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(previous));
+    while (gl().GetError() != GL_NO_ERROR) {
+    }
+}
+
+EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {    if (!unityThread()) return g_origSwap(display, surface);
 
     if (g_tracing) {
         traceEvent("SWAP");
@@ -549,6 +659,7 @@ EGLBoolean hkSwap(EGLDisplay display, EGLSurface surface) {
         if (!g_programsDumped) {
             g_programsDumped = true;
             dumpPrograms();
+            dumpTextureMap();
         }
         // So' no primeiro quadro rastreado: 10 leituras de 2400x1080 travam o
         // quadro, e a pergunta ("em que desenho vira branco") uma vez basta.
@@ -642,6 +753,9 @@ void installGlHooks() {
         ok &= hookGl("glDepthFunc", reinterpret_cast<void*>(g.DepthFunc), hkDepthFunc, &g_origDepthFunc);
         ok &= hookGl("glBlendEquation", reinterpret_cast<void*>(g.BlendEquation), hkBlendEquation, &g_origBlendEquation);
         ok &= hookGl("glBindTexture", reinterpret_cast<void*>(g.BindTexture), hkBindTexture, &g_origBindTexture);
+        ok &= hookGl("glTexImage2D", reinterpret_cast<void*>(g.TexImage2D), hkTexImage2D, &g_origTexImage2D);
+        ok &= hookGl("glFramebufferTexture2D", reinterpret_cast<void*>(g.FramebufferTexture2D), hkFramebufferTexture2D,
+                     &g_origFramebufferTexture2D);
         ok &= hookGl("glShaderSource", reinterpret_cast<void*>(g.ShaderSource), hkShaderSource, &g_origShaderSource);
         ok &= hookGl("glLinkProgram", reinterpret_cast<void*>(g.LinkProgram), hkLinkProgram, &g_origLinkProgram);
         BL_INFO("efeitos de tela: hooks GL %s", ok ? "ok" : "com falha");

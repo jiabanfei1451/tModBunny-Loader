@@ -80,7 +80,15 @@ internal static class EffectShaderBridge
             return;
         }
 
-        lock (Gate) applied++;
+        lock (Gate)
+        {
+            applied++;
+            // v58: ate' aqui o log so' mostrava Apply que falhava. Sem uma
+            // linha de "chegou", "nao ha' #alvo" nao distingue "o Luminance
+            // nunca aplica" de "aplica e passa reto".
+            if (applied <= 12) Log.Info($"[fx] apply {asset}{(passName == null ? "" : "#" + passName)} alvo="
+                + (GraphicsDevice.TargetIsScreen ? "tela" : "rt"));
+        }
 
         MiscShaderFrame.Install();
 
