@@ -106,8 +106,16 @@ public sealed partial class GraphicsDevice
     // a tela). Contador proprio para nao engolir as linhas de Clear/SetRenderTarget.
     static int mrtProbeLeft = 8;
 
+    // v57: se o alvo atual e' a tela (backbuffer) ou um render target do mod.
+    // O Luminance aplica os filtros de tela dentro de um alvo (ping-pong
+    // MainTarget/AuxiliaryTarget) e o desenho que copia o alvo anterior e' do
+    // proprio jogo. Enfileirar um draw nosso de tela inteira nesse momento
+    // pinta o quadro por cima no fim do frame (era a "tela branca").
+    internal static bool TargetIsScreen = true;
+
     public void SetRenderTarget(RenderTarget2D? renderTarget)
     {
+        TargetIsScreen = renderTarget is null;
         if (System.Threading.Interlocked.Decrement(ref rtProbeLeft) >= 0)
             global::BunnyLoader.Log.Info("[rt] SetRenderTarget(" +
                 (renderTarget is null ? "tela" : $"ptr=0x{renderTarget.Pointer:x}") + ")");

@@ -143,12 +143,29 @@ public static class SystemLoader
 
     internal static void OnModLoad(Mod mod)
     {
+        // v57: chamar TODOS os sistemas, sem o filtro de "sobrescreve". No
+        // tModLoader o OnModLoad roda para todo ModSystem (a base e' vazia,
+        // entao chamar quem nao sobrescreve e' inofensivo). O filtro daqui
+        // pulava o Luminance.Core.Graphics.ShaderManager em aparelho, e sem
+        // ele `shaders`/`filters`/`MainTarget` ficavam nulos: o LoadShaders
+        // estourava NullReferenceException no `shaders[name] = ...` e o mod
+        // ficava sem filtro de tela nenhum — era o "mundo branco".
+        int ran = 0;
         foreach (ModSystem system in Of(mod))
         {
-            if (!ItemHooks.Overrides(system.GetType(), typeof(ModSystem), nameof(ModSystem.OnModLoad))) continue;
-            try { system.OnModLoad(); }
-            catch (Exception e) { ItemHooks.Report($"{system.FullName}.OnModLoad", e); }
+            bool overrides = ItemHooks.Overrides(system.GetType(), typeof(ModSystem), nameof(ModSystem.OnModLoad));
+            if (overrides) global::BunnyLoader.Log.Info($"[mod] system {system.Mod.Name}.{system.Name}: OnModLoad");
+            try
+            {
+                system.OnModLoad();
+                ran++;
+            }
+            catch (Exception e)
+            {
+                ItemHooks.Report($"{system.FullName}.OnModLoad", e);
+            }
         }
+        global::BunnyLoader.Log.Info($"[mod] {mod.Name}: OnModLoad em {ran} sistema(s)");
     }
 
     public static void OnModUnload() => Run(Lists.OnModUnload, s => s.OnModUnload());

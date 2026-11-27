@@ -116,6 +116,19 @@ internal static class EffectShaderBridge
             return;
         }
 
+        // v57: o Luminance aplica os filtros dentro de um render target
+        // (ping-pong MainTarget/AuxiliaryTarget) e quem copia o alvo anterior e'
+        // o spriteBatch do proprio jogo. Enfileirar um draw nosso de tela
+        // inteira aqui fazia o quadro terminar pintado por cima (a "tela
+        // branca" que sobra com o Luminance ligado). Sem alvo na tela, deixa o
+        // jogo desenhar.
+        if (!Microsoft.Xna.Framework.Graphics.GraphicsDevice.TargetIsScreen)
+        {
+            Warn(key + "#alvo", $"shader {asset}: aplicado dentro de um render target do mod "
+                + "(filtro de tela do Luminance) — nao enfileira draw nosso, quem copia o alvo e' o jogo");
+            return;
+        }
+
         try
         {
             ScreenDraw draw = Build(owner!, binding);
